@@ -1,0 +1,30 @@
+### macOS
+.DS_Store
+._*
+Icon?
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+### Local agent artifacts
+.superpowers/
+graphify-out/
+
+### Node.js
+node_modules/
+dist/
+
+### Local environment
+.env
+.env.local
+.env.*.local
+
+### EchoGuide local data
+.echoguide/
+
+### Local HTTPS development certificates
+.certs/

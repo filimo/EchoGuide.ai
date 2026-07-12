@@ -1,0 +1,147 @@
+# EchoGuide
+
+> A live bilingual interview copilot that turns spoken questions into clear meaning, natural bridge phrases, and short answers you can actually say.
+
+![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=17202f)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
+![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime_API-17202f?logo=openai&logoColor=white)
+![Status](https://img.shields.io/badge/status-runnable_prototype-F2C94C)
+
+![EchoGuide Training Mode with a live transcript and bilingual reply suggestions](docs/assets/echoguide-training-mode.png)
+
+EchoGuide is an experimental iPad companion for interview practice and live English conversations. It does not try to replace the speaker or generate a long, polished monologue. Its job is smaller and more practical: remove the pause between “I understand the question” and “I can answer it in simple English.”
+
+## The problem
+
+A translator solves only half of the problem during an interview. The user still needs to:
+
+- understand what the interviewer is really asking;
+- avoid an awkward silence while thinking;
+- connect the answer to real personal experience;
+- say it in clear English without reading a scripted speech.
+
+EchoGuide turns each meaningful utterance into a compact bilingual card: Russian meaning, a bridge phrase, and two or three reply options. A short option expands into a complete sentence only when the user selects it.
+
+## What works today
+
+- live transcription through OpenAI Realtime and WebRTC;
+- `English`, `Russian`, and bilingual speech modes;
+- `server_vad`, `semantic_vad`, and manual turn control;
+- Russian meaning with an explicit `Question` / `Statement` marker;
+- instant bridge phrases for filling a pause naturally;
+- two or three concise suggested replies with translations and full sentences;
+- `Pasted notes` as personal context for grounded answers;
+- manual card generation from a selected group of transcript turns;
+- local session history without raw audio storage;
+- privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
+- a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
+
+## How the main flow works
+
+```mermaid
+flowchart LR
+    A["Room audio<br/>iPad microphone"] --> B["OpenAI Realtime<br/>WebRTC + transcription"]
+    B --> C["Live transcript<br/>and fresh thought"]
+    D["Pasted notes<br/>personal context"] --> E["Bilingual phrase analysis"]
+    C --> E
+    E --> F["Russian meaning<br/>bridge phrase<br/>2–3 replies"]
+    C --> G["Local session history"]
+    F --> G
+```
+
+The frontend receives an ephemeral client secret from the local development API, streams microphone audio over WebRTC, and displays completed phrases as a dialogue log. For each meaningful phrase, a separate structured-output request combines recent conversation context with the user's notes. Session history and technical diagnostics stay local.
+
+## First-run experience
+
+![EchoGuide iPad companion setup](docs/assets/echoguide-setup.png)
+
+The user places an iPad near the audio source, enables the microphone, and adds a small amount of context: role, project, verified facts, constraints, and preferred answer style. The microphone always starts through an explicit user action; browser permissions are never bypassed.
+
+## What this repository demonstrates
+
+This is more than a UI mockup. The project explores several engineering problems that are often hidden behind an AI demo:
+
+- **Realtime integration:** WebRTC lifecycle, ephemeral credentials, VAD, and bilingual transcription.
+- **Product constraints:** low cognitive load, concise answers, and explicit human-in-the-loop selection.
+- **Grounding:** personal context with strong instructions not to invent roles, projects, or metrics.
+- **Reliability:** structured outputs, runtime validation, automated tests, and a dedicated model-evaluation harness.
+- **Observability:** privacy-safe audio-path diagnostics that distinguish browser, WebRTC, and VAD failures.
+- **Privacy by design:** raw audio, transcripts, personal notes, certificates, and API keys are excluded from Git.
+
+## Run locally
+
+You need Node.js 20+ and an OpenAI API key.
+
+```bash
+npm install
+cp .env.example .env.local
+```
+
+Add `OPENAI_API_KEY` to `.env.local`, create a local HTTPS certificate, and start the app:
+
+```bash
+npm run dev:cert
+npm run dev
+```
+
+Open `https://localhost:5173/`. For an iPad, configure a local hostname with
+`ECHOGUIDE_DEV_HOST` and follow the [local development guide](docs/local-development.md).
+
+> [!IMPORTANT]
+> The current Vite server combines the frontend with local, development-only API endpoints. This is a runnable prototype for a controlled local environment, not a production-ready public deployment.
+
+## Validate the project
+
+```bash
+npm run lint
+npm run test
+npm run build
+npm run smoke
+```
+
+The phrase-card model comparison uses real API calls and runs separately:
+
+```bash
+npm run eval:models
+```
+
+The methodology, rubric, and current results are documented in [docs/model-evaluation.md](docs/model-evaluation.md).
+
+## Technology
+
+| Area | Technology |
+| --- | --- |
+| UI | React 19, TypeScript, Vite, CSS |
+| Speech | OpenAI Realtime API, WebRTC, `gpt-4o-transcribe` |
+| Phrase cards | OpenAI Responses API, JSON Schema structured outputs |
+| State | Browser `localStorage`, local JSON session history |
+| Quality | Vitest, Testing Library, TypeScript checks, model-evaluation fixtures |
+| Diagnostics | Privacy-safe JSONL events, WebRTC stats, audio counters |
+
+## Prototype status and limitations
+
+EchoGuide is an early runnable prototype:
+
+- the primary flow uses an iPad microphone and audible room audio;
+- it cannot directly capture a conversation played only through headphones;
+- production authentication, cloud persistence, and a standalone backend are not implemented yet;
+- the local development server must not be exposed directly to the public internet;
+- live-session cost depends on the selected OpenAI models and conversation length.
+
+## Roadmap
+
+- simplify the control surface for non-technical users;
+- separate the production backend from the Vite development plugin;
+- connect a safe local knowledge-file loader to the product flow;
+- evaluate latency and usefulness across a series of practice interviews;
+- define production-grade authentication, storage, and deployment boundaries.
+
+## Project map
+
+- [Product scope](docs/product.md) — the problem, user journey, and MVP boundary;
+- [Architecture](docs/architecture.md) — Realtime, analysis, storage, and diagnostics;
+- [Model evaluation](docs/model-evaluation.md) — reproducible text-model comparison;
+- [Local development](docs/local-development.md) — HTTPS, iPad, and validation setup;
+- [Knowledge-pack example](docs/personal-knowledge-pack.example.md) — safe grounding template.
+
+Feedback is welcome on live-assistance UX, Realtime/WebRTC architecture, and evaluation of AI-generated replies.
