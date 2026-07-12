@@ -8,7 +8,9 @@
 ![Status](https://img.shields.io/badge/status-runnable_prototype-F2C94C)
 ![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)
 
-![EchoGuide Training Mode with a live transcript and bilingual reply suggestions](docs/assets/echoguide-training-mode.png)
+![EchoGuide product walkthrough showing the live transcript, bilingual reply cards, saved sessions, and editable personal context](docs/assets/echoguide-demo.gif)
+
+*A quick tour of the live conversation flow, grounded reply options, local session history, and editable notes.*
 
 EchoGuide is an experimental iPad companion for interview practice and live English conversations. It does not try to replace the speaker or generate a long, polished monologue. Its job is smaller and more practical: remove the pause between “I understand the question” and “I can answer it in simple English.”
 
