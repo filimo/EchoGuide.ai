@@ -6,6 +6,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime_API-17202f?logo=openai&logoColor=white)
 ![Status](https://img.shields.io/badge/status-runnable_prototype-F2C94C)
+![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)
 
 ![EchoGuide Training Mode with a live transcript and bilingual reply suggestions](docs/assets/echoguide-training-mode.png)
 
@@ -145,3 +146,7 @@ EchoGuide is an early runnable prototype:
 - [Knowledge-pack example](docs/personal-knowledge-pack.example.md) — safe grounding template.
 
 Feedback is welcome on live-assistance UX, Realtime/WebRTC architecture, and evaluation of AI-generated replies.
+
+## License
+
+EchoGuide is available under the [MIT License](LICENSE).
