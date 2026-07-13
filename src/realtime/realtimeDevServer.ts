@@ -121,6 +121,14 @@ function matchesLoadLocalKnowledgeRoute(req: BasicRequest): boolean {
   return new URL(req.url, "http://localhost").pathname === localKnowledgePath;
 }
 
+function matchesSaveLocalKnowledgeRoute(req: BasicRequest): boolean {
+  if (req.method !== "PUT" || req.url == null) {
+    return false;
+  }
+
+  return new URL(req.url, "http://localhost").pathname === localKnowledgePath;
+}
+
 function matchesLoadSessionsRoute(req: BasicRequest): boolean {
   if (req.method !== "GET" || req.url == null) {
     return false;
@@ -206,6 +214,7 @@ export function createRealtimeClientSecretMiddleware({
     const handlesClientSecret = matchesRealtimeClientSecretRoute(req);
     const handlesAnalyzePhrase = matchesRealtimeAnalyzePhraseRoute(req);
     const handlesLoadLocalKnowledge = matchesLoadLocalKnowledgeRoute(req);
+    const handlesSaveLocalKnowledge = matchesSaveLocalKnowledgeRoute(req);
     const handlesLoadSessions = matchesLoadSessionsRoute(req);
     const handlesSaveCurrentSession = matchesSaveCurrentSessionRoute(req);
     const handlesSaveRealtimeDiagnostics = matchesSaveRealtimeDiagnosticsRoute(req);
@@ -244,6 +253,35 @@ export function createRealtimeClientSecretMiddleware({
           ? normalizeKnowledgeContext(readFileSync(localKnowledgeFilePath, "utf8"))
           : ""
       });
+      return;
+    }
+
+    if (handlesSaveLocalKnowledge) {
+      let requestBody: unknown;
+
+      try {
+        requestBody = await readJsonBody(req);
+      } catch {
+        sendJson(res, 400, { error: "Knowledge request body must be valid JSON." });
+        return;
+      }
+
+      const rawKnowledgeContext = (requestBody as { knowledgeContext?: unknown } | null)
+        ?.knowledgeContext;
+
+      if (typeof rawKnowledgeContext !== "string") {
+        sendJson(res, 400, { error: "Knowledge context must be a string." });
+        return;
+      }
+
+      const knowledgeContext = normalizeKnowledgeContext(rawKnowledgeContext);
+      mkdirSync(dirname(localKnowledgeFilePath), { recursive: true });
+      writeFileSync(
+        localKnowledgeFilePath,
+        knowledgeContext.length > 0 ? `${knowledgeContext}\n` : "",
+        "utf8"
+      );
+      sendJson(res, 200, { knowledgeContext });
       return;
     }
 

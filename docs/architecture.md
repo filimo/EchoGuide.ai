@@ -29,7 +29,7 @@ flowchart LR
 
 - ephemeral Realtime client secrets;
 - bilingual phrase analysis;
-- optional local knowledge loading;
+- local knowledge loading and replacement through `GET` / `PUT`;
 - session-history persistence;
 - diagnostic event persistence.
 
@@ -64,7 +64,7 @@ The resulting card contains the normalized thought, speaker role, Russian meanin
 
 ### Local persistence
 
-Setup preferences use browser `localStorage`. Training sessions are written to `.echoguide/sessions/history.json` by the local development API. Raw audio is not stored.
+Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Raw audio is not stored.
 
 ## Diagnostics and privacy
 

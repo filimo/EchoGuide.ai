@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { requestMicrophoneStream, stopStream, type MicrophoneResult } from "./audio/microphone";
 import { RealtimeLab } from "./components/RealtimeLab";
 import { SetupFlow } from "./components/SetupFlow";
@@ -26,10 +26,26 @@ async function loadLocalKnowledgeContext(): Promise<string> {
   return typeof payload.knowledgeContext === "string" ? payload.knowledgeContext : "";
 }
 
+async function saveLocalKnowledgeContext(knowledgeContext: string): Promise<string> {
+  const response = await fetch("/api/knowledge/local", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ knowledgeContext })
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not save pasted notes on the server.");
+  }
+
+  const payload = (await response.json()) as { knowledgeContext?: unknown };
+
+  return typeof payload.knowledgeContext === "string" ? payload.knowledgeContext : "";
+}
+
 export default function App({ requestMicrophone = requestMicrophoneStream }: AppProps = {}) {
   const [setupMemory, setSetupMemory] = useState(() => loadSetupMemory(window.localStorage));
   const [session, setSession] = useState(() =>
-    setKnowledgeNotes(createInitialSession(), setupMemory.knowledgeContext)
+    setKnowledgeNotes(createInitialSession(), setupMemory.legacyKnowledgeContext)
   );
   const [sourceLabel, setSourceLabel] = useState(setupMemory.sourceLabel);
   const [mode, setMode] = useState<"setup" | "live">(
@@ -37,34 +53,80 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [microphoneStream, setMicrophoneStream] = useState<MediaStream | null>(null);
+  const notesEditedRef = useRef(false);
+  const knowledgeHydratedRef = useRef(false);
+  const latestNotesRef = useRef(setupMemory.legacyKnowledgeContext);
+  const lastSavedKnowledgeRef = useRef<string | null>(null);
+  const knowledgeSaveTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (setupMemory.knowledgeContext.trim().length > 0) {
+  function removeLegacyKnowledgeFromBrowserStorage() {
+    if (setupMemory.legacyKnowledgeContext.length === 0) {
       return;
     }
 
+    saveSetupMemory(window.localStorage, {
+      ...setupMemory,
+      legacyKnowledgeContext: ""
+    });
+  }
+
+  function scheduleKnowledgeSave(knowledgeContext: string) {
+    if (knowledgeContext === lastSavedKnowledgeRef.current) {
+      return;
+    }
+
+    if (knowledgeSaveTimeoutRef.current != null) {
+      window.clearTimeout(knowledgeSaveTimeoutRef.current);
+    }
+
+    knowledgeSaveTimeoutRef.current = window.setTimeout(() => {
+      knowledgeSaveTimeoutRef.current = null;
+      void saveLocalKnowledgeContext(knowledgeContext)
+        .then((savedKnowledgeContext) => {
+          lastSavedKnowledgeRef.current = savedKnowledgeContext;
+          removeLegacyKnowledgeFromBrowserStorage();
+        })
+        .catch(() => {
+          // The next edit will retry without moving private notes back to localStorage.
+        });
+    }, 400);
+  }
+
+  useEffect(() => {
     let cancelled = false;
 
     void loadLocalKnowledgeContext()
       .then((knowledgeContext) => {
-        if (cancelled || knowledgeContext.trim().length === 0) {
+        if (cancelled) {
           return;
         }
 
-        setSession((current) =>
-          current.knowledge.notes.trim().length > 0
-            ? current
-            : setKnowledgeNotes(current, knowledgeContext)
-        );
+        lastSavedKnowledgeRef.current = knowledgeContext;
+        knowledgeHydratedRef.current = true;
+
+        if (!notesEditedRef.current && knowledgeContext.trim().length > 0) {
+          latestNotesRef.current = knowledgeContext;
+          setSession((current) => setKnowledgeNotes(current, knowledgeContext));
+          removeLegacyKnowledgeFromBrowserStorage();
+        } else {
+          scheduleKnowledgeSave(latestNotesRef.current);
+        }
       })
       .catch(() => {
-        // Local knowledge is optional; setup remains manual if it is unavailable.
+        if (!cancelled) {
+          // Avoid overwriting an existing server file after a failed load.
+          knowledgeHydratedRef.current = true;
+          lastSavedKnowledgeRef.current = latestNotesRef.current;
+        }
       });
 
     return () => {
       cancelled = true;
+      if (knowledgeSaveTimeoutRef.current != null) {
+        window.clearTimeout(knowledgeSaveTimeoutRef.current);
+      }
     };
-  }, [setupMemory.knowledgeContext]);
+  }, []);
 
   if (window.location.pathname === "/realtime-lab") {
     return <RealtimeLab />;
@@ -99,7 +161,7 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
       onboardingCompleted: true,
       selectedMode: "training-mode" as const,
       sourceLabel: sourceLabel.trim() || setupMemory.sourceLabel,
-      knowledgeContext: session.knowledge.notes
+      legacyKnowledgeContext: ""
     };
     saveSetupMemory(window.localStorage, nextSetupMemory);
     setSetupMemory(nextSetupMemory);
@@ -107,15 +169,12 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
   }
 
   function handleNotesChange(notes: string) {
+    notesEditedRef.current = true;
+    latestNotesRef.current = notes;
     setSession((current) => setKnowledgeNotes(current, notes));
 
-    if (setupMemory.onboardingCompleted) {
-      const nextSetupMemory = {
-        ...setupMemory,
-        knowledgeContext: notes
-      };
-      saveSetupMemory(window.localStorage, nextSetupMemory);
-      setSetupMemory(nextSetupMemory);
+    if (knowledgeHydratedRef.current) {
+      scheduleKnowledgeSave(notes);
     }
   }
 

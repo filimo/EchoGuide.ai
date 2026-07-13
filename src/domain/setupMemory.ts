@@ -5,7 +5,7 @@ export type SetupMemory = {
   onboardingCompleted: boolean;
   selectedMode: SetupMode;
   sourceLabel: string;
-  knowledgeContext: string;
+  legacyKnowledgeContext: string;
 };
 
 export const setupMemoryStorageKey = "echoguide.setup.v1";
@@ -17,7 +17,7 @@ export function createDefaultSetupMemory(): SetupMemory {
     onboardingCompleted: false,
     selectedMode: "training-mode",
     sourceLabel: defaultSourceLabel,
-    knowledgeContext: ""
+    legacyKnowledgeContext: ""
   };
 }
 
@@ -30,7 +30,9 @@ export function loadSetupMemory(storage: Storage): SetupMemory {
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as Partial<SetupMemory>;
+    const parsed = JSON.parse(rawValue) as Partial<SetupMemory> & {
+      knowledgeContext?: unknown;
+    };
 
     return {
       version: 1,
@@ -40,10 +42,10 @@ export function loadSetupMemory(storage: Storage): SetupMemory {
         typeof parsed.sourceLabel === "string" && parsed.sourceLabel.trim().length > 0
           ? parsed.sourceLabel
           : fallback.sourceLabel,
-      knowledgeContext:
+      legacyKnowledgeContext:
         typeof parsed.knowledgeContext === "string"
           ? parsed.knowledgeContext
-          : fallback.knowledgeContext
+          : fallback.legacyKnowledgeContext
     };
   } catch {
     return fallback;
@@ -51,5 +53,13 @@ export function loadSetupMemory(storage: Storage): SetupMemory {
 }
 
 export function saveSetupMemory(storage: Storage, memory: SetupMemory): void {
-  storage.setItem(setupMemoryStorageKey, JSON.stringify(memory));
+  storage.setItem(
+    setupMemoryStorageKey,
+    JSON.stringify({
+      version: memory.version,
+      onboardingCompleted: memory.onboardingCompleted,
+      selectedMode: memory.selectedMode,
+      sourceLabel: memory.sourceLabel
+    })
+  );
 }

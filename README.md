@@ -117,7 +117,7 @@ The methodology, rubric, and current results are documented in [docs/model-evalu
 | UI | React 19, TypeScript, Vite, CSS |
 | Speech | OpenAI Realtime API, WebRTC, `gpt-4o-transcribe` |
 | Phrase cards | OpenAI Responses API, JSON Schema structured outputs |
-| State | Browser `localStorage`, local JSON session history |
+| State | Browser setup preferences, server-side local notes and JSON session history |
 | Quality | Vitest, Testing Library, TypeScript checks, model-evaluation fixtures |
 | Diagnostics | Privacy-safe JSONL events, WebRTC stats, audio counters |
 
@@ -135,7 +135,7 @@ EchoGuide is an early runnable prototype:
 
 - simplify the control surface for non-technical users;
 - separate the production backend from the Vite development plugin;
-- connect a safe local knowledge-file loader to the product flow;
+- move local knowledge persistence behind an authenticated production backend;
 - evaluate latency and usefulness across a series of practice interviews;
 - define production-grade authentication, storage, and deployment boundaries.
 

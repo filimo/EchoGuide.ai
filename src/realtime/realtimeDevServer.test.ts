@@ -132,6 +132,61 @@ describe("Realtime dev server middleware", () => {
     });
   });
 
+  it("stores pasted notes in the ignored local knowledge pack without an OpenAI key", async () => {
+    const localKnowledgeFilePath = join(
+      mkdtempSync(join(tmpdir(), "echoguide-knowledge-save-")),
+      "private",
+      "knowledge.local.md"
+    );
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: {},
+      readLocalEnv: () => "",
+      localKnowledgeFilePath
+    });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "PUT",
+        url: "/api/knowledge/local",
+        body: JSON.stringify({ knowledgeContext: "  Project: EchoGuide\nRole: owner  " })
+      },
+      res,
+      vi.fn()
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      knowledgeContext: "Project: EchoGuide\nRole: owner"
+    });
+    expect(readFileSync(localKnowledgeFilePath, "utf8")).toBe(
+      "Project: EchoGuide\nRole: owner\n"
+    );
+  });
+
+  it("rejects an invalid pasted-notes payload without overwriting the knowledge pack", async () => {
+    const localKnowledgeFilePath = join(
+      mkdtempSync(join(tmpdir(), "echoguide-knowledge-invalid-")),
+      "knowledge.local.md"
+    );
+    writeFileSync(localKnowledgeFilePath, "Keep this context\n", "utf8");
+    const middleware = createRealtimeClientSecretMiddleware({ localKnowledgeFilePath });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "PUT",
+        url: "/api/knowledge/local",
+        body: JSON.stringify({ knowledgeContext: 42 })
+      },
+      res,
+      vi.fn()
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(readFileSync(localKnowledgeFilePath, "utf8")).toBe("Keep this context\n");
+  });
+
   it("returns a browser-safe client secret payload from local env", async () => {
     const createClientSecret = vi.fn().mockResolvedValue({
       clientSecret: "ek_ephemeral",

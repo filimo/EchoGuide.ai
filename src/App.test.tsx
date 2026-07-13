@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -61,6 +61,87 @@ describe("EchoGuide iPad setup flow", () => {
     expect(await screen.findByDisplayValue("Project: EchoGuide local context")).toBeInTheDocument();
   });
 
+  it("autosaves pasted notes to the server instead of browser storage", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (url === "/api/knowledge/local" && options?.method === "PUT") {
+        const body = JSON.parse(String(options.body)) as { knowledgeContext: string };
+
+        return {
+          ok: true,
+          json: async () => ({ knowledgeContext: body.knowledgeContext.trim() })
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ knowledgeContext: "" })
+      } as Response;
+    });
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Pasted notes"), "Server-side context");
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/knowledge/local",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ knowledgeContext: "Server-side context" })
+        })
+      );
+    });
+    expect(window.localStorage.getItem(setupMemoryStorageKey) ?? "").not.toContain(
+      "Server-side context"
+    );
+  });
+
+  it("migrates legacy browser notes to the server and removes the browser copy", async () => {
+    window.localStorage.setItem(
+      setupMemoryStorageKey,
+      JSON.stringify({
+        version: 1,
+        onboardingCompleted: false,
+        selectedMode: "training-mode",
+        sourceLabel: "ChatGPT Real Voice practice",
+        knowledgeContext: "Legacy browser context"
+      })
+    );
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (url === "/api/knowledge/local" && options?.method === "PUT") {
+        return {
+          ok: true,
+          json: async () => ({ knowledgeContext: "Legacy browser context" })
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ knowledgeContext: "" })
+      } as Response;
+    });
+
+    render(<App />);
+
+    expect(screen.getByLabelText("Pasted notes")).toHaveValue("Legacy browser context");
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/knowledge/local",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ knowledgeContext: "Legacy browser context" })
+        })
+      );
+    });
+    await waitFor(() => {
+      expect(window.localStorage.getItem(setupMemoryStorageKey) ?? "").not.toContain(
+        "Legacy browser context"
+      );
+    });
+  });
+
   it("does not enter live mode until microphone and notes are present", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -89,6 +170,9 @@ describe("EchoGuide iPad setup flow", () => {
     expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
     expect(screen.queryByText("Source: ChatGPT Real Voice practice")).not.toBeInTheDocument();
     expect(screen.queryByText("Can you commit by Friday?")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(setupMemoryStorageKey) ?? "").not.toContain(
+      "Mention dependency review."
+    );
   });
 
   it("enters live mode with a single start live control after setup microphone permission", async () => {

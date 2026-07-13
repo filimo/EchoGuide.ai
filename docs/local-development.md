@@ -57,6 +57,8 @@ For the first smoke test:
 6. verify transcript turns, Russian meaning, bridge phrases, and suggested replies;
 7. stop the session and confirm that the microphone track is released.
 
+After editing `Pasted notes`, reload the page and confirm that the local development server restores the same context from `.echoguide/knowledge.local.md`. The file is ignored by Git and must not contain secrets that should not be sent to phrase analysis.
+
 ## Realtime Lab
 
 Open `/realtime-lab` to inspect raw Realtime events, connection state, VAD behavior, and fallback transcription controls. The lab is a diagnostic surface, not the main product flow.
