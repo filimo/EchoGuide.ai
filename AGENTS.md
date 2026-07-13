@@ -37,4 +37,5 @@ npm run eval:models
 - Make the smallest change that preserves the documented product boundary.
 - Add or update tests with behavioral changes.
 - Run the relevant validation commands before reporting completion.
+- Write git commit messages in English unless the user explicitly requests another language.
 - Keep public documentation in English.
