@@ -156,6 +156,51 @@ describe("Training Live Panel", () => {
     expect(screen.getByText("Realtime: disconnected")).toBeInTheDocument();
   });
 
+  it("does not report a transport error when Stop live closes the data channel", async () => {
+    const user = userEvent.setup();
+    let emitDiagnostic: (event: {
+      type: string;
+      details?: Record<string, boolean | number | string | null>;
+    }) => void = () => {};
+    const disconnect = vi.fn(() => {
+      emitDiagnostic({
+        type: "data_channel.state",
+        details: { state: "closed" }
+      });
+    });
+    const realtimeConnection = {
+      ...createConnection(),
+      disconnect
+    };
+    const connectRealtime = vi.fn().mockImplementation(({ onDiagnosticEvent }) => {
+      emitDiagnostic = onDiagnosticEvent;
+      return Promise.resolve(realtimeConnection);
+    });
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ephemeral-secret",
+          expiresAt: 123
+        })}
+        connectRealtime={connectRealtime}
+        onStopMicrophone={vi.fn()}
+        sessionHistoryClient={createEmptySessionHistoryClient()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(await screen.findByRole("button", { name: "Stop live" }));
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Realtime: disconnected")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Realtime audio path stopped. Diagnostics were recorded; restart live mode.")
+    ).not.toBeInTheDocument();
+  });
+
   it("requests microphone and connects Realtime from the single start live control", async () => {
     const user = userEvent.setup();
     const stream = createStream();

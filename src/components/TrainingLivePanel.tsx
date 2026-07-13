@@ -489,7 +489,7 @@ export function TrainingLivePanel({
       event.type === "data_channel.error" ||
       event.type === "microphone_track.ended";
 
-    if (isClosedTransport) {
+    if (isClosedTransport && realtimeStatusRef.current !== "disconnected") {
       realtimeStatusRef.current = "error";
       setRealtimeStatus("error");
       setErrorMessage("Realtime audio path stopped. Diagnostics were recorded; restart live mode.");
@@ -571,6 +571,7 @@ export function TrainingLivePanel({
 
   useEffect(() => {
     return () => {
+      realtimeStatusRef.current = "disconnected";
       connectionRef.current?.disconnect();
     };
   }, []);
@@ -1063,10 +1064,10 @@ export function TrainingLivePanel({
   }
 
   function handleDisconnect() {
-    connection?.disconnect();
     setConnection(null);
     realtimeStatusRef.current = "disconnected";
     setRealtimeStatus("disconnected");
+    connection?.disconnect();
   }
 
   function handleStopLive() {
