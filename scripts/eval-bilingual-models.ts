@@ -59,6 +59,8 @@ const defaultModels = [
   "gpt-5.6-terra",
   "gpt-5.6-sol"
 ];
+const defaultJudgeModel = "gpt-5.5";
+const defaultJudgeReasoningEffort = "low";
 
 const cases: EvalCase[] = [
   {
@@ -332,6 +334,7 @@ function candidateKey(index: number, caseIndex: number): string {
 async function judgeCandidates(
   apiKey: string,
   judgeModel: string,
+  judgeReasoningEffort: string,
   evalCase: EvalCase,
   caseIndex: number,
   candidates: CandidateResult[]
@@ -347,7 +350,7 @@ async function judgeCandidates(
   }));
   const request = {
     model: judgeModel,
-    reasoning: { effort: "low" },
+    reasoning: { effort: judgeReasoningEffort },
     store: false,
     max_output_tokens: 1200,
     input: [
@@ -416,7 +419,10 @@ async function main(): Promise<void> {
   }
 
   const models = readModels();
-  const judgeModel = readOption("judge") ?? process.env.ECHOGUIDE_EVAL_JUDGE_MODEL ?? "gpt-5.5";
+  const judgeModel =
+    readOption("judge") ?? process.env.ECHOGUIDE_EVAL_JUDGE_MODEL ?? defaultJudgeModel;
+  const judgeReasoningEffort =
+    process.env.ECHOGUIDE_EVAL_JUDGE_REASONING_EFFORT ?? defaultJudgeReasoningEffort;
   const requestedOutput = readOption("output");
   const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const outputPath = resolve(requestedOutput ?? `.echoguide/evals/model-comparison-${timestamp}.json`);
@@ -426,7 +432,14 @@ async function main(): Promise<void> {
 
   for (const [caseIndex, evalCase] of cases.entries()) {
     const candidates = await Promise.all(models.map((model) => runCandidate(apiKey, evalCase, model)));
-    const judgments = await judgeCandidates(apiKey, judgeModel, evalCase, caseIndex, candidates);
+    const judgments = await judgeCandidates(
+      apiKey,
+      judgeModel,
+      judgeReasoningEffort,
+      evalCase,
+      caseIndex,
+      candidates
+    );
 
     for (const candidate of candidates) {
       const judgment = judgments.get(candidate.model);

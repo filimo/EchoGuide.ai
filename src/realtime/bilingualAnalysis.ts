@@ -23,11 +23,18 @@ type AnalyzePhraseOptions = {
   knowledgeContext?: string;
   recentContext?: string[];
   model?: string;
+  reasoningEffort?: string;
   fetchImpl?: typeof fetch;
+};
+
+type BilingualModelOptions = {
+  reasoningEffort?: string;
 };
 
 const fallbackBridgePhrase = "Sure, let me think for a second.";
 
+export const defaultBilingualModel = "gpt-5.6-luna";
+export const defaultBilingualReasoningEffort = "none";
 export const maxKnowledgeContextCharacters = 6000;
 export const maxRecentContextTurns = 15;
 export const maxRecentContextCharacters = 5000;
@@ -62,7 +69,7 @@ export function normalizeRecentContext(value: string[] | undefined): string[] {
   );
 }
 
-function supportsNoReasoningEffort(model: string): boolean {
+function supportsReasoningEffort(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
   return match != null && Number(match[1]) >= 1;
 }
@@ -223,10 +230,13 @@ export function parseBilingualPhraseAnalysis(payload: unknown): BilingualPhraseA
 
 export function buildBilingualPhraseAnalysisRequest(
   transcript: string,
-  model = "gpt-5.6-luna",
+  model = defaultBilingualModel,
   knowledgeContext?: string,
-  recentContext?: string[]
+  recentContext?: string[],
+  modelOptions: BilingualModelOptions = {}
 ) {
+  const reasoningEffort =
+    modelOptions.reasoningEffort?.trim() || defaultBilingualReasoningEffort;
   const normalizedKnowledgeContext = normalizeKnowledgeContext(knowledgeContext);
   const normalizedRecentContext = normalizeRecentContext(recentContext);
   const formattedRecentContext = normalizedRecentContext
@@ -260,7 +270,7 @@ export function buildBilingualPhraseAnalysisRequest(
 
   return {
     model,
-    ...(supportsNoReasoningEffort(model) ? { reasoning: { effort: "none" } } : {}),
+    ...(supportsReasoningEffort(model) ? { reasoning: { effort: reasoningEffort } } : {}),
     store: false,
     max_output_tokens: 700,
     input,
@@ -280,7 +290,10 @@ export async function analyzeBilingualPhrase({
   transcript,
   knowledgeContext,
   recentContext,
-  model = process.env.OPENAI_BILINGUAL_MODEL ?? "gpt-5.6-luna",
+  model = process.env.OPENAI_BILINGUAL_MODEL?.trim() || defaultBilingualModel,
+  reasoningEffort =
+    process.env.OPENAI_BILINGUAL_REASONING_EFFORT?.trim() ||
+    defaultBilingualReasoningEffort,
   fetchImpl = fetch
 }: AnalyzePhraseOptions): Promise<BilingualPhraseAnalysis> {
   const response = await fetchImpl(OPENAI_RESPONSES_URL, {
@@ -291,7 +304,9 @@ export async function analyzeBilingualPhrase({
       "OpenAI-Safety-Identifier": "echoguide-local-dev"
     },
     body: JSON.stringify(
-      buildBilingualPhraseAnalysisRequest(transcript, model, knowledgeContext, recentContext)
+      buildBilingualPhraseAnalysisRequest(transcript, model, knowledgeContext, recentContext, {
+        reasoningEffort
+      })
     )
   });
 

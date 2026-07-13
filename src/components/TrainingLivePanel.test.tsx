@@ -779,7 +779,8 @@ describe("Training Live Panel", () => {
         notes=""
         requestClientSecret={vi.fn().mockResolvedValue({
           clientSecret: "ek_ephemeral",
-          expiresAt: 1756310470
+          expiresAt: 1756310470,
+          transcriptionModel: "gpt-transcribe-custom"
         })}
         connectRealtime={connectRealtime}
       />
@@ -797,7 +798,7 @@ describe("Training Live Panel", () => {
             input: {
               turn_detection: defaultRealtimeVadTurnDetection,
               transcription: {
-                model: "gpt-4o-transcribe",
+                model: "gpt-transcribe-custom",
                 prompt:
                   "The audio should be transcribed as English speech. This is software engineering interview practice. Expect simple English, software projects, AI tools, data cleaning, pattern matching, React, TypeScript, APIs. Ignore short filler sounds and uncertain background noise.",
                 language: "en"

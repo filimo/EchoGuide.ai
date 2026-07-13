@@ -6,6 +6,11 @@ EchoGuide evaluates text models against the real `transcript -> bilingual phrase
 
 The latest recorded comparison selected `gpt-5.6-luna` with `reasoning.effort: "none"` as the default phrase-analysis model. Realtime transcription remains a separate `gpt-4o-transcribe` path.
 
+The runtime values are configured in `.env.local` through `OPENAI_BILINGUAL_MODEL`
+and `OPENAI_BILINGUAL_REASONING_EFFORT`. Realtime transcription uses
+`OPENAI_REALTIME_TRANSCRIPTION_MODEL` and `OPENAI_REALTIME_WHISPER_MODEL`.
+`.env.example` contains the current defaults.
+
 Model availability, preview status, and pricing can change. Re-run the evaluation before treating this choice as a production default.
 
 ## Reproduce the comparison
@@ -15,6 +20,10 @@ npm run eval:models
 ```
 
 The runner reads `OPENAI_API_KEY` from `.env.local` and writes detailed local results under the ignored `.echoguide/evals/` directory. It does not print or persist the key.
+
+Candidate models, judge model, and judge reasoning effort are configured through
+`ECHOGUIDE_EVAL_MODELS`, `ECHOGUIDE_EVAL_JUDGE_MODEL`, and
+`ECHOGUIDE_EVAL_JUDGE_REASONING_EFFORT`.
 
 ## Fixtures
 

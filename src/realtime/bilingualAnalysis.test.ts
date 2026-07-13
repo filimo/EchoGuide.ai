@@ -75,6 +75,23 @@ describe("bilingual phrase analysis", () => {
     });
   });
 
+  it("uses the configured reasoning effort for the bilingual model", () => {
+    const request = buildBilingualPhraseAnalysisRequest(
+      "What was your role?",
+      "gpt-5.6-luna",
+      undefined,
+      undefined,
+      { reasoningEffort: "low" }
+    );
+
+    expect(request).toMatchObject({
+      model: "gpt-5.6-luna",
+      reasoning: {
+        effort: "low"
+      }
+    });
+  });
+
   it("omits reasoning effort for legacy non-reasoning card models", () => {
     const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-4.1-mini");
 

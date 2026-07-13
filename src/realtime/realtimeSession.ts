@@ -5,6 +5,7 @@ export type RealtimeClientSecret = {
   clientSecret: string;
   expiresAt: number;
   sessionId?: string;
+  transcriptionModel?: string;
 };
 
 export type RealtimeLabMode = "whisper-ptt" | "realtime-vad";
@@ -34,7 +35,7 @@ export type RealtimeTurnDetection =
   | null;
 
 export type RealtimeTranscriptionConfig = {
-  model: "gpt-4o-transcribe";
+  model: string;
   prompt: string;
   language?: "en" | "ru";
 };
@@ -64,8 +65,13 @@ type CreateRealtimeClientSecretOptions = {
   apiKey: string;
   mode?: RealtimeLabMode;
   speechLanguage?: RealtimeSpeechLanguage;
+  transcriptionModel?: string;
+  whisperModel?: string;
   fetchImpl?: typeof fetch;
 };
+
+export const defaultRealtimeTranscriptionModel = "gpt-4o-transcribe";
+export const defaultRealtimeWhisperModel = "gpt-realtime-whisper";
 
 export const defaultRealtimeVadTurnDetection = {
   type: "server_vad",
@@ -197,11 +203,12 @@ export function buildRealtimeTurnDetection(
 }
 
 export function buildRealtimeTranscriptionConfig(
-  speechLanguage: RealtimeSpeechLanguage = defaultRealtimeSpeechLanguageSettings
+  speechLanguage: RealtimeSpeechLanguage = defaultRealtimeSpeechLanguageSettings,
+  model = defaultRealtimeTranscriptionModel
 ): RealtimeTranscriptionConfig {
   if (speechLanguage === "english") {
     return {
-      model: "gpt-4o-transcribe",
+      model,
       prompt: englishRealtimeTranscriptionPrompt,
       language: "en"
     };
@@ -209,28 +216,29 @@ export function buildRealtimeTranscriptionConfig(
 
   if (speechLanguage === "russian") {
     return {
-      model: "gpt-4o-transcribe",
+      model,
       prompt: russianRealtimeTranscriptionPrompt,
       language: "ru"
     };
   }
 
   return {
-    model: "gpt-4o-transcribe",
+    model,
     prompt: realtimeTranscriptionPrompt
   };
 }
 
 export function buildRealtimeTranscriptionSessionUpdate(
   settings: RealtimeTurnDetectionSettings,
-  speechLanguage: RealtimeSpeechLanguage = defaultRealtimeSpeechLanguageSettings
+  speechLanguage: RealtimeSpeechLanguage = defaultRealtimeSpeechLanguageSettings,
+  transcriptionModel = defaultRealtimeTranscriptionModel
 ): RealtimeTranscriptionSessionUpdate {
   return {
     type: "transcription",
     audio: {
       input: {
         turn_detection: buildRealtimeTurnDetection(settings),
-        transcription: buildRealtimeTranscriptionConfig(speechLanguage)
+        transcription: buildRealtimeTranscriptionConfig(speechLanguage, transcriptionModel)
       }
     }
   };
@@ -242,7 +250,11 @@ export function parseRealtimeLabMode(value: string | null | undefined): Realtime
 
 export function buildRealtimeClientSecretRequest(
   mode: RealtimeLabMode = "whisper-ptt",
-  options: { speechLanguage?: RealtimeSpeechLanguage } = {}
+  options: {
+    speechLanguage?: RealtimeSpeechLanguage;
+    transcriptionModel?: string;
+    whisperModel?: string;
+  } = {}
 ) {
   if (mode === "realtime-vad") {
     return {
@@ -257,7 +269,10 @@ export function buildRealtimeClientSecretRequest(
             noise_reduction: {
               type: "far_field"
             },
-            transcription: buildRealtimeTranscriptionConfig(options.speechLanguage)
+            transcription: buildRealtimeTranscriptionConfig(
+              options.speechLanguage,
+              options.transcriptionModel
+            )
           }
         }
       }
@@ -274,7 +289,7 @@ export function buildRealtimeClientSecretRequest(
       audio: {
         input: {
           transcription: {
-            model: "gpt-realtime-whisper",
+            model: options.whisperModel ?? defaultRealtimeWhisperModel,
             delay: "medium"
           },
           turn_detection: null
@@ -301,7 +316,15 @@ export function parseRealtimeClientSecretResponse(
 }
 
 export function readOpenAiApiKey(env: NodeJS.ProcessEnv, localEnvText = ""): string | null {
-  const processValue = env.OPENAI_API_KEY?.trim();
+  return readEnvironmentValue(env, "OPENAI_API_KEY", localEnvText);
+}
+
+export function readEnvironmentValue(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  localEnvText = ""
+): string | null {
+  const processValue = env[name]?.trim();
 
   if (processValue) {
     return processValue;
@@ -310,9 +333,9 @@ export function readOpenAiApiKey(env: NodeJS.ProcessEnv, localEnvText = ""): str
   const localLine = localEnvText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .find((line) => line.startsWith("OPENAI_API_KEY="));
+    .find((line) => line.startsWith(`${name}=`));
 
-  const localValue = localLine?.slice("OPENAI_API_KEY=".length).trim();
+  const localValue = localLine?.slice(name.length + 1).trim();
   return localValue ? localValue.replace(/^["']|["']$/g, "") : null;
 }
 
@@ -320,6 +343,8 @@ export async function createRealtimeClientSecret({
   apiKey,
   mode = "whisper-ptt",
   speechLanguage = defaultRealtimeSpeechLanguageSettings,
+  transcriptionModel = defaultRealtimeTranscriptionModel,
+  whisperModel = defaultRealtimeWhisperModel,
   fetchImpl = fetch
 }: CreateRealtimeClientSecretOptions): Promise<RealtimeClientSecret> {
   const response = await fetchImpl(OPENAI_REALTIME_CLIENT_SECRETS_URL, {
@@ -329,7 +354,13 @@ export async function createRealtimeClientSecret({
       "Content-Type": "application/json",
       "OpenAI-Safety-Identifier": "echoguide-local-dev"
     },
-    body: JSON.stringify(buildRealtimeClientSecretRequest(mode, { speechLanguage }))
+    body: JSON.stringify(
+      buildRealtimeClientSecretRequest(mode, {
+        speechLanguage,
+        transcriptionModel,
+        whisperModel
+      })
+    )
   });
 
   const payload = await response.json();
@@ -345,5 +376,9 @@ export async function createRealtimeClientSecret({
     );
   }
 
-  return parseRealtimeClientSecretResponse(payload);
+  return {
+    ...parseRealtimeClientSecretResponse(payload),
+    transcriptionModel:
+      mode === "realtime-vad" ? transcriptionModel : whisperModel
+  };
 }

@@ -132,6 +132,7 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
     clientSecret?: unknown;
     expiresAt?: unknown;
     sessionId?: unknown;
+    transcriptionModel?: unknown;
   };
 
   if (typeof payload.clientSecret !== "string" || typeof payload.expiresAt !== "number") {
@@ -141,7 +142,10 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
   return {
     clientSecret: payload.clientSecret,
     expiresAt: payload.expiresAt,
-    ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {})
+    ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {}),
+    ...(typeof payload.transcriptionModel === "string"
+      ? { transcriptionModel: payload.transcriptionModel }
+      : {})
   };
 }
 
@@ -1036,7 +1040,8 @@ export function TrainingLivePanel({
         clientSecret: clientSecret.clientSecret,
         sessionUpdateAfterOpen: buildRealtimeTranscriptionSessionUpdate(
           turnDetectionSettings,
-          speechLanguage
+          speechLanguage,
+          clientSecret.transcriptionModel
         ),
         onEvent: handleRealtimeEvent,
         onAudioStats: handleAudioStats,

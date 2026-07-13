@@ -108,6 +108,17 @@ The phrase-card model comparison uses real API calls and runs separately:
 npm run eval:models
 ```
 
+The evaluation-only model settings live in `.env.local`:
+
+| Variable | Purpose |
+| --- | --- |
+| `ECHOGUIDE_EVAL_MODELS` | Comma-separated candidate models. The runner sends every evaluation case to each model and compares their phrase cards. |
+| `ECHOGUIDE_EVAL_JUDGE_MODEL` | Independent judge model that scores the candidate cards for grounding, interview usefulness, concise A2/B1 English, and Russian-layer quality. |
+| `ECHOGUIDE_EVAL_JUDGE_REASONING_EFFORT` | Reasoning effort passed to the judge model. Higher effort can make judging slower and more expensive. |
+
+These variables affect only `npm run eval:models`; the live phrase-card model is
+configured separately through `OPENAI_BILINGUAL_MODEL`.
+
 The methodology, rubric, and current results are documented in [docs/model-evaluation.md](docs/model-evaluation.md).
 
 ## Technology

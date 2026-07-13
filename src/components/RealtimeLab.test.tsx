@@ -73,7 +73,8 @@ describe("Realtime Transcription Lab", () => {
     const stream = createStream();
     const requestClientSecret = vi.fn().mockResolvedValue({
       clientSecret: "ek_ephemeral",
-      expiresAt: 1756310470
+      expiresAt: 1756310470,
+      transcriptionModel: "gpt-transcribe-custom"
     });
     const connectRealtime = vi.fn().mockResolvedValue(createConnection());
 
@@ -97,6 +98,9 @@ describe("Realtime Transcription Lab", () => {
           type: "transcription",
           audio: {
             input: expect.objectContaining({
+              transcription: expect.objectContaining({
+                model: "gpt-transcribe-custom"
+              }),
               turn_detection: expect.objectContaining({
                 type: "server_vad",
                 threshold: 0.5,

@@ -71,6 +71,7 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
     clientSecret?: unknown;
     expiresAt?: unknown;
     sessionId?: unknown;
+    transcriptionModel?: unknown;
   };
 
   if (!response.ok) {
@@ -88,7 +89,10 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
   return {
     clientSecret: payload.clientSecret,
     expiresAt: payload.expiresAt,
-    ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {})
+    ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {}),
+    ...(typeof payload.transcriptionModel === "string"
+      ? { transcriptionModel: payload.transcriptionModel }
+      : {})
   };
 }
 
@@ -350,7 +354,9 @@ export function RealtimeLab({
         ...(mode === "realtime-vad"
           ? {
               sessionUpdateAfterOpen: buildRealtimeTranscriptionSessionUpdate(
-                turnDetectionSettings
+                turnDetectionSettings,
+                undefined,
+                clientSecret.transcriptionModel
               )
             }
           : {}),

@@ -41,6 +41,11 @@ The OpenAI API key remains on the local Node.js side. Browser code receives only
 
 The primary mode is transcription-only. EchoGuide does not request model audio output or create a speaking voice-agent session.
 
+The local server reads `OPENAI_REALTIME_TRANSCRIPTION_MODEL` and
+`OPENAI_REALTIME_WHISPER_MODEL` from `.env.local`, applies the selected model to
+the ephemeral Realtime session, and returns the safe model id to the browser so
+the post-connect `session.update` keeps the same transcription model.
+
 ### Turn detection
 
 The user can select:
@@ -59,6 +64,10 @@ Completed meaningful phrases are analyzed separately through the Responses API. 
 - a bounded window of recent meaningful turns;
 - a bounded personal knowledge context;
 - a strict JSON Schema response contract.
+
+The local server reads the phrase-card model and its reasoning effort from
+`OPENAI_BILINGUAL_MODEL` and `OPENAI_BILINGUAL_REASONING_EFFORT` in `.env.local`.
+The tracked `.env.example` records all runtime and evaluation model defaults.
 
 The resulting card contains the normalized thought, speaker role, Russian meaning, question marker, bridge phrase, and two or three bilingual suggested replies.
 

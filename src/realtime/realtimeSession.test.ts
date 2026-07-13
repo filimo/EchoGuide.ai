@@ -50,6 +50,24 @@ describe("Realtime client secret session helpers", () => {
     });
   });
 
+  it("builds Realtime requests with configured transcription models", () => {
+    expect(
+      buildRealtimeClientSecretRequest("whisper-ptt", {
+        whisperModel: "gpt-whisper-custom"
+      }).session.audio.input.transcription
+    ).toMatchObject({
+      model: "gpt-whisper-custom"
+    });
+
+    expect(
+      buildRealtimeClientSecretRequest("realtime-vad", {
+        transcriptionModel: "gpt-transcribe-custom"
+      }).session.audio.input.transcription
+    ).toMatchObject({
+      model: "gpt-transcribe-custom"
+    });
+  });
+
   it("builds a transcription-only realtime VAD session request without audio output", () => {
     expect(buildRealtimeClientSecretRequest("realtime-vad")).toEqual({
       expires_after: {
@@ -166,6 +184,16 @@ describe("Realtime client secret session helpers", () => {
         }
       }
     });
+  });
+
+  it("uses the configured model in a post-connect transcription update", () => {
+    expect(
+      buildRealtimeTranscriptionSessionUpdate(
+        defaultRealtimeTurnDetectionSettings,
+        "english-russian",
+        "gpt-transcribe-custom"
+      ).audio.input.transcription.model
+    ).toBe("gpt-transcribe-custom");
   });
 
   it("loads remembered speech language settings and falls back from broken storage", () => {

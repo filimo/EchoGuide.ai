@@ -9,13 +9,18 @@ import {
 } from "../domain/sessionHistory";
 import {
   analyzeBilingualPhrase,
+  defaultBilingualModel,
+  defaultBilingualReasoningEffort,
   normalizeKnowledgeContext,
   normalizeRecentContext,
   type BilingualPhraseAnalysis
 } from "./bilingualAnalysis";
 import {
   createRealtimeClientSecret,
+  defaultRealtimeTranscriptionModel,
+  defaultRealtimeWhisperModel,
   parseRealtimeLabMode,
+  readEnvironmentValue,
   readOpenAiApiKey,
   type RealtimeLabMode,
   type RealtimeClientSecret
@@ -50,6 +55,8 @@ type MiddlewareNext = () => void;
 type CreateClientSecret = (options: {
   apiKey: string;
   mode: RealtimeLabMode;
+  transcriptionModel: string;
+  whisperModel: string;
 }) => Promise<RealtimeClientSecret>;
 
 type AnalyzePhrase = (options: {
@@ -57,6 +64,8 @@ type AnalyzePhrase = (options: {
   transcript: string;
   knowledgeContext?: string;
   recentContext?: string[];
+  model?: string;
+  reasoningEffort?: string;
 }) => Promise<BilingualPhraseAnalysis>;
 
 type RealtimeClientSecretMiddlewareOptions = {
@@ -341,7 +350,8 @@ export function createRealtimeClientSecretMiddleware({
       return;
     }
 
-    const apiKey = readOpenAiApiKey(env, readLocalEnv());
+    const localEnvText = readLocalEnv();
+    const apiKey = readOpenAiApiKey(env, localEnvText);
 
     if (apiKey == null) {
       appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
@@ -356,6 +366,15 @@ export function createRealtimeClientSecretMiddleware({
     }
 
     if (handlesAnalyzePhrase) {
+      const model =
+        readEnvironmentValue(env, "OPENAI_BILINGUAL_MODEL", localEnvText) ??
+        defaultBilingualModel;
+      const reasoningEffort =
+        readEnvironmentValue(
+          env,
+          "OPENAI_BILINGUAL_REASONING_EFFORT",
+          localEnvText
+        ) ?? defaultBilingualReasoningEffort;
       let requestBody: unknown;
 
       try {
@@ -401,7 +420,14 @@ export function createRealtimeClientSecretMiddleware({
       });
 
       try {
-        const analysis = await analyzePhrase({ apiKey, transcript, knowledgeContext, recentContext });
+        const analysis = await analyzePhrase({
+          apiKey,
+          transcript,
+          knowledgeContext,
+          recentContext,
+          model,
+          reasoningEffort
+        });
         appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
           source: "backend",
           type: "phrase_analysis.completed",
@@ -426,6 +452,12 @@ export function createRealtimeClientSecretMiddleware({
     }
 
     const mode = readRealtimeLabMode(req);
+    const transcriptionModel =
+      readEnvironmentValue(env, "OPENAI_REALTIME_TRANSCRIPTION_MODEL", localEnvText) ??
+      defaultRealtimeTranscriptionModel;
+    const whisperModel =
+      readEnvironmentValue(env, "OPENAI_REALTIME_WHISPER_MODEL", localEnvText) ??
+      defaultRealtimeWhisperModel;
 
     appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
       source: "backend",
@@ -434,7 +466,12 @@ export function createRealtimeClientSecretMiddleware({
     });
 
     try {
-      const clientSecret = await createClientSecret({ apiKey, mode });
+      const clientSecret = await createClientSecret({
+        apiKey,
+        mode,
+        transcriptionModel,
+        whisperModel
+      });
       appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
         source: "backend",
         type: "client_secret.completed",
@@ -442,7 +479,11 @@ export function createRealtimeClientSecretMiddleware({
         expiresAt: clientSecret.expiresAt,
         sessionId: clientSecret.sessionId ?? null
       });
-      sendJson(res, 200, clientSecret);
+      sendJson(res, 200, {
+        ...clientSecret,
+        transcriptionModel:
+          mode === "realtime-vad" ? transcriptionModel : whisperModel
+      });
     } catch (error) {
       appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
         source: "backend",

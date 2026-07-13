@@ -195,7 +195,12 @@ describe("Realtime dev server middleware", () => {
     });
     const middleware = createRealtimeClientSecretMiddleware({
       env: {},
-      readLocalEnv: () => "OPENAI_API_KEY=sk-local-only",
+      readLocalEnv: () =>
+        [
+          "OPENAI_API_KEY=sk-local-only",
+          "OPENAI_REALTIME_TRANSCRIPTION_MODEL=gpt-transcribe-custom",
+          "OPENAI_REALTIME_WHISPER_MODEL=gpt-whisper-custom"
+        ].join("\n"),
       createClientSecret
     });
     const res = createResponse();
@@ -208,14 +213,17 @@ describe("Realtime dev server middleware", () => {
 
     expect(createClientSecret).toHaveBeenCalledWith({
       apiKey: "sk-local-only",
-      mode: "whisper-ptt"
+      mode: "whisper-ptt",
+      transcriptionModel: "gpt-transcribe-custom",
+      whisperModel: "gpt-whisper-custom"
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers["Content-Type"]).toBe("application/json");
     expect(JSON.parse(res.body)).toEqual({
       clientSecret: "ek_ephemeral",
       expiresAt: 1756310470,
-      sessionId: "sess_123"
+      sessionId: "sess_123",
+      transcriptionModel: "gpt-whisper-custom"
     });
     expect(res.body).not.toContain("sk-local-only");
   });
@@ -226,7 +234,11 @@ describe("Realtime dev server middleware", () => {
       expiresAt: 1756310470
     });
     const middleware = createRealtimeClientSecretMiddleware({
-      env: { OPENAI_API_KEY: "sk-process" },
+      env: {
+        OPENAI_API_KEY: "sk-process",
+        OPENAI_REALTIME_TRANSCRIPTION_MODEL: "gpt-transcribe-process",
+        OPENAI_REALTIME_WHISPER_MODEL: "gpt-whisper-process"
+      },
       readLocalEnv: () => "",
       createClientSecret
     });
@@ -240,7 +252,12 @@ describe("Realtime dev server middleware", () => {
 
     expect(createClientSecret).toHaveBeenCalledWith({
       apiKey: "sk-process",
-      mode: "realtime-vad"
+      mode: "realtime-vad",
+      transcriptionModel: "gpt-transcribe-process",
+      whisperModel: "gpt-whisper-process"
+    });
+    expect(JSON.parse(res.body)).toMatchObject({
+      transcriptionModel: "gpt-transcribe-process"
     });
     expect(res.statusCode).toBe(200);
   });
@@ -307,7 +324,12 @@ describe("Bilingual analysis dev middleware", () => {
     });
     const middleware = createRealtimeClientSecretMiddleware({
       env: {},
-      readLocalEnv: () => "OPENAI_API_KEY=sk-local-only",
+      readLocalEnv: () =>
+        [
+          "OPENAI_API_KEY=sk-local-only",
+          "OPENAI_BILINGUAL_MODEL=gpt-5.6-sol",
+          "OPENAI_BILINGUAL_REASONING_EFFORT=low"
+        ].join("\n"),
       analyzePhrase
     });
     const res = createResponse();
@@ -338,7 +360,9 @@ describe("Bilingual analysis dev middleware", () => {
         "I read articles.",
         "I test AI tools in small projects.",
         "Can you walk me through your recent project?"
-      ]
+      ],
+      model: "gpt-5.6-sol",
+      reasoningEffort: "low"
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({
@@ -380,7 +404,9 @@ describe("Bilingual analysis dev middleware", () => {
       apiKey: "sk-process",
       transcript: "What was your role?",
       knowledgeContext: "",
-      recentContext: []
+      recentContext: [],
+      model: "gpt-5.6-luna",
+      reasoningEffort: "none"
     });
     expect(res.statusCode).toBe(200);
   });
@@ -421,7 +447,9 @@ describe("Bilingual analysis dev middleware", () => {
       apiKey: "sk-process",
       transcript,
       knowledgeContext: "",
-      recentContext: []
+      recentContext: [],
+      model: "gpt-5.6-luna",
+      reasoningEffort: "none"
     });
     expect(res.statusCode).toBe(200);
   });
@@ -458,7 +486,9 @@ describe("Bilingual analysis dev middleware", () => {
       apiKey: "sk-process",
       transcript: "What was your role?",
       knowledgeContext: "x".repeat(6000),
-      recentContext: []
+      recentContext: [],
+      model: "gpt-5.6-luna",
+      reasoningEffort: "none"
     });
     expect(res.statusCode).toBe(200);
   });
