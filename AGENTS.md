@@ -36,6 +36,9 @@ npm run eval:models
 
 - Make the smallest change that preserves the documented product boundary.
 - Add or update tests with behavioral changes.
+- Update `CHANGELOG.md` in the same change when users would notice the new
+  feature, behavior change, or fix. Keep internal refactors and test-only work
+  out of the changelog.
 - Run the relevant validation commands before reporting completion.
 - Write git commit messages in English unless the user explicitly requests another language.
 - Keep public documentation in English.

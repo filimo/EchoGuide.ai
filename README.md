@@ -12,6 +12,8 @@
 
 *A quick tour of turn-detection modes, transcript selection, grounded reply options, local session history, and editable notes.*
 
+**Project updates:** [See what changed](CHANGELOG.md).
+
 EchoGuide is an experimental iPad companion for interview practice and live English conversations. It does not try to replace the speaker or generate a long, polished monologue. Its job is smaller and more practical: remove the pause between “I understand the question” and “I can answer it in simple English.”
 
 ## The problem
