@@ -42,14 +42,16 @@ describe("bilingual phrase analysis", () => {
     });
 
     expect(request.input[0]?.content).toContain("A2/B1");
-    expect(request.input[0]?.content).toContain("short, simple English");
+    expect(request.input[0]?.content).toContain("clear, natural spoken English");
     expect(request.input[0]?.content).toContain("The transcript can contain English or Russian");
-    expect(request.input[0]?.content).toContain("2-4 short conversational English sentences");
-    expect(request.input[0]?.content).toContain("Each English sentence must be maximum 10 words");
-    expect(request.input[0]?.content).toContain("context");
-    expect(request.input[0]?.content).toContain("challenge");
-    expect(request.input[0]?.content).toContain("action");
-    expect(request.input[0]?.content).toContain("outcome");
+    expect(request.input[0]?.content).toContain("1-3 short conversational English sentences");
+    expect(request.input[0]?.content).toContain("no more than 45 words in total");
+    expect(request.input[0]?.content).toContain("answer directly in the first sentence");
+    expect(request.input[0]?.content).toContain("brief situation-action-result flow");
+    expect(request.input[0]?.content).toContain(
+      "Never force a challenge, action, or outcome into every answer"
+    );
+    expect(request.input[0]?.content).toContain("Use contractions");
     expect(request.input[0]?.content).toContain("whyUse");
     expect(request.input[0]?.content).toContain("Classify the active transcript speakerRole");
     expect(request.text.format.schema.required).toContain("speakerRole");
@@ -57,10 +59,16 @@ describe("bilingual phrase analysis", () => {
       request.text.format.schema.properties.suggestedReplies.items.required
     ).toContain("whyUse");
     expect(request.input[0]?.content).toContain(
-      "For every user draft answer, keep the user's short sentence style"
+      "Improve it into natural spoken English instead of giving feedback about it"
     );
     expect(request.input[0]?.content).toContain(
-      "prefer adding challenge and outcome if they are missing"
+      "Remove filler, false starts, accidental repetition, and obvious transcription errors"
+    );
+    expect(request.input[0]?.content).toContain(
+      "silently read every English reply as spoken language"
+    );
+    expect(request.input[0]?.content).not.toContain(
+      "Each English sentence must be maximum 10 words"
     );
   });
 

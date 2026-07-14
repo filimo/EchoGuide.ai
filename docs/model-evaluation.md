@@ -27,7 +27,7 @@ Candidate models, judge model, and judge reasoning effort are configured through
 
 ## Fixtures
 
-Each candidate receives the same six synthetic, privacy-safe scenarios:
+Each candidate receives the same eight synthetic, privacy-safe scenarios:
 
 1. a direct interviewer question about the user's role;
 2. a short draft answer without an outcome;
@@ -35,17 +35,23 @@ Each candidate receives the same six synthetic, privacy-safe scenarios:
 4. a coherent thought assembled from several transcript fragments;
 5. a noisy, incomplete utterance where facts must not be invented;
 6. a technical challenge with bounded factual context.
+7. a direct weakness question that should not be forced into a STAR template;
+8. a pressure question about AI use that requires a direct, honest answer.
 
 ## Scoring
 
 The score combines two layers:
 
-- **30% mechanical contract:** question classification, two or three replies, short bridge phrase, compact labels, bounded sentence length, translations, and `whyUse` guidance;
+- **30% mechanical contract:** question classification, two or three replies, short bridge phrase, compact labels, one to three conversational sentences within 45 words, translations, and `whyUse` guidance;
 - **70% blind quality judge:** factual grounding, interview usefulness, natural A2/B1 English, coherent-thought selection, and Russian-layer quality.
 
 Candidate identities are hidden behind rotating keys to reduce position bias.
 
 ## Recorded result
+
+The recorded comparison below used the earlier, stricter sentence-shape contract.
+Re-run the evaluation before using these scores to compare models under the current
+natural spoken-answer prompt.
 
 Two runs on July 11, 2026 produced the following comparison:
 

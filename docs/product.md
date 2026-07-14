@@ -41,7 +41,11 @@ The live UI shows only two or three short answer options. A complete sentence ap
 
 ### Concise English
 
-Suggested replies target clear A2/B1 English: simple vocabulary, active voice, and one idea per sentence. The first answer should be complete but leave room for a follow-up question.
+Suggested replies target natural spoken A2/B1 English: simple vocabulary, active
+voice, contractions where they sound natural, and one idea per sentence. Direct
+questions get direct answers; behavioral questions use a brief situation-action-result
+flow only when the available facts support it. The first answer should be complete
+but leave room for a follow-up question.
 
 ### Grounded answers
 

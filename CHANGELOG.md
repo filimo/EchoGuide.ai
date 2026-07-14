@@ -14,6 +14,12 @@ Until the first versioned release, changes are grouped by date.
   messages with an explicit speaker role, restore the original recognized text,
   and generate a replacement phrase card from the correction.
 
+### Changed
+
+- Suggested interview replies now favor natural spoken English, answer direct
+  questions directly, and use a short situation-action-result structure only
+  when the question and available facts call for it.
+
 ### Fixed
 
 - An unexpected microphone or WebRTC transport stop now releases the stale live

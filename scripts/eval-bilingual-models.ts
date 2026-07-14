@@ -111,6 +111,26 @@ const cases: EvalCase[] = [
     expectedIsQuestion: true,
     knowledgeContext:
       "Example: an AI-generated description flow produced unstable validation results. Action: added structured validation and clearer failure reasons. Outcome: the team could review results more reliably."
+  },
+  {
+    id: "direct-weakness-question",
+    description: "Прямой вопрос о слабой стороне без искусственного STAR-шаблона",
+    transcript: "What's your biggest weakness?",
+    expectedIsQuestion: true,
+    knowledgeContext:
+      "Draft answer: I sometimes spend too much time on details. I now set clear priorities and time limits. This helps me maintain quality while working faster."
+  },
+  {
+    id: "ai-use-pressure-question",
+    description: "Жёсткий прямой вопрос об использовании AI",
+    transcript: "Aren't you relying on AI right now?",
+    expectedIsQuestion: true,
+    knowledgeContext:
+      "The user uses AI for English language support. The professional experience, examples, and technical reasoning are the user's own. Do not claim that AI is not being used.",
+    recentContext: [
+      "Interviewer: Are you using AI tools during this interview?",
+      "Me: Yes. I use AI to practice English. The experience and examples are my own."
+    ]
   }
 ];
 
@@ -196,16 +216,14 @@ function checkContract(
     },
     {
       name: "sentence-count",
-      passed: sentenceGroups.every((sentences) => sentences.length >= 2 && sentences.length <= 4),
+      passed: sentenceGroups.every((sentences) => sentences.length >= 1 && sentences.length <= 3),
       details: sentenceGroups.map((sentences) => sentences.length).join(", "),
       weight: 20
     },
     {
-      name: "sentence-length",
-      passed: sentenceGroups.every((sentences) => sentences.every((sentence) => countWords(sentence) <= 10)),
-      details: sentenceGroups
-        .map((sentences) => Math.max(...sentences.map(countWords), 0))
-        .join(", "),
+      name: "reply-length",
+      passed: replies.every((reply) => countWords(reply.fullSentence) <= 45),
+      details: replies.map((reply) => countWords(reply.fullSentence)).join(", "),
       weight: 25
     },
     {
