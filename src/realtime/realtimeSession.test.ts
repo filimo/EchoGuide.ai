@@ -84,7 +84,7 @@ describe("Realtime client secret session helpers", () => {
             transcription: {
               model: "gpt-4o-transcribe",
               prompt:
-                "The audio may contain only English or Russian speech. This is software engineering interview practice. Expect simple English, Russian clarifications, software projects, AI tools, data cleaning, pattern matching, React, TypeScript, APIs. Ignore short filler sounds, uncertain background noise, and anything that looks like another language."
+                "The audio may contain English, Russian, or a natural mix of both. The conversation may be about any topic, including everyday life, hobbies, personal stories, work, or technical subjects. Transcribe all clearly audible speech faithfully, including short replies, incomplete phrases, names, informal wording, and natural code-switching. Keep the language actually spoken and do not omit speech because it is brief or unrelated to work. Ignore only non-speech noise and audio that is too unclear to transcribe."
             }
           }
         }
@@ -178,7 +178,7 @@ describe("Realtime client secret session helpers", () => {
           transcription: {
             model: "gpt-4o-transcribe",
             prompt:
-              "The audio should be transcribed as English speech. This is software engineering interview practice. Expect simple English, software projects, AI tools, data cleaning, pattern matching, React, TypeScript, APIs. Ignore short filler sounds and uncertain background noise.",
+              "The spoken language is English. The conversation may be about any topic, including everyday life, hobbies, personal stories, work, or technical subjects. Transcribe all clearly audible speech faithfully, including short replies, incomplete phrases, names, and informal wording. Do not omit speech because it is brief or unrelated to work. Ignore only non-speech noise and audio that is too unclear to transcribe.",
             language: "en"
           }
         }

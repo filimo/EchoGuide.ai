@@ -16,6 +16,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Realtime and recovery transcription prompts are now topic-neutral and preserve
+  brief, informal, and incomplete speech instead of assuming a software
+  interview.
 - Suggested interview replies now favor natural spoken English, answer direct
   questions directly, and use a short situation-action-result structure only
   when the question and available facts call for it.

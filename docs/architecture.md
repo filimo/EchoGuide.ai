@@ -42,6 +42,12 @@ The OpenAI API key remains on the local Node.js side. Browser code receives only
 
 The primary mode is transcription-only. EchoGuide does not request model audio output or create a speaking voice-agent session.
 
+The transcription prompt is topic-neutral: it accepts everyday conversation,
+hobbies, personal stories, work, and technical subjects, and asks the model to
+preserve brief, incomplete, and informal speech. The selected speech-language
+mode still controls whether the session is fixed to English, fixed to Russian,
+or left open to natural English/Russian code-switching.
+
 The local server reads `OPENAI_REALTIME_TRANSCRIPTION_MODEL` and
 `OPENAI_REALTIME_WHISPER_MODEL` from `.env.local`, applies the selected model to
 the ephemeral Realtime session, and returns the safe model id to the browser so

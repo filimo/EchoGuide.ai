@@ -886,7 +886,7 @@ describe("Training Live Panel", () => {
               transcription: {
                 model: "gpt-transcribe-custom",
                 prompt:
-                  "The audio should be transcribed as English speech. This is software engineering interview practice. Expect simple English, software projects, AI tools, data cleaning, pattern matching, React, TypeScript, APIs. Ignore short filler sounds and uncertain background noise.",
+                  "The spoken language is English. The conversation may be about any topic, including everyday life, hobbies, personal stories, work, or technical subjects. Transcribe all clearly audible speech faithfully, including short replies, incomplete phrases, names, and informal wording. Do not omit speech because it is brief or unrelated to work. Ignore only non-speech noise and audio that is too unclear to transcribe.",
                 language: "en"
               }
             }
