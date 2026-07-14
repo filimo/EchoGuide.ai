@@ -11,6 +11,12 @@ Until the first versioned release, changes are grouped by date.
 
 - A public changelog linked from the project README.
 
+### Fixed
+
+- An unexpected microphone or WebRTC transport stop now releases the stale live
+  session immediately, so Training Mode can be restarted without an extra
+  `Stop live` action.
+
 ## 2026-07-13
 
 ### Added

@@ -201,6 +201,92 @@ describe("Training Live Panel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("releases the failed live session when the microphone track ends", async () => {
+    const user = userEvent.setup();
+    const initialStream = createStream();
+    const replacementStream = createStream();
+    let emitDiagnostic: (event: {
+      type: string;
+      details?: Record<string, boolean | number | string | null>;
+    }) => void = () => {};
+    const disconnect = vi.fn(() => {
+      emitDiagnostic({
+        type: "data_channel.state",
+        details: { state: "closed" }
+      });
+    });
+    const realtimeConnection = {
+      ...createConnection(),
+      disconnect
+    };
+    const connectRealtime = vi.fn().mockImplementation(({ onDiagnosticEvent }) => {
+      emitDiagnostic = onDiagnosticEvent;
+      return Promise.resolve(realtimeConnection);
+    });
+    const onStopMicrophone = vi.fn();
+    const onRequestMicrophone = vi.fn();
+    const requestClientSecret = vi.fn().mockResolvedValue({
+      clientSecret: "ephemeral-secret",
+      expiresAt: 123
+    });
+    const submitDiagnostics = vi.fn().mockResolvedValue("diag-track-ended");
+    const sessionHistoryClient = createEmptySessionHistoryClient();
+
+    function TrackFailureHarness() {
+      const [stream, setStream] = useState<MediaStream | null>(initialStream);
+
+      return (
+        <TrainingLivePanel
+          stream={stream}
+          notes=""
+          requestClientSecret={requestClientSecret}
+          connectRealtime={connectRealtime}
+          onRequestMicrophone={() => {
+            onRequestMicrophone();
+            setStream(replacementStream);
+            return replacementStream;
+          }}
+          onStopMicrophone={() => {
+            onStopMicrophone();
+            setStream(null);
+          }}
+          submitDiagnostics={submitDiagnostics}
+          sessionHistoryClient={sessionHistoryClient}
+        />
+      );
+    }
+
+    render(<TrackFailureHarness />);
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await screen.findByRole("button", { name: "Stop live" });
+
+    act(() => {
+      emitDiagnostic({
+        type: "microphone_track.ended",
+        details: { kind: "audio", readyState: "ended" }
+      });
+    });
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(onStopMicrophone).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(screen.getByText("Realtime: error")).toBeInTheDocument();
+    expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Realtime audio path stopped. Diagnostics were recorded; restart live mode.")
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+
+    expect(onRequestMicrophone).toHaveBeenCalledTimes(1);
+    expect(connectRealtime).toHaveBeenCalledTimes(2);
+    expect(connectRealtime).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stream: replacementStream })
+    );
+    expect(await screen.findByRole("button", { name: "Stop live" })).toBeInTheDocument();
+  });
+
   it("requests microphone and connects Realtime from the single start live control", async () => {
     const user = userEvent.setup();
     const stream = createStream();

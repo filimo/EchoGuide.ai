@@ -493,11 +493,16 @@ export function TrainingLivePanel({
       event.type === "data_channel.error" ||
       event.type === "microphone_track.ended";
 
-    if (isClosedTransport && realtimeStatusRef.current !== "disconnected") {
+    if (
+      isClosedTransport &&
+      (realtimeStatusRef.current === "connecting" || realtimeStatusRef.current === "connected")
+    ) {
       realtimeStatusRef.current = "error";
       setRealtimeStatus("error");
       setErrorMessage("Realtime audio path stopped. Diagnostics were recorded; restart live mode.");
       void flushDiagnostics();
+      releaseLiveTransport("error");
+      scheduleDiagnosticsStop();
     }
   }
 
@@ -507,10 +512,11 @@ export function TrainingLivePanel({
     }
 
     diagnosticsSendingRef.current = true;
+    const diagnosticConnection = connectionRef.current;
+    const activeStream = activeStreamRef.current ?? stream;
 
     try {
-      await connectionRef.current?.collectStats?.();
-      const activeStream = activeStreamRef.current ?? stream;
+      await diagnosticConnection?.collectStats?.();
       const pendingEvents = [...diagnosticEventsRef.current];
       const report: RealtimeDiagnosticReport = {
         version: 1,
@@ -1052,6 +1058,7 @@ export function TrainingLivePanel({
         }
       });
 
+      connectionRef.current = realtimeConnection;
       setConnection(realtimeConnection);
       realtimeStatusRef.current = "connected";
       setRealtimeStatus("connected");
@@ -1068,17 +1075,14 @@ export function TrainingLivePanel({
     }
   }
 
-  function handleDisconnect() {
-    setConnection(null);
-    realtimeStatusRef.current = "disconnected";
-    setRealtimeStatus("disconnected");
-    connection?.disconnect();
-  }
+  function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
+    const liveConnection = connectionRef.current;
 
-  function handleStopLive() {
-    recordDiagnostic("training_live.stop");
-    void flushDiagnostics();
-    handleDisconnect();
+    connectionRef.current = null;
+    setConnection(null);
+    realtimeStatusRef.current = nextStatus;
+    setRealtimeStatus(nextStatus);
+    liveConnection?.disconnect();
     setAudioStats(null);
     onStopMicrophone?.();
     activeStreamRef.current = null;
@@ -1087,10 +1091,24 @@ export function TrainingLivePanel({
       window.clearTimeout(unacknowledgedSpeechTimerRef.current);
       unacknowledgedSpeechTimerRef.current = null;
     }
+  }
+
+  function scheduleDiagnosticsStop() {
+    if (diagnosticsStopTimerRef.current != null) {
+      window.clearTimeout(diagnosticsStopTimerRef.current);
+    }
+
     diagnosticsStopTimerRef.current = window.setTimeout(() => {
       diagnosticsActiveRef.current = false;
       diagnosticsStopTimerRef.current = null;
     }, 15_000);
+  }
+
+  function handleStopLive() {
+    recordDiagnostic("training_live.stop");
+    void flushDiagnostics();
+    releaseLiveTransport("disconnected");
+    scheduleDiagnosticsStop();
   }
 
   async function handleCopyTranscript() {
