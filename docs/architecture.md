@@ -8,7 +8,8 @@ EchoGuide separates live speech transcription from bilingual phrase analysis. Re
 flowchart LR
     M["Browser microphone"] --> W["WebRTC peer connection"]
     W --> R["OpenAI Realtime transcription"]
-    R --> T["Transcript turns"]
+    R --> T["Realtime transcript turns"]
+    U["Manual additions<br/>and corrections"] --> T
     T --> A["Phrase analysis request"]
     K["Pasted notes"] --> A
     A --> C["Bilingual phrase card"]
@@ -69,11 +70,14 @@ The local server reads the phrase-card model and its reasoning effort from
 `OPENAI_BILINGUAL_MODEL` and `OPENAI_BILINGUAL_REASONING_EFFORT` in `.env.local`.
 The tracked `.env.example` records all runtime and evaluation model defaults.
 
-The resulting card contains the normalized thought, speaker role, Russian meaning, question marker, bridge phrase, and two or three bilingual suggested replies.
+The resulting card contains the normalized thought, speaker role, Russian meaning,
+question marker, bridge phrase, and two or three bilingual suggested replies. A
+manual correction invalidates the previous card for that turn; a late response for
+the superseded text is ignored, and the user can generate a replacement card.
 
 ### Local persistence
 
-Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Raw audio is not stored.
+Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Transcript turns record whether they came from Realtime or manual input; corrected Realtime turns retain the original recognized text so it can be restored. Raw audio is not stored.
 
 ## Diagnostics and privacy
 

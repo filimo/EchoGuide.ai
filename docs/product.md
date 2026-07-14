@@ -28,6 +28,7 @@ The product is not intended to automate the conversation. It keeps the user in c
 - Russian meaning and question detection;
 - instant local bridge phrases;
 - grounded suggested replies based on recent context and pasted notes;
+- manual transcript additions and corrections with explicit speaker roles;
 - manual card generation from selected transcript turns;
 - local session history without raw audio;
 - privacy-safe Realtime diagnostics.
@@ -48,7 +49,10 @@ Personal notes are factual background, not permission to invent details. The pro
 
 ### Human control
 
-The user chooses the active transcript turn, reply, bridge phrase, and whether the UI follows the latest live phrase. EchoGuide assists the conversation; it does not speak on the user's behalf.
+The user chooses the active transcript turn, can add a missed phrase or correct a
+recognized phrase, selects the speaker role, reply, bridge phrase, and whether the
+UI follows the latest live phrase. EchoGuide assists the conversation; it does not
+speak on the user's behalf.
 
 ## Current limitations
 

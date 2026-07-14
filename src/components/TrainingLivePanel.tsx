@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownToLine, Eraser, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
   ensureUniqueSessionPhraseIds,
   type SessionHistoryBridgePhrase,
@@ -44,6 +44,14 @@ type TrainingPhraseCard = {
 
 type TranscriptTurn = SessionHistoryTranscriptTurn;
 
+type TranscriptEditorState = {
+  mode: "add" | "edit";
+  turnId: string | null;
+  speakerLabel: SessionSpeakerLabel;
+  text: string;
+  originalText?: string;
+};
+
 type RealtimeStatus = "disconnected" | "connecting" | "connected" | "error";
 
 const localBridgePhrases = [
@@ -84,6 +92,7 @@ const maxFreshThoughtCharacters = 5000;
 const unacknowledgedSpeechDelayMs = 2500;
 const loudSpeechRmsThreshold = 0.01;
 const loudSpeechPeakThreshold = 0.05;
+const transcriptSpeakerLabels: SessionSpeakerLabel[] = ["Heard", "Interviewer", "Me"];
 
 type TrainingLivePanelProps = {
   stream: MediaStream | null;
@@ -334,6 +343,20 @@ function getCompactSpeakerLabel(speakerLabel: SessionSpeakerLabel): string {
   return speakerLabel === "Me" ? "ME" : "?";
 }
 
+function createManualTranscriptTurnId(turns: TranscriptTurn[]): string {
+  const baseId = `manual-phrase-${Date.now()}`;
+  const existingIds = new Set(turns.map((turn) => turn.id));
+  let candidateId = baseId;
+  let suffix = 0;
+
+  while (existingIds.has(candidateId)) {
+    suffix += 1;
+    candidateId = `${baseId}-${suffix}`;
+  }
+
+  return candidateId;
+}
+
 export function TrainingLivePanel({
   stream,
   notes,
@@ -367,6 +390,7 @@ export function TrainingLivePanel({
   const [selectedTranscriptTurnIds, setSelectedTranscriptTurnIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [transcriptEditor, setTranscriptEditor] = useState<TranscriptEditorState | null>(null);
   const [usedBridgePhrases, setUsedBridgePhrases] = useState<SessionHistoryBridgePhrase[]>([]);
   const [savedSessions, setSavedSessions] = useState<SessionHistoryEntry[]>([]);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
@@ -391,6 +415,8 @@ export function TrainingLivePanel({
   const transcriptTurnsRef = useRef<TranscriptTurn[]>([]);
   const deletedTranscriptTurnIdsRef = useRef<Set<string>>(new Set());
   const manuallyAssignedSpeakerTurnIdsRef = useRef<Set<string>>(new Set());
+  const phraseAnalysisRevisionRef = useRef<Map<string, number>>(new Map());
+  const phraseAnalysisSequenceRef = useRef(0);
   const autoOpenedLatestSessionRef = useRef(false);
   const diagnosticEventsRef = useRef<RealtimeDiagnosticEvent[]>([]);
   const audioStatsRef = useRef<RealtimeAudioStats | null>(null);
@@ -696,6 +722,41 @@ export function TrainingLivePanel({
     setFollowLive(nextFollowLive);
   }
 
+  function beginPhraseAnalysis(phraseId: string): number {
+    phraseAnalysisSequenceRef.current += 1;
+    const revision = phraseAnalysisSequenceRef.current;
+
+    phraseAnalysisRevisionRef.current.set(phraseId, revision);
+    setPendingAnalysisIds((current) => new Set(current).add(phraseId));
+    return revision;
+  }
+
+  function isCurrentPhraseAnalysis(phraseId: string, revision: number): boolean {
+    return phraseAnalysisRevisionRef.current.get(phraseId) === revision;
+  }
+
+  function finishPhraseAnalysis(phraseId: string, revision: number) {
+    if (!isCurrentPhraseAnalysis(phraseId, revision)) {
+      return;
+    }
+
+    setPendingAnalysisIds((current) => {
+      const next = new Set(current);
+      next.delete(phraseId);
+      return next;
+    });
+  }
+
+  function invalidatePhraseAnalysis(phraseId: string) {
+    phraseAnalysisSequenceRef.current += 1;
+    phraseAnalysisRevisionRef.current.set(phraseId, phraseAnalysisSequenceRef.current);
+    setPendingAnalysisIds((current) => {
+      const next = new Set(current);
+      next.delete(phraseId);
+      return next;
+    });
+  }
+
   function updateTranscriptSpeakerLabel(
     turnId: string,
     speakerLabel: SessionSpeakerLabel,
@@ -814,7 +875,7 @@ export function TrainingLivePanel({
       return;
     }
 
-    setPendingAnalysisIds((current) => new Set(current).add(phraseId));
+    const analysisRevision = beginPhraseAnalysis(phraseId);
 
     if (shouldShowAnalysis) {
       setAnalysisStatus("loading");
@@ -824,12 +885,10 @@ export function TrainingLivePanel({
     try {
       const nextAnalysis = await analyzePhrase(trimmedTranscript, notes, recentContext);
 
-      if (deletedTranscriptTurnIdsRef.current.has(phraseId)) {
-        setPendingAnalysisIds((current) => {
-          const next = new Set(current);
-          next.delete(phraseId);
-          return next;
-        });
+      if (
+        deletedTranscriptTurnIdsRef.current.has(phraseId) ||
+        !isCurrentPhraseAnalysis(phraseId, analysisRevision)
+      ) {
         return;
       }
 
@@ -846,20 +905,16 @@ export function TrainingLivePanel({
       }
 
       setPhraseCards((current) => [...current, nextCard].slice(-20));
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(phraseId);
-        return next;
-      });
+      finishPhraseAnalysis(phraseId, analysisRevision);
       if (shouldShowAnalysis) {
         setAnalysisStatus("ready");
       }
     } catch (error) {
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(phraseId);
-        return next;
-      });
+      if (!isCurrentPhraseAnalysis(phraseId, analysisRevision)) {
+        return;
+      }
+
+      finishPhraseAnalysis(phraseId, analysisRevision);
       if (shouldShowAnalysis) {
         setAnalysisStatus("error");
       }
@@ -974,7 +1029,8 @@ export function TrainingLivePanel({
         const nextTurn = {
           id: phraseId,
           speakerLabel: "Heard" as const,
-          text: completedTranscript
+          text: completedTranscript,
+          source: "realtime" as const
         };
         const nextTranscriptTurns = [...transcriptTurnsRef.current, nextTurn].slice(-50);
         transcriptTurnsRef.current = nextTranscriptTurns;
@@ -1139,6 +1195,10 @@ export function TrainingLivePanel({
     setTranscriptSelectionMode((current) => {
       const next = !current;
 
+      if (next) {
+        setTranscriptEditor(null);
+      }
+
       if (!next) {
         setSelectedTranscriptTurnIds(new Set());
       }
@@ -1179,6 +1239,7 @@ export function TrainingLivePanel({
 
     selectedIds.forEach((turnId) => deletedTranscriptTurnIdsRef.current.add(turnId));
     selectedIds.forEach((turnId) => manuallyAssignedSpeakerTurnIdsRef.current.delete(turnId));
+    selectedIds.forEach((turnId) => invalidatePhraseAnalysis(turnId));
 
     const nextTranscriptTurns = transcriptTurns.filter((turn) => !selectedIds.has(turn.id));
     const nextPhraseCards = phraseCards.filter((card) => !selectedIds.has(card.id));
@@ -1225,10 +1286,15 @@ export function TrainingLivePanel({
     setSelectedPhraseCardId(manualPhraseId);
     setAnalysisStatus("loading");
     setSelectedReplyIndex(null);
-    setPendingAnalysisIds((current) => new Set(current).add(manualPhraseId));
+    const analysisRevision = beginPhraseAnalysis(manualPhraseId);
 
     try {
       const nextAnalysis = await analyzePhrase(selectedTranscript, notes, selectedContext);
+
+      if (!isCurrentPhraseAnalysis(manualPhraseId, analysisRevision)) {
+        return;
+      }
+
       const nextCard = {
         id: manualPhraseId,
         transcript: selectedTranscript,
@@ -1237,47 +1303,44 @@ export function TrainingLivePanel({
       };
 
       setPhraseCards((current) => [...current, nextCard].slice(-20));
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(manualPhraseId);
-        return next;
-      });
+      finishPhraseAnalysis(manualPhraseId, analysisRevision);
       setAnalysisStatus("ready");
     } catch (error) {
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(manualPhraseId);
-        return next;
-      });
+      if (!isCurrentPhraseAnalysis(manualPhraseId, analysisRevision)) {
+        return;
+      }
+
+      finishPhraseAnalysis(manualPhraseId, analysisRevision);
       setAnalysisStatus("error");
       setErrorMessage(toErrorMessage(error));
     }
   }
 
-  async function handleGenerateSelectedTranscriptTurnCard() {
-    if (selectedTranscriptTurn == null) {
-      return;
-    }
-
-    const transcript = selectedTranscriptTurn.text.trim();
+  async function generateTranscriptTurnCard(turn: TranscriptTurn, contextTurns: TranscriptTurn[]) {
+    const transcript = turn.text.trim();
 
     if (transcript.length === 0) {
       return;
     }
 
-    const phraseId = selectedTranscriptTurn.id;
+    const phraseId = turn.id;
 
     setFollowLiveMode(false);
     setAnalysisStatus("loading");
     setSelectedReplyIndex(null);
-    setPendingAnalysisIds((current) => new Set(current).add(phraseId));
+    const analysisRevision = beginPhraseAnalysis(phraseId);
 
     try {
       const nextAnalysis = await analyzePhrase(
         transcript,
         notes,
-        buildRecentAnalysisContext(transcriptTurns, phraseId)
+        buildRecentAnalysisContext(contextTurns, phraseId)
       );
+
+      if (!isCurrentPhraseAnalysis(phraseId, analysisRevision)) {
+        return;
+      }
+
       const inferredSpeakerLabel = resolveAnalysisSpeakerLabel(nextAnalysis.speakerRole);
       if (inferredSpeakerLabel !== "Heard") {
         updateTranscriptSpeakerLabel(phraseId, inferredSpeakerLabel, true);
@@ -1293,20 +1356,140 @@ export function TrainingLivePanel({
         ...current.filter((card) => card.id !== phraseId),
         nextCard
       ].slice(-20));
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(phraseId);
-        return next;
-      });
+      finishPhraseAnalysis(phraseId, analysisRevision);
       setAnalysisStatus("ready");
     } catch (error) {
-      setPendingAnalysisIds((current) => {
-        const next = new Set(current);
-        next.delete(phraseId);
-        return next;
-      });
+      if (!isCurrentPhraseAnalysis(phraseId, analysisRevision)) {
+        return;
+      }
+
+      finishPhraseAnalysis(phraseId, analysisRevision);
       setAnalysisStatus("error");
       setErrorMessage(toErrorMessage(error));
+    }
+  }
+
+  async function handleGenerateSelectedTranscriptTurnCard() {
+    if (selectedTranscriptTurn == null) {
+      return;
+    }
+
+    await generateTranscriptTurnCard(selectedTranscriptTurn, transcriptTurns);
+  }
+
+  function handleOpenAddTranscriptEditor() {
+    setFollowLiveMode(false);
+    setTranscriptSelectionMode(false);
+    setSelectedTranscriptTurnIds(new Set());
+    setTranscriptEditor({
+      mode: "add",
+      turnId: null,
+      speakerLabel: "Heard",
+      text: ""
+    });
+  }
+
+  function handleOpenEditTranscriptEditor() {
+    if (selectedTranscriptTurn == null) {
+      return;
+    }
+
+    setFollowLiveMode(false);
+    setTranscriptEditor({
+      mode: "edit",
+      turnId: selectedTranscriptTurn.id,
+      speakerLabel: selectedTranscriptTurn.speakerLabel,
+      text: selectedTranscriptTurn.text,
+      originalText: selectedTranscriptTurn.originalText
+    });
+  }
+
+  function buildEditedTranscriptTurn(
+    turn: TranscriptTurn,
+    text: string,
+    speakerLabel: SessionSpeakerLabel
+  ): TranscriptTurn {
+    const source = turn.source ?? "realtime";
+    const recognizedText =
+      source === "realtime" && text !== turn.text
+        ? (turn.originalText ?? turn.text)
+        : turn.originalText;
+    const originalText =
+      recognizedText != null && text !== recognizedText ? recognizedText : undefined;
+
+    return {
+      id: turn.id,
+      speakerLabel,
+      text,
+      source,
+      ...(originalText == null ? {} : { originalText })
+    };
+  }
+
+  function handleSaveTranscriptEditor(generateCard: boolean) {
+    if (transcriptEditor == null) {
+      return;
+    }
+
+    const text = transcriptEditor.text.trim();
+
+    if (text.length === 0) {
+      return;
+    }
+
+    let savedTurn: TranscriptTurn;
+    let nextTranscriptTurns: TranscriptTurn[];
+
+    if (transcriptEditor.mode === "add") {
+      savedTurn = {
+        id: createManualTranscriptTurnId(transcriptTurnsRef.current),
+        speakerLabel: transcriptEditor.speakerLabel,
+        text,
+        source: "manual"
+      };
+      nextTranscriptTurns = [...transcriptTurnsRef.current, savedTurn].slice(-50);
+    } else {
+      const currentTurn = transcriptTurnsRef.current.find(
+        (turn) => turn.id === transcriptEditor.turnId
+      );
+
+      if (currentTurn == null) {
+        setTranscriptEditor(null);
+        return;
+      }
+
+      savedTurn = buildEditedTranscriptTurn(currentTurn, text, transcriptEditor.speakerLabel);
+      nextTranscriptTurns = transcriptTurnsRef.current.map((turn) =>
+        turn.id === savedTurn.id ? savedTurn : turn
+      );
+      invalidatePhraseAnalysis(savedTurn.id);
+      setPhraseCards((current) => current.filter((card) => card.id !== savedTurn.id));
+      setSelectedReplies((current) =>
+        current.filter((selectedReply) => selectedReply.phraseId !== savedTurn.id)
+      );
+      setSelectedReplyIndex(null);
+      setAnalysisStatus("idle");
+
+      if (
+        currentTurn.speakerLabel !== savedTurn.speakerLabel ||
+        savedTurn.speakerLabel !== "Heard"
+      ) {
+        manuallyAssignedSpeakerTurnIdsRef.current.add(savedTurn.id);
+      }
+    }
+
+    if (savedTurn.speakerLabel !== "Heard") {
+      manuallyAssignedSpeakerTurnIdsRef.current.add(savedTurn.id);
+    }
+
+    transcriptTurnsRef.current = nextTranscriptTurns;
+    setTranscriptTurns(nextTranscriptTurns);
+    setSelectedPhraseCardId(savedTurn.id);
+    setTranscriptEditor(null);
+    setFollowLiveMode(false);
+
+    if (generateCard) {
+      void generateTranscriptTurnCard(savedTurn, nextTranscriptTurns);
     }
   }
 
@@ -1366,6 +1549,7 @@ export function TrainingLivePanel({
     transcriptTurnsRef.current = [];
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
+    phraseAnalysisRevisionRef.current = new Map();
     setTranscriptTurns([]);
     setLiveTranscriptDraft("");
     setPhraseCards([]);
@@ -1373,6 +1557,7 @@ export function TrainingLivePanel({
     setSelectedPhraseCardId(null);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
+    setTranscriptEditor(null);
     setSelectedReplies([]);
     setUsedBridgePhrases([]);
     setSelectedReplyIndex(null);
@@ -1394,6 +1579,7 @@ export function TrainingLivePanel({
     transcriptTurnsRef.current = normalizedSession.transcriptTurns;
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
+    phraseAnalysisRevisionRef.current = new Map();
     setTranscriptTurns(normalizedSession.transcriptTurns);
     setLiveTranscriptDraft("");
     setPhraseCards(normalizedSession.phraseCards);
@@ -1401,6 +1587,7 @@ export function TrainingLivePanel({
     setSelectedPhraseCardId(lastCardId);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
+    setTranscriptEditor(null);
     setSelectedReplies(normalizedSession.selectedReplies);
     setUsedBridgePhrases(normalizedSession.usedBridgePhrases);
     setSelectedReplyIndex(
@@ -1686,6 +1873,28 @@ export function TrainingLivePanel({
                   </button>
                 </div>
               ) : null}
+              {!transcriptSelectionMode ? (
+                <button
+                  type="button"
+                  className="transcript-action-icon"
+                  aria-label="Add message"
+                  title="Add message"
+                  onClick={handleOpenAddTranscriptEditor}
+                >
+                  <Plus aria-hidden="true" size={18} strokeWidth={1.8} />
+                </button>
+              ) : null}
+              {!transcriptSelectionMode && selectedTranscriptTurn != null ? (
+                <button
+                  type="button"
+                  className="transcript-action-icon"
+                  aria-label="Edit message"
+                  title="Edit message"
+                  onClick={handleOpenEditTranscriptEditor}
+                >
+                  <Pencil aria-hidden="true" size={18} strokeWidth={1.8} />
+                </button>
+              ) : null}
               {!transcriptSelectionMode && selectedTranscriptTurn != null ? (
                 <button
                   type="button"
@@ -1723,6 +1932,99 @@ export function TrainingLivePanel({
               </button>
             </div>
           </div>
+          {transcriptEditor != null ? (
+            <form
+              className="transcript-editor"
+              aria-label={transcriptEditor.mode === "add" ? "Add message" : "Edit message"}
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleSaveTranscriptEditor(false);
+              }}
+            >
+              <div className="transcript-editor-header">
+                <h3>{transcriptEditor.mode === "add" ? "Add message" : "Edit message"}</h3>
+                <button
+                  type="button"
+                  className="transcript-editor-close"
+                  aria-label="Cancel message editor"
+                  title="Cancel"
+                  onClick={() => setTranscriptEditor(null)}
+                >
+                  <X aria-hidden="true" size={18} strokeWidth={1.8} />
+                </button>
+              </div>
+              <fieldset className="transcript-editor-speakers">
+                <legend>Speaker</legend>
+                <div>
+                  {transcriptSpeakerLabels.map((speakerLabel) => (
+                    <button
+                      type="button"
+                      className={
+                        transcriptEditor.speakerLabel === speakerLabel
+                          ? "transcript-editor-speaker-active"
+                          : undefined
+                      }
+                      aria-pressed={transcriptEditor.speakerLabel === speakerLabel}
+                      key={speakerLabel}
+                      onClick={() =>
+                        setTranscriptEditor((current) =>
+                          current == null ? current : { ...current, speakerLabel }
+                        )
+                      }
+                    >
+                      {speakerLabel}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="transcript-editor-label" htmlFor="transcript-message-text">
+                Message text
+              </label>
+              <textarea
+                id="transcript-message-text"
+                autoFocus
+                value={transcriptEditor.text}
+                placeholder="Type the missing or corrected phrase."
+                onChange={(event) =>
+                  setTranscriptEditor((current) =>
+                    current == null ? current : { ...current, text: event.target.value }
+                  )
+                }
+              />
+              <div className="transcript-editor-actions">
+                {transcriptEditor.mode === "edit" && transcriptEditor.originalText != null ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTranscriptEditor((current) =>
+                        current == null || current.originalText == null
+                          ? current
+                          : { ...current, text: current.originalText }
+                      )
+                    }
+                  >
+                    Restore recognized text
+                  </button>
+                ) : null}
+                <span className="transcript-editor-primary-actions">
+                  <button
+                    type="submit"
+                    disabled={transcriptEditor.text.trim().length === 0}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-action"
+                    disabled={transcriptEditor.text.trim().length === 0}
+                    onClick={() => handleSaveTranscriptEditor(true)}
+                  >
+                    Save and generate card
+                  </button>
+                </span>
+              </div>
+            </form>
+          ) : null}
           <div
             ref={transcriptDialogueRef}
             className="transcript-box transcript-dialogue"

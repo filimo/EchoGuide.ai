@@ -14,7 +14,9 @@ const draftEntry: SessionHistoryEntryDraft = {
     {
       id: "training-phrase-0",
       speakerLabel: "Interviewer",
-      text: "Can you walk me through your recent project?"
+      text: "Can you walk me through your recent project?",
+      source: "realtime",
+      originalText: "Can you walk through your recent project?"
     }
   ],
   phraseCards: [
@@ -87,6 +89,10 @@ describe("session history storage", () => {
       "Can you walk me through your recent project?"
     );
     expect(history.sessions[0]?.transcriptTurns[0]?.speakerLabel).toBe("Interviewer");
+    expect(history.sessions[0]?.transcriptTurns[0]?.source).toBe("realtime");
+    expect(history.sessions[0]?.transcriptTurns[0]?.originalText).toBe(
+      "Can you walk through your recent project?"
+    );
     expect(history.sessions[0]?.phraseCards[0]?.analysis.russianMeaning).toBe(
       "Можешь рассказать о последнем проекте?"
     );

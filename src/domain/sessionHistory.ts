@@ -6,6 +6,8 @@ export type SessionHistoryTranscriptTurn = {
   id: string;
   speakerLabel: SessionSpeakerLabel;
   text: string;
+  source?: "realtime" | "manual";
+  originalText?: string;
 };
 
 export type SessionHistoryPhraseCard = {
@@ -122,7 +124,11 @@ function isTranscriptTurn(value: unknown): value is SessionHistoryTranscriptTurn
     (candidate.speakerLabel === "Heard" ||
       candidate.speakerLabel === "Interviewer" ||
       candidate.speakerLabel === "Me") &&
-    isString(candidate.text)
+    isString(candidate.text) &&
+    (candidate.source == null ||
+      candidate.source === "realtime" ||
+      candidate.source === "manual") &&
+    (candidate.originalText == null || isString(candidate.originalText))
   );
 }
 

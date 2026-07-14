@@ -1008,6 +1008,243 @@ describe("Training Live Panel", () => {
     expect(copyText).toHaveBeenCalledWith("Heard: Hello, can you hear me?\nHeard: Yes, I can hear you.");
   });
 
+  it("adds a missing transcript message manually and auto-saves its source", async () => {
+    const user = userEvent.setup();
+    const sessionHistoryClient = createInMemorySessionHistoryClient();
+    const analyzePhrase = vi.fn();
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        analyzePhrase={analyzePhrase}
+        sessionHistoryClient={sessionHistoryClient}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add message" }));
+
+    const editor = screen.getByRole("form", { name: "Add message" });
+
+    await user.click(within(editor).getByRole("button", { name: "Interviewer" }));
+    await user.type(
+      within(editor).getByRole("textbox", { name: "Message text" }),
+      "Could you explain the main trade-off?"
+    );
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    expect(
+      screen.getByRole("button", {
+        name: "Interviewer Could you explain the main trade-off?"
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText("No card yet. Use Generate card.")).toBeInTheDocument();
+    expect(analyzePhrase).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      const latestDraft = vi.mocked(sessionHistoryClient.saveCurrentSession).mock.calls.at(-1)?.[1];
+
+      expect(latestDraft?.transcriptTurns).toEqual([
+        expect.objectContaining({
+          speakerLabel: "Interviewer",
+          text: "Could you explain the main trade-off?",
+          source: "manual"
+        })
+      ]);
+    });
+  });
+
+  it("edits a recognized message, invalidates its old card, and restores the original text", async () => {
+    const user = userEvent.setup();
+    let emitEvent: (event: RealtimeServerEvent) => void = () => {};
+    const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
+      emitEvent = onEvent;
+      return Promise.resolve(createConnection());
+    });
+    const sessionHistoryClient = createInMemorySessionHistoryClient();
+    const analyzePhrase = vi.fn().mockResolvedValue({
+      russianMeaning: "Старый смысл.",
+      isQuestion: false,
+      bridgePhrase: "Let me explain.",
+      suggestedReplies: []
+    } satisfies BilingualPhraseAnalysis);
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+        sessionHistoryClient={sessionHistoryClient}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await act(async () => {
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "The system miss this phrase."
+      });
+    });
+
+    expect(screen.getByText("Старый смысл.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+
+    let editor = screen.getByRole("form", { name: "Edit message" });
+    const messageText = within(editor).getByRole("textbox", { name: "Message text" });
+
+    await user.clear(messageText);
+    await user.type(messageText, "The system missed this phrase.");
+    await user.click(within(editor).getByRole("button", { name: "Me" }));
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    expect(
+      screen.getByRole("button", { name: "Me The system missed this phrase." })
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Старый смысл.")).not.toBeInTheDocument();
+    expect(screen.getByText("No card yet. Use Generate card.")).toBeInTheDocument();
+
+    await waitFor(() => {
+      const latestDraft = vi.mocked(sessionHistoryClient.saveCurrentSession).mock.calls.at(-1)?.[1];
+      const editedTurn = latestDraft?.transcriptTurns[0];
+
+      expect(editedTurn).toMatchObject({
+        speakerLabel: "Me",
+        text: "The system missed this phrase.",
+        source: "realtime",
+        originalText: "The system miss this phrase."
+      });
+      expect(latestDraft?.phraseCards).toEqual([]);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    editor = screen.getByRole("form", { name: "Edit message" });
+    await user.click(within(editor).getByRole("button", { name: "Restore recognized text" }));
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    expect(
+      screen.getByRole("button", { name: "Me The system miss this phrase." })
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      const latestDraft = vi.mocked(sessionHistoryClient.saveCurrentSession).mock.calls.at(-1)?.[1];
+
+      expect(latestDraft?.transcriptTurns[0]?.originalText).toBeUndefined();
+    });
+  });
+
+  it("generates a card from a manually added message and keeps Realtime connected", async () => {
+    const user = userEvent.setup();
+    const realtimeConnection = createConnection();
+    const connectRealtime = vi.fn().mockResolvedValue(realtimeConnection);
+    const analyzePhrase = vi.fn().mockResolvedValue({
+      russianMeaning: "Можете подробнее рассказать о результате?",
+      isQuestion: true,
+      bridgePhrase: "Sure, let me explain.",
+      suggestedReplies: []
+    } satisfies BilingualPhraseAnalysis);
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes="Use verified facts."
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(screen.getByRole("button", { name: "Add message" }));
+
+    const editor = screen.getByRole("form", { name: "Add message" });
+    await user.click(within(editor).getByRole("button", { name: "Interviewer" }));
+    await user.type(
+      within(editor).getByRole("textbox", { name: "Message text" }),
+      "Could you explain the outcome?"
+    );
+    await user.click(
+      within(editor).getByRole("button", { name: "Save and generate card" })
+    );
+
+    expect(analyzePhrase).toHaveBeenCalledWith(
+      "Could you explain the outcome?",
+      "Use verified facts.",
+      ["Interviewer: Could you explain the outcome?"]
+    );
+    expect(
+      await screen.findByText("Можете подробнее рассказать о результате?")
+    ).toBeInTheDocument();
+    expect(realtimeConnection.disconnect).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Stop live" })).toBeInTheDocument();
+  });
+
+  it("does not restore a stale automatic card after its transcript message was edited", async () => {
+    const user = userEvent.setup();
+    let emitEvent: (event: RealtimeServerEvent) => void = () => {};
+    let resolveAnalysis: (analysis: BilingualPhraseAnalysis) => void = () => {};
+    const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
+      emitEvent = onEvent;
+      return Promise.resolve(createConnection());
+    });
+    const analyzePhrase = vi.fn(
+      () =>
+        new Promise<BilingualPhraseAnalysis>((resolve) => {
+          resolveAnalysis = resolve;
+        })
+    );
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    act(() => {
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Old recognition."
+      });
+    });
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+
+    const editor = screen.getByRole("form", { name: "Edit message" });
+    const messageText = within(editor).getByRole("textbox", { name: "Message text" });
+    await user.clear(messageText);
+    await user.type(messageText, "Corrected recognition.");
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    await act(async () => {
+      resolveAnalysis({
+        russianMeaning: "Устаревший смысл.",
+        isQuestion: false,
+        bridgePhrase: "Let me explain.",
+        suggestedReplies: []
+      });
+    });
+
+    expect(screen.queryByText("Устаревший смысл.")).not.toBeInTheDocument();
+    expect(screen.getByText("No card yet. Use Generate card.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Heard Corrected recognition." })
+    ).toBeInTheDocument();
+  });
+
   it("uses transcript turns as cached phrase navigation", async () => {
     const user = userEvent.setup();
     let emitEvent: (event: RealtimeServerEvent) => void = () => {};

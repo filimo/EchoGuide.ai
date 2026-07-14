@@ -10,6 +10,9 @@ Until the first versioned release, changes are grouped by date.
 ### Added
 
 - A public changelog linked from the project README.
+- Training Mode can add missed transcript messages manually, edit recognized
+  messages with an explicit speaker role, restore the original recognized text,
+  and generate a replacement phrase card from the correction.
 
 ### Fixed
 

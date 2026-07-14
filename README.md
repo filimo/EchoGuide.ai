@@ -37,6 +37,7 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - two or three concise suggested replies with translations and full sentences;
 - `Pasted notes` as personal context for grounded answers;
 - manual card generation from a selected group of transcript turns;
+- manual transcript messages and in-place corrections with speaker selection;
 - local session history without raw audio storage;
 - privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
 - a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
