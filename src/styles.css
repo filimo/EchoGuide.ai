@@ -792,6 +792,62 @@ textarea {
   padding: 12px;
 }
 
+.recovery-picker {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+  border: 1px solid #e7c66c;
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 12px;
+}
+
+.recovery-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recovery-picker-header .eyebrow,
+.recovery-picker-header h3,
+.recovery-picker .hint {
+  margin: 0;
+}
+
+.recovery-phrase-list {
+  display: grid;
+  gap: 8px;
+}
+
+.recovery-phrase {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  background: #ffffff;
+  padding: 10px;
+  text-align: left;
+}
+
+.recovery-phrase-selected {
+  border-color: #2563eb;
+  background: #edf4ff;
+}
+
+.recovery-phrase-index {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  place-items: center;
+  background: #f1f5f9;
+  color: #526176;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .transcript-editor-header,
 .transcript-editor-actions,
 .transcript-editor-primary-actions {

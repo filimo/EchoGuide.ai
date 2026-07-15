@@ -4,7 +4,28 @@ export const OPENAI_AUDIO_TRANSCRIPTIONS_URL =
 export const defaultAudioRecoveryModel = "gpt-4o-transcribe";
 
 export const audioRecoveryPrompt =
-  "Transcribe the most recent clearly audible English or Russian speech faithfully, including natural code-switching, short replies, incomplete phrases, names, and informal wording. The conversation may be about any topic. Ignore only non-speech noise and audio that is too unclear to transcribe.";
+  "Transcribe all clearly audible English or Russian speech in chronological order, including natural code-switching, short replies, incomplete phrases, names, and informal wording. Preserve sentence punctuation and put each distinct spoken phrase on a separate line when possible. The conversation may be about any topic. Ignore only non-speech noise and audio that is too unclear to transcribe.";
+
+const recoveredPhraseSegmenter = new Intl.Segmenter(["en", "ru"], {
+  granularity: "sentence"
+});
+
+export function splitRecoveredTranscript(transcript: string): string[] {
+  const normalizedTranscript = transcript.replace(/\r\n?/g, "\n").trim();
+
+  if (normalizedTranscript.length === 0) {
+    return [];
+  }
+
+  return normalizedTranscript
+    .split(/\n+/)
+    .flatMap((line) =>
+      Array.from(recoveredPhraseSegmenter.segment(line), ({ segment }) =>
+        segment.replace(/\s+/g, " ").trim()
+      )
+    )
+    .filter((phrase) => phrase.length > 0);
+}
 
 type TranscribeRecoveredAudioOptions = {
   apiKey: string;

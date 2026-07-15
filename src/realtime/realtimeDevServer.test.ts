@@ -619,11 +619,15 @@ describe("Bilingual analysis dev middleware", () => {
 });
 
 describe("Recovered audio dev middleware", () => {
-  it("transcribes a recent WAV buffer with the server key and returns only text", async () => {
+  it("transcribes a recent WAV buffer with the server key and returns phrase candidates", async () => {
     const realtimeDiagnosticsDirectoryPath = mkdtempSync(
       join(tmpdir(), "echoguide-audio-recovery-")
     );
-    const recoverTranscript = vi.fn().mockResolvedValue("Could you explain that trade-off?");
+    const recoverTranscript = vi
+      .fn()
+      .mockResolvedValue(
+        "Could you explain that trade-off? I think latency is the main issue."
+      );
     const middleware = createRealtimeClientSecretMiddleware({
       env: {},
       readLocalEnv: () =>
@@ -651,7 +655,10 @@ describe("Recovered audio dev middleware", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({
-      transcript: "Could you explain that trade-off?"
+      phrases: [
+        "Could you explain that trade-off?",
+        "I think latency is the main issue."
+      ]
     });
     expect(res.body).not.toContain("sk-local-only");
 
@@ -661,6 +668,7 @@ describe("Recovered audio dev middleware", () => {
     );
     expect(diagnosticLog).toContain("audio_recovery.completed");
     expect(diagnosticLog).not.toContain("Could you explain that trade-off?");
+    expect(diagnosticLog).toContain('"phraseCount":2');
   });
 
   it("rejects an empty recovery buffer before calling OpenAI", async () => {

@@ -1161,7 +1161,7 @@ describe("Training Live Panel", () => {
     });
   });
 
-  it("recovers recent buffered audio into the existing review editor", async () => {
+  it("shows all recovered phrases and reuses the list for review choices", async () => {
     const user = userEvent.setup();
     let emitAudioStats: (stats: {
       chunksObserved: number;
@@ -1179,9 +1179,12 @@ describe("Training Live Panel", () => {
       emitAudioStats = onAudioStats;
       return Promise.resolve(realtimeConnection);
     });
-    const recoverTranscript = vi
+    const recoverPhrases = vi
       .fn()
-      .mockResolvedValue("Could you explain the main trade-off?");
+      .mockResolvedValue([
+        "Could you explain the main trade-off?",
+        "I think latency is the main issue."
+      ]);
 
     render(
       <TrainingLivePanel
@@ -1192,7 +1195,7 @@ describe("Training Live Panel", () => {
           expiresAt: 1756310470
         })}
         connectRealtime={connectRealtime}
-        recoverTranscript={recoverTranscript}
+        recoverPhrases={recoverPhrases}
         sessionHistoryClient={createEmptySessionHistoryClient()}
       />
     );
@@ -1211,15 +1214,39 @@ describe("Training Live Panel", () => {
       });
     });
 
-    await user.click(screen.getByRole("button", { name: "Recover last phrase" }));
+    await user.click(screen.getByRole("button", { name: "Recover phrases" }));
 
     expect(realtimeConnection.getRecentAudio).toHaveBeenCalledWith(30);
-    expect(recoverTranscript).toHaveBeenCalledWith(recentAudio);
-    const editor = await screen.findByRole("form", { name: "Add message" });
-    expect(within(editor).getByRole("textbox", { name: "Message text" })).toHaveValue(
-      "Could you explain the main trade-off?"
+    expect(recoverPhrases).toHaveBeenCalledWith(recentAudio);
+    const picker = await screen.findByRole("region", { name: "Recovered phrases" });
+    expect(screen.queryByRole("form", { name: "Add message" })).not.toBeInTheDocument();
+    expect(
+      within(picker).getByRole("button", { name: /Could you explain the main trade-off/ })
+    ).toBeInTheDocument();
+    expect(
+      within(picker).getByRole("button", { name: /I think latency is the main issue/ })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh phrases" })).toBeInTheDocument();
+
+    await user.click(
+      within(picker).getByRole("button", { name: /I think latency is the main issue/ })
     );
-    expect(screen.getByText("Recovered phrase is ready to review.")).toBeInTheDocument();
+    let editor = await screen.findByRole("form", { name: "Add message" });
+    expect(within(editor).getByRole("textbox", { name: "Message text" })).toHaveValue(
+      "I think latency is the main issue."
+    );
+    await user.click(within(editor).getByRole("button", { name: "Cancel message editor" }));
+    expect(screen.getByRole("region", { name: "Recovered phrases" })).toBeInTheDocument();
+
+    await user.click(
+      within(picker).getByRole("button", { name: /Could you explain the main trade-off/ })
+    );
+    editor = await screen.findByRole("form", { name: "Add message" });
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    expect(screen.getByRole("region", { name: "Recovered phrases" })).toBeInTheDocument();
+    expect(recoverPhrases).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("2 recovered phrases are ready to review.")).toBeInTheDocument();
   });
 
   it("edits a recognized message, invalidates its old card, and restores the original text", async () => {

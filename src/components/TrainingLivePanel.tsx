@@ -124,7 +124,7 @@ type TrainingLivePanelProps = {
     answerHint?: string
   ) => Promise<BilingualPhraseAnalysis>;
   automaticAnalysisDelayMs?: number;
-  recoverTranscript?: (audio: Blob) => Promise<string>;
+  recoverPhrases?: (audio: Blob) => Promise<string[]>;
   copyText?: (text: string) => Promise<void> | void;
   sessionHistoryClient?: SessionHistoryClient;
   createSessionId?: () => string;
@@ -204,7 +204,7 @@ async function requestDefaultPhraseAnalysis(
   return (await response.json()) as BilingualPhraseAnalysis;
 }
 
-async function requestDefaultRecoveredTranscript(audio: Blob): Promise<string> {
+async function requestDefaultRecoveredPhrases(audio: Blob): Promise<string[]> {
   const response = await fetch("/api/realtime/recover-transcript", {
     method: "POST",
     headers: {
@@ -217,13 +217,16 @@ async function requestDefaultRecoveredTranscript(audio: Blob): Promise<string> {
     throw new Error("Recent audio transcription failed.");
   }
 
-  const payload = (await response.json()) as { transcript?: unknown };
+  const payload = (await response.json()) as { phrases?: unknown };
 
-  if (typeof payload.transcript !== "string") {
-    throw new Error("Recovered transcript response is invalid.");
+  if (
+    !Array.isArray(payload.phrases) ||
+    !payload.phrases.every((phrase) => typeof phrase === "string")
+  ) {
+    throw new Error("Recovered phrases response is invalid.");
   }
 
-  return payload.transcript.trim();
+  return payload.phrases.map((phrase) => phrase.trim()).filter((phrase) => phrase.length > 0);
 }
 
 function padDatePart(value: number): string {
@@ -413,7 +416,7 @@ export function TrainingLivePanel({
   connectRealtime = connectRealtimeTranscription,
   createRecoveryAudioRecorder = createBrowserRecoveryAudioRecorder,
   analyzePhrase = requestDefaultPhraseAnalysis,
-  recoverTranscript = requestDefaultRecoveredTranscript,
+  recoverPhrases = requestDefaultRecoveredPhrases,
   copyText = copyTextToClipboard,
   sessionHistoryClient = defaultSessionHistoryClient,
   createSessionId = createDefaultSessionId,
@@ -456,6 +459,10 @@ export function TrainingLivePanel({
     useState<RecoveryAudioCaptureState>("idle");
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [recoverySuggested, setRecoverySuggested] = useState(false);
+  const [recoveryPhrases, setRecoveryPhrases] = useState<string[]>([]);
+  const [selectedRecoveryPhraseIndex, setSelectedRecoveryPhraseIndex] = useState<number | null>(
+    null
+  );
   const [audioStats, setAudioStats] = useState<RealtimeAudioStats | null>(null);
   const [turnDetectionSettings, setTurnDetectionSettings] = useState(() =>
     loadRealtimeTurnDetectionSettings(window.localStorage)
@@ -471,7 +478,9 @@ export function TrainingLivePanel({
   const trainingControlRailRef = useRef<HTMLElement | null>(null);
   const conversationPanelRef = useRef<HTMLDivElement | null>(null);
   const transcriptDialogueRef = useRef<HTMLDivElement | null>(null);
+  const recoveryPickerRef = useRef<HTMLElement | null>(null);
   const transcriptEditorRef = useRef<HTMLFormElement | null>(null);
+  const shouldRevealRecoveryPickerRef = useRef(false);
   const shouldRevealRecoveredEditorRef = useRef(false);
   const transcriptTurnsRef = useRef<TranscriptTurn[]>([]);
   const deletedTranscriptTurnIdsRef = useRef<Set<string>>(new Set());
@@ -701,6 +710,17 @@ export function TrainingLivePanel({
   }, []);
 
   useEffect(() => {
+    if (recoveryPhrases.length === 0 || !shouldRevealRecoveryPickerRef.current) {
+      return;
+    }
+
+    shouldRevealRecoveryPickerRef.current = false;
+    window.requestAnimationFrame(() => {
+      recoveryPickerRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [recoveryPhrases]);
+
+  useEffect(() => {
     if (transcriptEditor == null || !shouldRevealRecoveredEditorRef.current) {
       return;
     }
@@ -779,9 +799,11 @@ export function TrainingLivePanel({
   const recoveryButtonDisabled = recoveryStatus === "loading";
   const recoveryButtonLabel =
     recoveryStatus === "loading"
-      ? "Recovering..."
+      ? "Recovering phrases..."
       : recoveryCanRecover
-        ? "Recover last phrase"
+        ? recoveryPhrases.length > 0
+          ? "Refresh phrases"
+          : "Recover phrases"
         : "Enable recovery";
   const transcriptExport = transcriptTurns
     .map((turn) => `${turn.speakerLabel}: ${turn.text}`)
@@ -1410,7 +1432,7 @@ export function TrainingLivePanel({
     scheduleDiagnosticsStop();
   }
 
-  async function handleRecoverLastPhrase() {
+  async function handleRecoverPhrases() {
     if (recoveryStatus === "loading") {
       return;
     }
@@ -1426,28 +1448,34 @@ export function TrainingLivePanel({
     setErrorMessage("");
     setCopyStatus("");
     setRecoveryStatus("loading");
-    setRecoveryNotice("Recovering the latest buffered audio...");
+    setRecoveryNotice("Recovering phrases from the latest buffered audio...");
     recordDiagnostic("audio_recovery.requested", { audioBytes: recentAudio.size });
 
     try {
-      const recoveredTranscript = await recoverTranscript(recentAudio);
+      const recoveredPhrases = (await recoverPhrases(recentAudio)).filter(
+        (phrase) => !isObviousTranscriptNoise(phrase)
+      );
 
-      if (isObviousTranscriptNoise(recoveredTranscript)) {
+      if (recoveredPhrases.length === 0) {
         throw new Error("No clear speech was found in the recent audio.");
       }
 
-      setTranscriptEditor({
-        mode: "add",
-        turnId: null,
-        speakerLabel: "Heard",
-        text: recoveredTranscript
-      });
-      shouldRevealRecoveredEditorRef.current = true;
+      shouldRevealRecoveryPickerRef.current = true;
+      setRecoveryPhrases(recoveredPhrases);
+      setSelectedRecoveryPhraseIndex(null);
+      if (selectedRecoveryPhraseIndex != null) {
+        setTranscriptEditor(null);
+      }
       setRecoverySuggested(false);
-      setRecoveryNotice("Recovered phrase is ready to review.");
+      setRecoveryNotice(
+        `${recoveredPhrases.length} recovered ${
+          recoveredPhrases.length === 1 ? "phrase is" : "phrases are"
+        } ready to review.`
+      );
       recordDiagnostic("audio_recovery.ready", {
         audioBytes: recentAudio.size,
-        transcriptCharacters: recoveredTranscript.length
+        phraseCount: recoveredPhrases.length,
+        transcriptCharacters: recoveredPhrases.join(" ").length
       });
     } catch (error) {
       recordDiagnostic("audio_recovery.client_failed", { audioBytes: recentAudio.size });
@@ -1456,6 +1484,25 @@ export function TrainingLivePanel({
     } finally {
       setRecoveryStatus("idle");
     }
+  }
+
+  function handleSelectRecoveredPhrase(phrase: string, phraseIndex: number) {
+    setFollowLiveMode(false);
+    setTranscriptSelectionMode(false);
+    setSelectedTranscriptTurnIds(new Set());
+    setSelectedRecoveryPhraseIndex(phraseIndex);
+    setTranscriptEditor({
+      mode: "add",
+      turnId: null,
+      speakerLabel: "Heard",
+      text: phrase
+    });
+    shouldRevealRecoveredEditorRef.current = true;
+  }
+
+  function handleCloseRecoveredPhrases() {
+    setRecoveryPhrases([]);
+    setSelectedRecoveryPhraseIndex(null);
   }
 
   async function handleEnableRecovery() {
@@ -1715,6 +1762,7 @@ export function TrainingLivePanel({
     setFollowLiveMode(false);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
+    setSelectedRecoveryPhraseIndex(null);
     setTranscriptEditor({
       mode: "add",
       turnId: null,
@@ -1729,6 +1777,7 @@ export function TrainingLivePanel({
     }
 
     setFollowLiveMode(false);
+    setSelectedRecoveryPhraseIndex(null);
     setTranscriptEditor({
       mode: "edit",
       turnId: selectedTranscriptTurn.id,
@@ -1893,6 +1942,8 @@ export function TrainingLivePanel({
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
     setTranscriptEditor(null);
+    setRecoveryPhrases([]);
+    setSelectedRecoveryPhraseIndex(null);
     setSelectedReplies([]);
     setUsedBridgePhrases([]);
     setSelectedReplyIndex(null);
@@ -1924,6 +1975,8 @@ export function TrainingLivePanel({
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
     setTranscriptEditor(null);
+    setRecoveryPhrases([]);
+    setSelectedRecoveryPhraseIndex(null);
     setSelectedReplies(normalizedSession.selectedReplies);
     setUsedBridgePhrases(normalizedSession.usedBridgePhrases);
     setSelectedReplyIndex(
@@ -2019,7 +2072,7 @@ export function TrainingLivePanel({
                   disabled={recoveryButtonDisabled}
                   onClick={() =>
                     void (recoveryCanRecover
-                      ? handleRecoverLastPhrase()
+                      ? handleRecoverPhrases()
                       : handleEnableRecovery())
                   }
                 >
@@ -2293,6 +2346,50 @@ export function TrainingLivePanel({
               </button>
             </div>
           </div>
+          {recoveryPhrases.length > 0 ? (
+            <section
+              ref={recoveryPickerRef}
+              className="recovery-picker"
+              aria-label="Recovered phrases"
+            >
+              <div className="recovery-picker-header">
+                <div>
+                  <p className="eyebrow">Recent audio</p>
+                  <h3>Choose a phrase to review</h3>
+                </div>
+                <button
+                  type="button"
+                  className="transcript-editor-close"
+                  aria-label="Close recovered phrases"
+                  title="Close"
+                  onClick={handleCloseRecoveredPhrases}
+                >
+                  <X aria-hidden="true" size={18} strokeWidth={1.8} />
+                </button>
+              </div>
+              <div className="recovery-phrase-list">
+                {recoveryPhrases.map((phrase, phraseIndex) => (
+                  <button
+                    type="button"
+                    className={
+                      selectedRecoveryPhraseIndex === phraseIndex
+                        ? "recovery-phrase recovery-phrase-selected"
+                        : "recovery-phrase"
+                    }
+                    aria-pressed={selectedRecoveryPhraseIndex === phraseIndex}
+                    key={`${phraseIndex}-${phrase}`}
+                    onClick={() => handleSelectRecoveredPhrase(phrase, phraseIndex)}
+                  >
+                    <span className="recovery-phrase-index">{phraseIndex + 1}</span>
+                    <span>{phrase}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="hint">
+                Select a phrase to edit it below. This list stays available after save or cancel.
+              </p>
+            </section>
+          ) : null}
           {transcriptEditor != null ? (
             <form
               ref={transcriptEditorRef}

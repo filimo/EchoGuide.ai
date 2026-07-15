@@ -4,10 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import {
   OPENAI_AUDIO_TRANSCRIPTIONS_URL,
   audioRecoveryPrompt,
+  splitRecoveredTranscript,
   transcribeRecoveredAudio
 } from "./audioRecovery";
 
 describe("recovered audio transcription", () => {
+  it("splits the full bilingual transcript into chronological phrase candidates", () => {
+    expect(
+      splitRecoveredTranscript(
+        "Could you explain that trade-off? I think latency is the main issue.\nДа, согласен.\nOne more thing"
+      )
+    ).toEqual([
+      "Could you explain that trade-off?",
+      "I think latency is the main issue.",
+      "Да, согласен.",
+      "One more thing"
+    ]);
+    expect(splitRecoveredTranscript("   ")).toEqual([]);
+  });
+
   it("uploads the WAV file with server-side credentials and the recovery prompt", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

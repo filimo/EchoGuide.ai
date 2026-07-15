@@ -30,6 +30,7 @@ import {
 import { sanitizeRealtimeDiagnosticReport } from "./realtimeDiagnostics";
 import {
   defaultAudioRecoveryModel,
+  splitRecoveredTranscript,
   transcribeRecoveredAudio
 } from "./audioRecovery";
 
@@ -568,14 +569,16 @@ export function createRealtimeClientSecretMiddleware({
 
       try {
         const transcript = await recoverTranscript({ apiKey, audioBytes, model });
+        const phrases = splitRecoveredTranscript(transcript);
 
         appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
           source: "backend",
           type: "audio_recovery.completed",
           audioBytes: audioBytes.byteLength,
-          transcriptCharacters: transcript.length
+          transcriptCharacters: transcript.length,
+          phraseCount: phrases.length
         });
-        sendJson(res, 200, { transcript });
+        sendJson(res, 200, { phrases });
       } catch (error) {
         appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
           source: "backend",

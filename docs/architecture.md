@@ -42,10 +42,13 @@ The OpenAI API key remains on the local Node.js side. Browser code receives only
 `connectRealtimeTranscription()` creates a WebRTC peer connection, attaches the microphone track, and uses the Realtime data channel for session updates and transcription events.
 
 The same browser audio monitor that calculates privacy-safe microphone levels keeps
-a rolling 60-second mono PCM buffer in memory. `Recover last phrase` exports only
-the latest 30 seconds as a temporary WAV blob and sends it to the local development
-API. The server forwards that bounded file to `/v1/audio/transcriptions`; the
-browser never receives the server API key.
+a rolling 60-second mono PCM buffer in memory. `Recover phrases` exports only the
+latest 30 seconds as a temporary WAV blob and sends it to the local development
+API. The server forwards that bounded file to `/v1/audio/transcriptions`, splits
+the complete transcript into chronological phrase candidates, and returns the
+list without exposing the server API key. Selecting a candidate opens the existing
+message editor; the list remains available after save or cancel, and
+`Refresh phrases` replaces it with one new bounded transcription result.
 
 The recovery recorder is activated from the `Start live` user gesture before the
 client-secret request and WebRTC signaling. This keeps local PCM capture independent
@@ -115,8 +118,8 @@ When a card is regenerated from `My point`, the normalized hint is stored only
 with that phrase card so reopening the local session restores the same grounding.
 
 Recovery audio is never written to session history or diagnostics. The rolling
-buffer is cleared when the live connection stops, and the recovered transcript is
-presented in the manual message editor before it can be saved.
+buffer is cleared when the live connection stops, and every recovered phrase must
+be selected and reviewed in the manual message editor before it can be saved.
 
 ## Diagnostics and privacy
 
