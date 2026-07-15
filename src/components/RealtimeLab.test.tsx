@@ -23,6 +23,7 @@ function createConnection(
     clearAudio: vi.fn(),
     commitAudio: vi.fn(),
     collectStats: vi.fn().mockResolvedValue(undefined),
+    getRecentAudio: vi.fn().mockReturnValue(null),
     disconnect: vi.fn(),
     ...overrides
   };

@@ -35,7 +35,17 @@ function createConnection() {
     disconnect: vi.fn(),
     clearAudio: vi.fn(),
     commitAudio: vi.fn(),
-    collectStats: vi.fn().mockResolvedValue(undefined)
+    collectStats: vi.fn().mockResolvedValue(undefined),
+    getRecentAudio: vi.fn().mockReturnValue(null)
+  };
+}
+
+function createRecoveryRecorder() {
+  return {
+    ensureActive: vi.fn().mockResolvedValue("recording" as const),
+    getState: vi.fn().mockReturnValue("recording" as const),
+    getRecentAudio: vi.fn().mockReturnValue(null),
+    stop: vi.fn()
   };
 }
 
@@ -125,6 +135,98 @@ describe("Training Live Panel", () => {
     expect(screen.queryByRole("button", { name: "Stop live" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
     expect(onStopMicrophone).not.toHaveBeenCalled();
+  });
+
+  it("activates the recovery recorder before requesting a Realtime client secret", async () => {
+    const user = userEvent.setup();
+    const order: string[] = [];
+    const recoveryRecorder = createRecoveryRecorder();
+    recoveryRecorder.ensureActive.mockImplementation(async () => {
+      order.push("resume-recovery");
+      return "recording";
+    });
+    const createRecoveryAudioRecorder = vi.fn().mockImplementation(() => {
+      order.push("create-recovery");
+      return recoveryRecorder;
+    });
+    const requestClientSecret = vi.fn().mockImplementation(async () => {
+      order.push("request-secret");
+      return { clientSecret: "ek_ephemeral", expiresAt: 1756310470 };
+    });
+    const connectRealtime = vi.fn().mockResolvedValue(createConnection());
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={requestClientSecret}
+        connectRealtime={connectRealtime}
+        createRecoveryAudioRecorder={createRecoveryAudioRecorder}
+        sessionHistoryClient={createEmptySessionHistoryClient()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+
+    expect(order.slice(0, 3)).toEqual([
+      "create-recovery",
+      "resume-recovery",
+      "request-secret"
+    ]);
+    expect(connectRealtime).toHaveBeenCalledWith(
+      expect.objectContaining({ audioAppender: recoveryRecorder })
+    );
+  });
+
+  it("keeps Enable recovery active until buffered audio arrives", async () => {
+    const user = userEvent.setup();
+    let activationCount = 0;
+    const createRecoveryAudioRecorder = vi.fn().mockImplementation(({ onStateChange }) => ({
+      ensureActive: vi.fn(async () => {
+        activationCount += 1;
+        const state = activationCount === 1 ? "needs-user-action" : "recording";
+        onStateChange(state);
+        return state;
+      }),
+      getState: vi.fn().mockReturnValue("needs-user-action"),
+      getRecentAudio: vi.fn().mockReturnValue(null),
+      stop: vi.fn()
+    }));
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={vi.fn().mockResolvedValue(createConnection())}
+        createRecoveryAudioRecorder={createRecoveryAudioRecorder}
+        sessionHistoryClient={createEmptySessionHistoryClient()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+
+    const enableRecovery = screen.getByRole("button", { name: "Enable recovery" });
+    expect(enableRecovery).toBeEnabled();
+    expect(
+      screen.getByText("Tap Enable recovery to start the local audio buffer.")
+    ).toBeInTheDocument();
+
+    await user.click(enableRecovery);
+
+    const enableRecoveryAgain = screen.getByRole("button", { name: "Enable recovery" });
+    expect(enableRecoveryAgain).toBeEnabled();
+    expect(
+      screen.getByText("Recovery is enabled. New microphone audio is being buffered.")
+    ).toBeInTheDocument();
+
+    await user.click(enableRecoveryAgain);
+
+    expect(activationCount).toBe(3);
+    expect(screen.getByRole("button", { name: "Enable recovery" })).toBeEnabled();
   });
 
   it("disconnects Realtime before stopping live", async () => {
@@ -433,6 +535,7 @@ describe("Training Live Panel", () => {
         )
       )
     ).toBe(true);
+    expect(screen.getByText("Speech may be missing. Try recovery.")).toBeInTheDocument();
   });
 
   it("shows local bridge phrases immediately and copies the selected phrase", async () => {
@@ -1052,6 +1155,67 @@ describe("Training Live Panel", () => {
         })
       ]);
     });
+  });
+
+  it("recovers recent buffered audio into the existing review editor", async () => {
+    const user = userEvent.setup();
+    let emitAudioStats: (stats: {
+      chunksObserved: number;
+      silentChunks: number;
+      dataChannelBufferedAmount: number;
+      inputSampleRate: number;
+      samplesInLastChunk: number;
+      rms: number;
+      peak: number;
+    }) => void = () => {};
+    const recentAudio = new Blob([new Uint8Array(128)], { type: "audio/wav" });
+    const realtimeConnection = createConnection();
+    realtimeConnection.getRecentAudio.mockReturnValue(recentAudio);
+    const connectRealtime = vi.fn().mockImplementation(({ onAudioStats }) => {
+      emitAudioStats = onAudioStats;
+      return Promise.resolve(realtimeConnection);
+    });
+    const recoverTranscript = vi
+      .fn()
+      .mockResolvedValue("Could you explain the main trade-off?");
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        recoverTranscript={recoverTranscript}
+        sessionHistoryClient={createEmptySessionHistoryClient()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+
+    act(() => {
+      emitAudioStats({
+        chunksObserved: 4,
+        silentChunks: 1,
+        dataChannelBufferedAmount: 0,
+        inputSampleRate: 48000,
+        samplesInLastChunk: 4096,
+        rms: 0.01,
+        peak: 0.05
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Recover last phrase" }));
+
+    expect(realtimeConnection.getRecentAudio).toHaveBeenCalledWith(30);
+    expect(recoverTranscript).toHaveBeenCalledWith(recentAudio);
+    const editor = await screen.findByRole("form", { name: "Add message" });
+    expect(within(editor).getByRole("textbox", { name: "Message text" })).toHaveValue(
+      "Could you explain the main trade-off?"
+    );
+    expect(screen.getByText("Recovered phrase is ready to review.")).toBeInTheDocument();
   });
 
   it("edits a recognized message, invalidates its old card, and restores the original text", async () => {

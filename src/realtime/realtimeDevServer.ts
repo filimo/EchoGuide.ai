@@ -26,9 +26,14 @@ import {
   type RealtimeClientSecret
 } from "./realtimeSession";
 import { sanitizeRealtimeDiagnosticReport } from "./realtimeDiagnostics";
+import {
+  defaultAudioRecoveryModel,
+  transcribeRecoveredAudio
+} from "./audioRecovery";
 
 const realtimeClientSecretPath = "/api/realtime/client-secret";
 const realtimeAnalyzePhrasePath = "/api/realtime/analyze-phrase";
+const realtimeRecoverTranscriptPath = "/api/realtime/recover-transcript";
 const localKnowledgePath = "/api/knowledge/local";
 const sessionsPath = "/api/sessions";
 const currentSessionPath = "/api/sessions/current";
@@ -37,6 +42,7 @@ const defaultSessionHistoryFilePath = ".echoguide/sessions/history.json";
 const defaultLocalKnowledgeFilePath = ".echoguide/knowledge.local.md";
 const defaultRealtimeDiagnosticsDirectoryPath = ".echoguide/diagnostics";
 const maxRealtimeDiagnosticBytes = 64 * 1024;
+const maxRecoveredAudioBytes = 8 * 1024 * 1024;
 
 type BasicRequest = {
   method?: string;
@@ -68,11 +74,18 @@ type AnalyzePhrase = (options: {
   reasoningEffort?: string;
 }) => Promise<BilingualPhraseAnalysis>;
 
+type RecoverTranscript = (options: {
+  apiKey: string;
+  audioBytes: Uint8Array;
+  model?: string;
+}) => Promise<string>;
+
 type RealtimeClientSecretMiddlewareOptions = {
   env?: NodeJS.ProcessEnv;
   readLocalEnv?: () => string;
   createClientSecret?: CreateClientSecret;
   analyzePhrase?: AnalyzePhrase;
+  recoverTranscript?: RecoverTranscript;
   sessionHistoryFilePath?: string;
   localKnowledgeFilePath?: string;
   realtimeDiagnosticsDirectoryPath?: string;
@@ -120,6 +133,14 @@ function matchesRealtimeAnalyzePhraseRoute(req: BasicRequest): boolean {
   }
 
   return new URL(req.url, "http://localhost").pathname === realtimeAnalyzePhrasePath;
+}
+
+function matchesRealtimeRecoverTranscriptRoute(req: BasicRequest): boolean {
+  if (req.method !== "POST" || req.url == null) {
+    return false;
+  }
+
+  return new URL(req.url, "http://localhost").pathname === realtimeRecoverTranscriptPath;
 }
 
 function matchesLoadLocalKnowledgeRoute(req: BasicRequest): boolean {
@@ -209,11 +230,54 @@ async function readJsonBody(req: BasicRequest): Promise<unknown> {
   return text.trim().length === 0 ? null : (JSON.parse(text) as unknown);
 }
 
+class RecoveredAudioTooLargeError extends Error {}
+
+async function readBinaryBody(req: BasicRequest, maxBytes: number): Promise<Uint8Array> {
+  if (Buffer.isBuffer(req.body)) {
+    if (req.body.byteLength > maxBytes) {
+      throw new RecoveredAudioTooLargeError();
+    }
+
+    return new Uint8Array(req.body);
+  }
+
+  if (req.body instanceof Uint8Array) {
+    if (req.body.byteLength > maxBytes) {
+      throw new RecoveredAudioTooLargeError();
+    }
+
+    return new Uint8Array(req.body);
+  }
+
+  const maybeStream = req as BasicRequest & AsyncIterable<Buffer | string>;
+
+  if (typeof maybeStream[Symbol.asyncIterator] !== "function") {
+    return new Uint8Array();
+  }
+
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of maybeStream) {
+    const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalBytes += bytes.byteLength;
+
+    if (totalBytes > maxBytes) {
+      throw new RecoveredAudioTooLargeError();
+    }
+
+    chunks.push(bytes);
+  }
+
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
 export function createRealtimeClientSecretMiddleware({
   env = process.env,
   readLocalEnv = readDefaultLocalEnv,
   createClientSecret = createRealtimeClientSecret,
   analyzePhrase = analyzeBilingualPhrase,
+  recoverTranscript = transcribeRecoveredAudio,
   sessionHistoryFilePath = defaultSessionHistoryFilePath,
   localKnowledgeFilePath = defaultLocalKnowledgeFilePath,
   realtimeDiagnosticsDirectoryPath = defaultRealtimeDiagnosticsDirectoryPath,
@@ -222,6 +286,7 @@ export function createRealtimeClientSecretMiddleware({
   return async (req: BasicRequest, res: BasicResponse, next: MiddlewareNext): Promise<void> => {
     const handlesClientSecret = matchesRealtimeClientSecretRoute(req);
     const handlesAnalyzePhrase = matchesRealtimeAnalyzePhraseRoute(req);
+    const handlesRecoverTranscript = matchesRealtimeRecoverTranscriptRoute(req);
     const handlesLoadLocalKnowledge = matchesLoadLocalKnowledgeRoute(req);
     const handlesSaveLocalKnowledge = matchesSaveLocalKnowledgeRoute(req);
     const handlesLoadSessions = matchesLoadSessionsRoute(req);
@@ -345,7 +410,7 @@ export function createRealtimeClientSecretMiddleware({
       return;
     }
 
-    if (!handlesClientSecret && !handlesAnalyzePhrase) {
+    if (!handlesClientSecret && !handlesAnalyzePhrase && !handlesRecoverTranscript) {
       next();
       return;
     }
@@ -357,7 +422,11 @@ export function createRealtimeClientSecretMiddleware({
       appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
         source: "backend",
         type: "openai_api_key.missing",
-        route: handlesAnalyzePhrase ? realtimeAnalyzePhrasePath : realtimeClientSecretPath
+        route: handlesAnalyzePhrase
+          ? realtimeAnalyzePhrasePath
+          : handlesRecoverTranscript
+            ? realtimeRecoverTranscriptPath
+            : realtimeClientSecretPath
       });
       sendJson(res, 500, {
         error: "OPENAI_API_KEY is not configured for the Realtime Lab."
@@ -443,6 +512,63 @@ export function createRealtimeClientSecretMiddleware({
         });
         sendJson(res, 502, {
           error: "Could not analyze the phrase with OpenAI.",
+          details:
+            error instanceof Error ? error.message.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted") : null
+        });
+      }
+
+      return;
+    }
+
+    if (handlesRecoverTranscript) {
+      const model =
+        readEnvironmentValue(env, "OPENAI_RECOVERY_TRANSCRIPTION_MODEL", localEnvText) ??
+        defaultAudioRecoveryModel;
+      let audioBytes: Uint8Array;
+
+      try {
+        audioBytes = await readBinaryBody(req, maxRecoveredAudioBytes);
+      } catch (error) {
+        sendJson(res, error instanceof RecoveredAudioTooLargeError ? 413 : 400, {
+          error:
+            error instanceof RecoveredAudioTooLargeError
+              ? "Recovered audio is too large."
+              : "Could not read recovered audio."
+        });
+        return;
+      }
+
+      if (audioBytes.byteLength <= 44) {
+        sendJson(res, 400, { error: "Recovered audio is empty." });
+        return;
+      }
+
+      appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+        source: "backend",
+        type: "audio_recovery.started",
+        audioBytes: audioBytes.byteLength,
+        model
+      });
+
+      try {
+        const transcript = await recoverTranscript({ apiKey, audioBytes, model });
+
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "audio_recovery.completed",
+          audioBytes: audioBytes.byteLength,
+          transcriptCharacters: transcript.length
+        });
+        sendJson(res, 200, { transcript });
+      } catch (error) {
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "audio_recovery.failed",
+          audioBytes: audioBytes.byteLength,
+          errorName: error instanceof Error ? error.name : "UnknownError"
+        });
+        sendJson(res, 502, {
+          error: "Could not recover the transcript from recent audio.",
           details:
             error instanceof Error ? error.message.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted") : null
         });

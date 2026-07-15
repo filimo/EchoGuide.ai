@@ -40,6 +40,19 @@ The OpenAI API key remains on the local Node.js side. Browser code receives only
 
 `connectRealtimeTranscription()` creates a WebRTC peer connection, attaches the microphone track, and uses the Realtime data channel for session updates and transcription events.
 
+The same browser audio monitor that calculates privacy-safe microphone levels keeps
+a rolling 60-second mono PCM buffer in memory. `Recover last phrase` exports only
+the latest 30 seconds as a temporary WAV blob and sends it to the local development
+API. The server forwards that bounded file to `/v1/audio/transcriptions`; the
+browser never receives the server API key.
+
+The recovery recorder is activated from the `Start live` user gesture before the
+client-secret request and WebRTC signaling. This keeps local PCM capture independent
+from Realtime connection latency and satisfies iPad Web Audio activation rules. If
+WebKit still reports a suspended or interrupted context, the UI keeps the
+`Enable recovery` action active until local audio chunks arrive and retries from
+every explicit tap; visibility restoration also triggers a best-effort resume.
+
 The primary mode is transcription-only. EchoGuide does not request model audio output or create a speaking voice-agent session.
 
 The transcription prompt is topic-neutral: it accepts everyday conversation,
@@ -52,6 +65,8 @@ The local server reads `OPENAI_REALTIME_TRANSCRIPTION_MODEL` and
 `OPENAI_REALTIME_WHISPER_MODEL` from `.env.local`, applies the selected model to
 the ephemeral Realtime session, and returns the safe model id to the browser so
 the post-connect `session.update` keeps the same transcription model.
+The bounded recovery route reads `OPENAI_RECOVERY_TRANSCRIPTION_MODEL`; it
+defaults to `gpt-4o-transcribe` and uses the same server-side API key.
 
 ### Turn detection
 
@@ -84,6 +99,10 @@ the superseded text is ignored, and the user can generate a replacement card.
 ### Local persistence
 
 Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Transcript turns record whether they came from Realtime or manual input; corrected Realtime turns retain the original recognized text so it can be restored. Raw audio is not stored.
+
+Recovery audio is never written to session history or diagnostics. The rolling
+buffer is cleared when the live connection stops, and the recovered transcript is
+presented in the manual message editor before it can be saved.
 
 ## Diagnostics and privacy
 

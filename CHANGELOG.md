@@ -13,6 +13,9 @@ Until the first versioned release, changes are grouped by date.
 - Training Mode can add missed transcript messages manually, edit recognized
   messages with an explicit speaker role, restore the original recognized text,
   and generate a replacement phrase card from the correction.
+- Training Mode keeps a 60-second microphone buffer in memory during a live
+  session and can recover the latest 30 seconds through a separate transcription
+  request. Recovered text opens in the existing message editor for confirmation.
 
 ### Changed
 
@@ -25,6 +28,11 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Recovery audio now starts before Realtime signaling and keeps an explicit
+  `Enable recovery` action active until local audio chunks arrive, including when
+  iPad WebKit suspends the local AudioContext.
+- Recovery status and errors remain visible near the live controls, and a recovered
+  phrase scrolls its review editor into view.
 - An unexpected microphone or WebRTC transport stop now releases the stale live
   session immediately, so Training Mode can be restarted without an extra
   `Stop live` action.

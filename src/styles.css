@@ -92,6 +92,12 @@ button {
   color: #9b1c1c;
 }
 
+.status-warning {
+  border-color: #e7c66c;
+  background: #fff8df;
+  color: #75560a;
+}
+
 .notes-label {
   display: block;
   margin: 16px 0 8px;

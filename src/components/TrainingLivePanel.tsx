@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
+  createBrowserRecoveryAudioRecorder,
+  type RecoveryAudioCaptureState,
+  type RecoveryAudioRecorder
+} from "../audio/recoveryAudioRecorder";
+import {
   ensureUniqueSessionPhraseIds,
   type SessionHistoryBridgePhrase,
   type SessionHistoryClient,
@@ -100,11 +105,13 @@ type TrainingLivePanelProps = {
   sourceLabel?: string;
   requestClientSecret?: (mode: RealtimeLabMode) => Promise<RealtimeClientSecret>;
   connectRealtime?: typeof connectRealtimeTranscription;
+  createRecoveryAudioRecorder?: typeof createBrowserRecoveryAudioRecorder;
   analyzePhrase?: (
     transcript: string,
     knowledgeContext: string,
     recentContext: string[]
   ) => Promise<BilingualPhraseAnalysis>;
+  recoverTranscript?: (audio: Blob) => Promise<string>;
   copyText?: (text: string) => Promise<void> | void;
   sessionHistoryClient?: SessionHistoryClient;
   createSessionId?: () => string;
@@ -176,6 +183,28 @@ async function requestDefaultPhraseAnalysis(
   }
 
   return (await response.json()) as BilingualPhraseAnalysis;
+}
+
+async function requestDefaultRecoveredTranscript(audio: Blob): Promise<string> {
+  const response = await fetch("/api/realtime/recover-transcript", {
+    method: "POST",
+    headers: {
+      "Content-Type": "audio/wav"
+    },
+    body: audio
+  });
+
+  if (!response.ok) {
+    throw new Error("Recent audio transcription failed.");
+  }
+
+  const payload = (await response.json()) as { transcript?: unknown };
+
+  if (typeof payload.transcript !== "string") {
+    throw new Error("Recovered transcript response is invalid.");
+  }
+
+  return payload.transcript.trim();
 }
 
 function padDatePart(value: number): string {
@@ -363,7 +392,9 @@ export function TrainingLivePanel({
   sourceLabel = "",
   requestClientSecret = requestDefaultClientSecret,
   connectRealtime = connectRealtimeTranscription,
+  createRecoveryAudioRecorder = createBrowserRecoveryAudioRecorder,
   analyzePhrase = requestDefaultPhraseAnalysis,
+  recoverTranscript = requestDefaultRecoveredTranscript,
   copyText = copyTextToClipboard,
   sessionHistoryClient = defaultSessionHistoryClient,
   createSessionId = createDefaultSessionId,
@@ -398,6 +429,11 @@ export function TrainingLivePanel({
   const [followLive, setFollowLive] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
+  const [recoveryStatus, setRecoveryStatus] = useState<"idle" | "loading">("idle");
+  const [recoveryAudioCaptureState, setRecoveryAudioCaptureState] =
+    useState<RecoveryAudioCaptureState>("idle");
+  const [recoveryNotice, setRecoveryNotice] = useState("");
+  const [recoverySuggested, setRecoverySuggested] = useState(false);
   const [audioStats, setAudioStats] = useState<RealtimeAudioStats | null>(null);
   const [turnDetectionSettings, setTurnDetectionSettings] = useState(() =>
     loadRealtimeTurnDetectionSettings(window.localStorage)
@@ -407,11 +443,14 @@ export function TrainingLivePanel({
   );
   const phraseCardSequence = useRef(0);
   const connectionRef = useRef<RealtimeTranscriptionConnection | null>(null);
+  const recoveryAudioRecorderRef = useRef<RecoveryAudioRecorder | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const followLiveRef = useRef(true);
   const trainingControlRailRef = useRef<HTMLElement | null>(null);
   const conversationPanelRef = useRef<HTMLDivElement | null>(null);
   const transcriptDialogueRef = useRef<HTMLDivElement | null>(null);
+  const transcriptEditorRef = useRef<HTMLFormElement | null>(null);
+  const shouldRevealRecoveredEditorRef = useRef(false);
   const transcriptTurnsRef = useRef<TranscriptTurn[]>([]);
   const deletedTranscriptTurnIdsRef = useRef<Set<string>>(new Set());
   const manuallyAssignedSpeakerTurnIdsRef = useRef<Set<string>>(new Set());
@@ -500,6 +539,7 @@ export function TrainingLivePanel({
                 )
               : null
         });
+        setRecoverySuggested(true);
         void flushDiagnostics();
       }, unacknowledgedSpeechDelayMs);
     }
@@ -529,6 +569,19 @@ export function TrainingLivePanel({
       void flushDiagnostics();
       releaseLiveTransport("error");
       scheduleDiagnosticsStop();
+    }
+  }
+
+  function handleRecoveryAudioCaptureState(state: RecoveryAudioCaptureState) {
+    setRecoveryAudioCaptureState(state);
+    recordDiagnostic("audio_recovery.capture_state", { state });
+
+    if (state === "recording") {
+      setRecoveryNotice("Recovery audio is recording.");
+    } else if (state === "needs-user-action") {
+      setRecoveryNotice("Tap Enable recovery to start the local audio buffer.");
+    } else if (state === "unavailable") {
+      setRecoveryNotice("Recovery audio is unavailable in this browser session.");
     }
   }
 
@@ -606,9 +659,39 @@ export function TrainingLivePanel({
   }, [transcriptTurns]);
 
   useEffect(() => {
+    function reactivateRecoveryAudio() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void recoveryAudioRecorderRef.current?.ensureActive();
+    }
+
+    document.addEventListener("visibilitychange", reactivateRecoveryAudio);
+    window.addEventListener("pageshow", reactivateRecoveryAudio);
+
+    return () => {
+      document.removeEventListener("visibilitychange", reactivateRecoveryAudio);
+      window.removeEventListener("pageshow", reactivateRecoveryAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (transcriptEditor == null || !shouldRevealRecoveredEditorRef.current) {
+      return;
+    }
+
+    shouldRevealRecoveredEditorRef.current = false;
+    window.requestAnimationFrame(() => {
+      transcriptEditorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [transcriptEditor]);
+
+  useEffect(() => {
     return () => {
       realtimeStatusRef.current = "disconnected";
       connectionRef.current?.disconnect();
+      recoveryAudioRecorderRef.current?.stop();
     };
   }, []);
 
@@ -661,6 +744,15 @@ export function TrainingLivePanel({
     !pendingAnalysisIds.has(selectedTranscriptTurn.id);
   const audioLevel = Math.min(1, Math.max((audioStats?.peak ?? 0) * 24, (audioStats?.rms ?? 0) * 80));
   const audioLevelPercent = Math.round(audioLevel * 100);
+  const recoveryAudioChunks = audioStats?.chunksObserved ?? 0;
+  const recoveryCanRecover = recoveryAudioChunks > 0;
+  const recoveryButtonDisabled = recoveryStatus === "loading";
+  const recoveryButtonLabel =
+    recoveryStatus === "loading"
+      ? "Recovering..."
+      : recoveryCanRecover
+        ? "Recover last phrase"
+        : "Enable recovery";
   const transcriptExport = transcriptTurns
     .map((turn) => `${turn.speakerLabel}: ${turn.text}`)
     .join("\n");
@@ -1015,6 +1107,7 @@ export function TrainingLivePanel({
       event.type === "conversation.item.input_audio_transcription.completed" &&
       typeof event.transcript === "string"
     ) {
+      setRecoverySuggested(false);
       const completedTranscript = event.transcript.trim();
       const phraseId = `training-phrase-${phraseCardSequence.current}`;
       const shouldShowAnalysis = followLiveRef.current;
@@ -1069,8 +1162,30 @@ export function TrainingLivePanel({
     }
 
     setErrorMessage("");
+    setRecoverySuggested(false);
+    setRecoveryStatus("idle");
+    setRecoveryNotice("");
     realtimeStatusRef.current = "connecting";
     setRealtimeStatus("connecting");
+
+    let recoveryAudioRecorder: RecoveryAudioRecorder | null = null;
+
+    try {
+      recoveryAudioRecorder = createRecoveryAudioRecorder({
+        stream: liveStream,
+        onAudioStats: handleAudioStats,
+        onStateChange: handleRecoveryAudioCaptureState,
+        onDiagnosticEvent: handleConnectionDiagnostic
+      });
+      recoveryAudioRecorderRef.current = recoveryAudioRecorder;
+      void recoveryAudioRecorder.ensureActive();
+    } catch (error) {
+      setRecoveryAudioCaptureState("unavailable");
+      setRecoveryNotice("Recovery audio is unavailable in this browser session.");
+      recordDiagnostic("audio_recovery.capture_unavailable", {
+        errorName: error instanceof Error ? error.name : "UnknownError"
+      });
+    }
 
     try {
       const clientSecret = await requestClientSecret("realtime-vad");
@@ -1108,6 +1223,7 @@ export function TrainingLivePanel({
         onEvent: handleRealtimeEvent,
         onAudioStats: handleAudioStats,
         onDiagnosticEvent: handleConnectionDiagnostic,
+        audioAppender: recoveryAudioRecorder,
         onError: (message) => {
           recordDiagnostic("realtime.client_error");
           setErrorMessage(message);
@@ -1121,11 +1237,14 @@ export function TrainingLivePanel({
       recordDiagnostic("training_live.connected");
       void flushDiagnostics();
     } catch (error) {
+      recoveryAudioRecorder?.stop();
+      recoveryAudioRecorderRef.current = null;
       recordDiagnostic("training_live.start_error");
       setConnection(null);
       realtimeStatusRef.current = "error";
       setRealtimeStatus("error");
       setErrorMessage(toErrorMessage(error));
+      setRecoveryAudioCaptureState("idle");
       onStopMicrophone?.();
       void flushDiagnostics();
     }
@@ -1139,7 +1258,12 @@ export function TrainingLivePanel({
     realtimeStatusRef.current = nextStatus;
     setRealtimeStatus(nextStatus);
     liveConnection?.disconnect();
+    recoveryAudioRecorderRef.current = null;
     setAudioStats(null);
+    setRecoverySuggested(false);
+    setRecoveryStatus("idle");
+    setRecoveryAudioCaptureState("idle");
+    setRecoveryNotice("");
     onStopMicrophone?.();
     activeStreamRef.current = null;
     serverSpeechActiveRef.current = false;
@@ -1165,6 +1289,73 @@ export function TrainingLivePanel({
     void flushDiagnostics();
     releaseLiveTransport("disconnected");
     scheduleDiagnosticsStop();
+  }
+
+  async function handleRecoverLastPhrase() {
+    if (recoveryStatus === "loading") {
+      return;
+    }
+
+    const recentAudio = connectionRef.current?.getRecentAudio(30) ?? null;
+
+    if (recentAudio == null || recentAudio.size <= 44) {
+      setErrorMessage("No recent microphone audio is available yet.");
+      setRecoveryNotice("No recent microphone audio is available yet.");
+      return;
+    }
+
+    setErrorMessage("");
+    setCopyStatus("");
+    setRecoveryStatus("loading");
+    setRecoveryNotice("Recovering the latest buffered audio...");
+    recordDiagnostic("audio_recovery.requested", { audioBytes: recentAudio.size });
+
+    try {
+      const recoveredTranscript = await recoverTranscript(recentAudio);
+
+      if (isObviousTranscriptNoise(recoveredTranscript)) {
+        throw new Error("No clear speech was found in the recent audio.");
+      }
+
+      setTranscriptEditor({
+        mode: "add",
+        turnId: null,
+        speakerLabel: "Heard",
+        text: recoveredTranscript
+      });
+      shouldRevealRecoveredEditorRef.current = true;
+      setRecoverySuggested(false);
+      setRecoveryNotice("Recovered phrase is ready to review.");
+      recordDiagnostic("audio_recovery.ready", {
+        audioBytes: recentAudio.size,
+        transcriptCharacters: recoveredTranscript.length
+      });
+    } catch (error) {
+      recordDiagnostic("audio_recovery.client_failed", { audioBytes: recentAudio.size });
+      setErrorMessage(toErrorMessage(error));
+      setRecoveryNotice(toErrorMessage(error));
+    } finally {
+      setRecoveryStatus("idle");
+    }
+  }
+
+  async function handleEnableRecovery() {
+    const recoveryAudioRecorder = recoveryAudioRecorderRef.current;
+
+    if (recoveryAudioRecorder == null) {
+      setRecoveryAudioCaptureState("unavailable");
+      setRecoveryNotice("Recovery audio is unavailable in this browser session.");
+      return;
+    }
+
+    setRecoveryNotice("Enabling the local recovery buffer...");
+    const nextState = await recoveryAudioRecorder.ensureActive();
+
+    if (nextState === "recording") {
+      setRecoveryNotice("Recovery is enabled. New microphone audio is being buffered.");
+    } else {
+      setRecoveryNotice("Safari did not start the recovery buffer. Tap Enable recovery again.");
+    }
   }
 
   async function handleCopyTranscript() {
@@ -1677,9 +1868,22 @@ export function TrainingLivePanel({
                 {realtimeStatus === "connecting" ? "Starting live..." : "Start live"}
               </button>
             ) : (
-              <button type="button" onClick={handleStopLive}>
-                Stop live
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={recoveryButtonDisabled}
+                  onClick={() =>
+                    void (recoveryCanRecover
+                      ? handleRecoverLastPhrase()
+                      : handleEnableRecovery())
+                  }
+                >
+                  {recoveryButtonLabel}
+                </button>
+                <button type="button" onClick={handleStopLive}>
+                  Stop live
+                </button>
+              </>
             )}
             <button type="button" onClick={handleNewSession}>
               New session
@@ -1701,6 +1905,18 @@ export function TrainingLivePanel({
             Microphone: {stream == null ? "not connected" : "active"}
           </span>
           <span className={`status status-${realtimeStatus}`}>Realtime: {realtimeStatus}</span>
+          {recoverySuggested ? (
+            <span className="status status-warning">Speech may be missing. Try recovery.</span>
+          ) : null}
+          {recoveryNotice.length > 0 ? (
+            <span
+              className={`status ${
+                recoveryAudioCaptureState === "recording" ? "status-active" : "status-warning"
+              }`}
+            >
+              {recoveryNotice}
+            </span>
+          ) : null}
           <span className="status">
             Notes: {notesCharacterCount > 0 ? `${notesCharacterCount} chars` : "empty"}
           </span>
@@ -1934,6 +2150,7 @@ export function TrainingLivePanel({
           </div>
           {transcriptEditor != null ? (
             <form
+              ref={transcriptEditorRef}
               className="transcript-editor"
               aria-label={transcriptEditor.mode === "add" ? "Add message" : "Edit message"}
               onSubmit={(event) => {

@@ -38,6 +38,7 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - `Pasted notes` as personal context for grounded answers;
 - manual card generation from a selected group of transcript turns;
 - manual transcript messages and in-place corrections with speaker selection;
+- in-memory recovery of a missed phrase without storing raw call audio;
 - local session history without raw audio storage;
 - privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
 - a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
@@ -144,6 +145,8 @@ EchoGuide is an early runnable prototype:
 - production authentication, cloud persistence, and a standalone backend are not implemented yet;
 - the local development server must not be exposed directly to the public internet;
 - live-session cost depends on the selected OpenAI models and conversation length.
+- audio recovery is available only while the live session is running; stopping
+  live mode clears the in-memory audio buffer.
 
 ## Roadmap
 

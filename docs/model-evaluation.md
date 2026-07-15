@@ -9,6 +9,9 @@ The latest recorded comparison selected `gpt-5.6-luna` with `reasoning.effort: "
 The runtime values are configured in `.env.local` through `OPENAI_BILINGUAL_MODEL`
 and `OPENAI_BILINGUAL_REASONING_EFFORT`. Realtime transcription uses
 `OPENAI_REALTIME_TRANSCRIPTION_MODEL` and `OPENAI_REALTIME_WHISPER_MODEL`.
+Missed-phrase recovery is configured separately through
+`OPENAI_RECOVERY_TRANSCRIPTION_MODEL` because it uses a bounded file request
+instead of the live Realtime session.
 `.env.example` contains the current defaults.
 
 Model availability, preview status, and pricing can change. Re-run the evaluation before treating this choice as a production default.

@@ -226,14 +226,35 @@ describe("Realtime WebRTC connection", () => {
 
     expect(audioAppenderFactory).toHaveBeenCalledWith({
       stream,
-      dataChannel: peer.dataChannel,
+      getDataChannelBufferedAmount: expect.any(Function),
       onAudioStats: undefined,
       onDiagnosticEvent: undefined
     });
+    const getBufferedAmount = audioAppenderFactory.mock.calls[0][0]
+      .getDataChannelBufferedAmount as () => number;
+    peer.dataChannel.bufferedAmount = 42;
+    expect(getBufferedAmount()).toBe(42);
 
     connection.disconnect();
 
     expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("exposes recent buffered audio from the browser audio monitor", async () => {
+    const peer = new FakePeerConnection();
+    const bufferedAudio = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+    const getRecentAudio = vi.fn().mockReturnValue(bufferedAudio);
+    const connection = await connectRealtimeTranscription({
+      stream: createStream(),
+      clientSecret: "ek_ephemeral",
+      fetchImpl: vi.fn().mockResolvedValue(sdpResponse("answer-sdp", { ok: true, status: 200 })),
+      peerConnectionFactory: () => peer as unknown as RTCPeerConnection,
+      audioAppenderFactory: () => ({ stop: vi.fn(), getRecentAudio }),
+      onEvent: vi.fn()
+    });
+
+    expect(connection.getRecentAudio(30)).toBe(bufferedAudio);
+    expect(getRecentAudio).toHaveBeenCalledWith(30);
   });
 
   it("passes audio diagnostics callbacks into the audio appender", async () => {
@@ -254,10 +275,38 @@ describe("Realtime WebRTC connection", () => {
 
     expect(audioAppenderFactory).toHaveBeenCalledWith({
       stream,
-      dataChannel: peer.dataChannel,
+      getDataChannelBufferedAmount: expect.any(Function),
       onAudioStats,
       onDiagnosticEvent: undefined
     });
+  });
+
+  it("uses a recovery recorder that was activated before the network connection", async () => {
+    const peer = new FakePeerConnection();
+    const providedAudioAppender = {
+      ensureActive: vi.fn().mockResolvedValue("recording" as const),
+      getState: vi.fn().mockReturnValue("recording" as const),
+      getRecentAudio: vi.fn().mockReturnValue(null),
+      stop: vi.fn()
+    };
+    const audioAppenderFactory = vi.fn();
+
+    const connection = await connectRealtimeTranscription({
+      stream: createStream(),
+      clientSecret: "ek_ephemeral",
+      fetchImpl: vi.fn().mockResolvedValue(sdpResponse("answer-sdp", { ok: true, status: 200 })),
+      peerConnectionFactory: () => peer as unknown as RTCPeerConnection,
+      audioAppender: providedAudioAppender,
+      audioAppenderFactory,
+      onEvent: vi.fn()
+    });
+
+    expect(audioAppenderFactory).not.toHaveBeenCalled();
+    expect(providedAudioAppender.ensureActive).not.toHaveBeenCalled();
+
+    connection.disconnect();
+
+    expect(providedAudioAppender.stop).toHaveBeenCalledOnce();
   });
 
   it("reports peer, data channel, and microphone track lifecycle changes", async () => {

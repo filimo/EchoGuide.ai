@@ -29,6 +29,8 @@ The product is not intended to automate the conversation. It keeps the user in c
 - instant local bridge phrases;
 - grounded suggested replies based on recent context and pasted notes;
 - manual transcript additions and corrections with explicit speaker roles;
+- a 60-second in-memory microphone buffer with manual recovery of the latest
+  30 seconds when Realtime misses a phrase;
 - manual card generation from selected transcript turns;
 - local session history without raw audio;
 - privacy-safe Realtime diagnostics.
@@ -57,6 +59,10 @@ The user chooses the active transcript turn, can add a missed phrase or correct 
 recognized phrase, selects the speaker role, reply, bridge phrase, and whether the
 UI follows the latest live phrase. EchoGuide assists the conversation; it does not
 speak on the user's behalf.
+
+Recovered audio follows the same boundary: a separate transcription request opens
+the result in the message editor, and the user confirms the text and speaker before
+it becomes part of the session.
 
 ## Current limitations
 

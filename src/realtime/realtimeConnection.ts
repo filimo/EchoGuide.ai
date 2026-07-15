@@ -1,3 +1,9 @@
+import {
+  createBrowserRecoveryAudioRecorder,
+  type RecoveryAudioCaptureState,
+  type RecoveryAudioStats
+} from "../audio/recoveryAudioRecorder";
+
 export const OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 
 export type RealtimeServerEvent = {
@@ -10,6 +16,7 @@ export type RealtimeTranscriptionConnection = {
   clearAudio: () => boolean;
   commitAudio: () => boolean;
   collectStats: () => Promise<void>;
+  getRecentAudio: (seconds?: number) => Blob | null;
   disconnect: () => void;
 };
 
@@ -18,17 +25,12 @@ export type RealtimeClientEvent = {
   [key: string]: unknown;
 };
 
-export type RealtimeAudioStats = {
-  chunksObserved: number;
-  silentChunks: number;
-  dataChannelBufferedAmount: number;
-  inputSampleRate: number;
-  samplesInLastChunk: number;
-  rms: number;
-  peak: number;
-};
+export type RealtimeAudioStats = RecoveryAudioStats;
 
 export type RealtimeAudioAppender = {
+  ensureActive?: () => Promise<RecoveryAudioCaptureState>;
+  getState?: () => RecoveryAudioCaptureState;
+  getRecentAudio?: (seconds?: number) => Blob | null;
   stop: () => void;
 };
 
@@ -47,21 +49,15 @@ type ConnectRealtimeTranscriptionOptions = {
   sessionUpdateAfterOpen?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
   peerConnectionFactory?: () => RTCPeerConnection;
+  audioAppender?: RealtimeAudioAppender | null;
   audioAppenderFactory?: (options: {
     stream: MediaStream;
-    dataChannel: RTCDataChannel;
+    getDataChannelBufferedAmount?: () => number;
     onAudioStats?: (stats: RealtimeAudioStats) => void;
     onDiagnosticEvent?: (event: RealtimeConnectionDiagnostic) => void;
   }) => RealtimeAudioAppender;
   callsUrl?: string;
 };
-
-type AudioContextConstructor = new (options?: AudioContextOptions) => AudioContext;
-
-type WindowWithWebkitAudio = Window &
-  typeof globalThis & {
-    webkitAudioContext?: AudioContextConstructor;
-  };
 
 function parseRealtimeEvent(data: string): RealtimeServerEvent | null {
   const parsed = JSON.parse(data) as unknown;
@@ -104,12 +100,14 @@ export async function connectRealtimeTranscription({
   sessionUpdateAfterOpen,
   fetchImpl = fetch,
   peerConnectionFactory = () => new RTCPeerConnection(),
-  audioAppenderFactory = createBrowserPcmAudioAppender,
+  audioAppender: providedAudioAppender,
+  audioAppenderFactory = createBrowserRecoveryAudioRecorder,
   callsUrl = OPENAI_REALTIME_CALLS_URL
 }: ConnectRealtimeTranscriptionOptions): Promise<RealtimeTranscriptionConnection> {
   const peerConnection = peerConnectionFactory();
   const dataChannel = peerConnection.createDataChannel("oai-events");
-  let audioAppender: RealtimeAudioAppender | null = null;
+  let audioAppender: RealtimeAudioAppender | null = providedAudioAppender ?? null;
+  const shouldCreateAudioAppender = providedAudioAppender === undefined;
 
   dataChannel.addEventListener("message", (message) => {
     try {
@@ -200,16 +198,17 @@ export async function connectRealtimeTranscription({
   }
 
   function startAudioAppender() {
-    if (audioAppender != null) {
+    if (audioAppender != null || !shouldCreateAudioAppender) {
       return;
     }
 
     audioAppender = audioAppenderFactory({
       stream,
-      dataChannel,
+      getDataChannelBufferedAmount: () => dataChannel.bufferedAmount,
       onAudioStats,
       onDiagnosticEvent
     });
+    void audioAppender.ensureActive?.();
   }
 
   startAudioAppender();
@@ -273,93 +272,13 @@ export async function connectRealtimeTranscription({
       return sendEvent({ type: "input_audio_buffer.commit" });
     },
     collectStats,
+    getRecentAudio(seconds) {
+      return audioAppender?.getRecentAudio?.(seconds) ?? null;
+    },
     disconnect() {
       audioAppender?.stop();
       dataChannel.close();
       peerConnection.close();
-    }
-  };
-}
-
-function measurePcm(samples: Float32Array) {
-  let peak = 0;
-  let sumSquares = 0;
-
-  samples.forEach((sample) => {
-    const absolute = Math.abs(sample);
-    peak = Math.max(peak, absolute);
-    sumSquares += sample * sample;
-  });
-
-  return {
-    peak,
-    rms: samples.length > 0 ? Math.sqrt(sumSquares / samples.length) : 0
-  };
-}
-
-export function createBrowserPcmAudioAppender({
-  stream,
-  dataChannel,
-  onAudioStats,
-  onDiagnosticEvent
-}: {
-  stream: MediaStream;
-  dataChannel: RTCDataChannel;
-  onAudioStats?: (stats: RealtimeAudioStats) => void;
-  onDiagnosticEvent?: (event: RealtimeConnectionDiagnostic) => void;
-}): RealtimeAudioAppender {
-  const AudioContextImpl =
-    globalThis.AudioContext ?? (globalThis as WindowWithWebkitAudio).webkitAudioContext;
-
-  if (AudioContextImpl == null) {
-    throw new Error("Browser AudioContext is unavailable for Realtime audio capture.");
-  }
-
-  const audioContext = new AudioContextImpl();
-  const source = audioContext.createMediaStreamSource(stream);
-  const processor = audioContext.createScriptProcessor(4096, 1, 1);
-  let chunksObserved = 0;
-  let silentChunks = 0;
-
-  const emitAudioContextState = () =>
-    onDiagnosticEvent?.({
-      type: "audio_context.state",
-      details: { state: audioContext.state, sampleRate: audioContext.sampleRate }
-    });
-
-  audioContext.addEventListener("statechange", emitAudioContextState);
-  emitAudioContextState();
-
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    const level = measurePcm(input);
-
-    chunksObserved += 1;
-
-    if (level.rms < 0.002 && level.peak < 0.01) {
-      silentChunks += 1;
-    }
-
-    onAudioStats?.({
-      chunksObserved,
-      silentChunks,
-      dataChannelBufferedAmount: dataChannel.bufferedAmount,
-      inputSampleRate: audioContext.sampleRate,
-      samplesInLastChunk: input.length,
-      rms: level.rms,
-      peak: level.peak
-    });
-  };
-
-  source.connect(processor);
-  processor.connect(audioContext.destination);
-
-  return {
-    stop() {
-      processor.disconnect();
-      source.disconnect();
-      audioContext.removeEventListener("statechange", emitAudioContextState);
-      void audioContext.close();
     }
   };
 }

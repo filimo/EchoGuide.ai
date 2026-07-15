@@ -534,6 +534,101 @@ describe("Bilingual analysis dev middleware", () => {
   });
 });
 
+describe("Recovered audio dev middleware", () => {
+  it("transcribes a recent WAV buffer with the server key and returns only text", async () => {
+    const realtimeDiagnosticsDirectoryPath = mkdtempSync(
+      join(tmpdir(), "echoguide-audio-recovery-")
+    );
+    const recoverTranscript = vi.fn().mockResolvedValue("Could you explain that trade-off?");
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: {},
+      readLocalEnv: () =>
+        [
+          "OPENAI_API_KEY=sk-local-only",
+          "OPENAI_RECOVERY_TRANSCRIPTION_MODEL=gpt-transcribe-recovery"
+        ].join("\n"),
+      recoverTranscript,
+      realtimeDiagnosticsDirectoryPath,
+      now: () => new Date("2026-07-14T12:00:00.000Z")
+    });
+    const res = createResponse();
+    const wav = Buffer.alloc(128, 7);
+
+    await middleware(
+      { method: "POST", url: "/api/realtime/recover-transcript", body: wav },
+      res,
+      vi.fn()
+    );
+
+    expect(recoverTranscript).toHaveBeenCalledWith({
+      apiKey: "sk-local-only",
+      audioBytes: expect.any(Uint8Array),
+      model: "gpt-transcribe-recovery"
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      transcript: "Could you explain that trade-off?"
+    });
+    expect(res.body).not.toContain("sk-local-only");
+
+    const diagnosticLog = readFileSync(
+      join(realtimeDiagnosticsDirectoryPath, "realtime-2026-07-14.jsonl"),
+      "utf8"
+    );
+    expect(diagnosticLog).toContain("audio_recovery.completed");
+    expect(diagnosticLog).not.toContain("Could you explain that trade-off?");
+  });
+
+  it("rejects an empty recovery buffer before calling OpenAI", async () => {
+    const recoverTranscript = vi.fn();
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: { OPENAI_API_KEY: "sk-process" },
+      readLocalEnv: () => "",
+      recoverTranscript
+    });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "POST",
+        url: "/api/realtime/recover-transcript",
+        body: Buffer.alloc(44)
+      },
+      res,
+      vi.fn()
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: "Recovered audio is empty." });
+    expect(recoverTranscript).not.toHaveBeenCalled();
+  });
+
+  it("returns a browser-safe failure when recovery transcription fails", async () => {
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: { OPENAI_API_KEY: "sk-process" },
+      readLocalEnv: () => "",
+      recoverTranscript: vi.fn().mockRejectedValue(new Error("upstream sk-private failed"))
+    });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "POST",
+        url: "/api/realtime/recover-transcript",
+        body: Buffer.alloc(128, 1)
+      },
+      res,
+      vi.fn()
+    );
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body).not.toContain("sk-private");
+    expect(JSON.parse(res.body)).toMatchObject({
+      error: "Could not recover the transcript from recent audio."
+    });
+  });
+});
+
 describe("Training session disk history middleware", () => {
   const draftSession: SessionHistoryEntryDraft = {
     sourceLabel: "ChatGPT Real Voice practice",
