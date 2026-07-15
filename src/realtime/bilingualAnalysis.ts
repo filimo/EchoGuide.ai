@@ -17,6 +17,15 @@ export type BilingualPhraseAnalysis = {
   suggestedReplies: BilingualSuggestedReply[];
 };
 
+export type BilingualAnalysisUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+};
+
 type AnalyzePhraseOptions = {
   apiKey: string;
   transcript: string;
@@ -25,6 +34,7 @@ type AnalyzePhraseOptions = {
   model?: string;
   reasoningEffort?: string;
   fetchImpl?: typeof fetch;
+  onUsage?: (usage: BilingualAnalysisUsage) => void;
 };
 
 type BilingualModelOptions = {
@@ -35,9 +45,10 @@ const fallbackBridgePhrase = "Sure, let me think for a second.";
 
 export const defaultBilingualModel = "gpt-5.6-luna";
 export const defaultBilingualReasoningEffort = "none";
+export const defaultBilingualPromptCacheKey = "echoguide:phrase-analysis:v1";
 export const maxKnowledgeContextCharacters = 6000;
-export const maxRecentContextTurns = 15;
-export const maxRecentContextCharacters = 5000;
+export const maxRecentContextTurns = 8;
+export const maxRecentContextCharacters = 3000;
 
 const bilingualAnalysisInstructions = [
   "You help a Russian-speaking senior software engineer practice English interviews.",
@@ -101,6 +112,45 @@ export function normalizeRecentContext(value: string[] | undefined): string[] {
 function supportsReasoningEffort(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
   return match != null && Number(match[1]) >= 1;
+}
+
+function supportsExplicitPromptCaching(model: string): boolean {
+  const match = /^gpt-5\.(\d+)/.exec(model);
+  return match != null && Number(match[1]) >= 6;
+}
+
+function readTokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function readBilingualAnalysisUsage(payload: unknown): BilingualAnalysisUsage | null {
+  if (typeof payload !== "object" || payload == null) {
+    return null;
+  }
+
+  const usage = (payload as { usage?: unknown }).usage;
+
+  if (typeof usage !== "object" || usage == null) {
+    return null;
+  }
+
+  const inputDetails = (usage as { input_tokens_details?: unknown }).input_tokens_details;
+  const outputDetails = (usage as { output_tokens_details?: unknown }).output_tokens_details;
+
+  return {
+    inputTokens: readTokenCount((usage as { input_tokens?: unknown }).input_tokens),
+    cachedInputTokens: readTokenCount(
+      (inputDetails as { cached_tokens?: unknown } | null)?.cached_tokens
+    ),
+    cacheWriteTokens: readTokenCount(
+      (inputDetails as { cache_write_tokens?: unknown } | null)?.cache_write_tokens
+    ),
+    outputTokens: readTokenCount((usage as { output_tokens?: unknown }).output_tokens),
+    reasoningTokens: readTokenCount(
+      (outputDetails as { reasoning_tokens?: unknown } | null)?.reasoning_tokens
+    ),
+    totalTokens: readTokenCount((usage as { total_tokens?: unknown }).total_tokens)
+  };
 }
 
 const analysisSchema = {
@@ -277,28 +327,56 @@ export function buildBilingualPhraseAnalysisRequest(
     normalizedRecentContext.length > 0
       ? `Recent transcript context:\n${formattedRecentContext}\n\nActive transcript: ${transcript}\nBuild the card for the freshest coherent thought.`
       : `Active transcript: ${transcript}`;
+  const usesExplicitPromptCaching = supportsExplicitPromptCaching(model);
+  const stableSystemContent = usesExplicitPromptCaching
+    ? [
+        {
+          type: "input_text" as const,
+          text: bilingualAnalysisInstructions,
+          ...(normalizedKnowledgeContext.length === 0
+            ? { prompt_cache_breakpoint: { mode: "explicit" as const } }
+            : {})
+        }
+      ]
+    : bilingualAnalysisInstructions;
   const input = [
     {
-      role: "system",
-      content: bilingualAnalysisInstructions
+      role: "system" as const,
+      content: stableSystemContent
     },
     ...(normalizedKnowledgeContext.length > 0
       ? [
           {
-            role: "user",
-            content: `Personal knowledge context:\n${normalizedKnowledgeContext}`
+            role: "user" as const,
+            content: usesExplicitPromptCaching
+              ? [
+                  {
+                    type: "input_text" as const,
+                    text: `Personal knowledge context:\n${normalizedKnowledgeContext}`,
+                    prompt_cache_breakpoint: { mode: "explicit" as const }
+                  }
+                ]
+              : `Personal knowledge context:\n${normalizedKnowledgeContext}`
           }
         ]
       : []),
     {
-      role: "user",
-      content: activeTranscriptMessage
+      role: "user" as const,
+      content: usesExplicitPromptCaching
+        ? [{ type: "input_text" as const, text: activeTranscriptMessage }]
+        : activeTranscriptMessage
     }
   ];
 
   return {
     model,
     ...(supportsReasoningEffort(model) ? { reasoning: { effort: reasoningEffort } } : {}),
+    ...(usesExplicitPromptCaching
+      ? {
+          prompt_cache_key: defaultBilingualPromptCacheKey,
+          prompt_cache_options: { mode: "explicit" as const }
+        }
+      : {}),
     store: false,
     max_output_tokens: 700,
     input,
@@ -322,7 +400,8 @@ export async function analyzeBilingualPhrase({
   reasoningEffort =
     process.env.OPENAI_BILINGUAL_REASONING_EFFORT?.trim() ||
     defaultBilingualReasoningEffort,
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  onUsage
 }: AnalyzePhraseOptions): Promise<BilingualPhraseAnalysis> {
   const response = await fetchImpl(OPENAI_RESPONSES_URL, {
     method: "POST",
@@ -349,6 +428,12 @@ export async function analyzeBilingualPhrase({
     throw new Error(
       `OpenAI phrase analysis request failed with status ${response.status}: ${upstreamMessage}`
     );
+  }
+
+  const usage = readBilingualAnalysisUsage(payload);
+
+  if (usage != null) {
+    onUsage?.(usage);
   }
 
   return parseBilingualPhraseAnalysis(payload);

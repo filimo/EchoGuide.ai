@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   analyzeBilingualPhrase,
   buildBilingualPhraseAnalysisRequest,
+  defaultBilingualPromptCacheKey,
   maxRecentContextCharacters,
   maxRecentContextTurns,
   normalizeRecentContext,
@@ -79,8 +80,51 @@ describe("bilingual phrase analysis", () => {
       model: "gpt-5.6-luna",
       reasoning: {
         effort: "none"
+      },
+      prompt_cache_key: defaultBilingualPromptCacheKey,
+      prompt_cache_options: {
+        mode: "explicit"
       }
     });
+  });
+
+  it("places an explicit cache breakpoint after stable instructions and knowledge", () => {
+    const request = buildBilingualPhraseAnalysisRequest(
+      "What was your role?",
+      "gpt-5.6-luna",
+      "Project: EchoGuide. Role: built the Realtime flow."
+    );
+
+    expect(request.input).toEqual([
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: expect.stringContaining("A2/B1")
+          }
+        ]
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "Personal knowledge context:\nProject: EchoGuide. Role: built the Realtime flow.",
+            prompt_cache_breakpoint: { mode: "explicit" }
+          }
+        ]
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "Active transcript: What was your role?"
+          }
+        ]
+      }
+    ]);
   });
 
   it("uses the configured reasoning effort for the bilingual model", () => {
@@ -179,12 +223,12 @@ describe("bilingual phrase analysis", () => {
     ]);
   });
 
-  it("keeps up to fifteen recent turns within a five-thousand-character window", () => {
+  it("keeps up to eight recent turns within a three-thousand-character window", () => {
     const turns = Array.from({ length: 20 }, (_, index) => `Turn ${index + 1}`);
 
-    expect(maxRecentContextTurns).toBe(15);
-    expect(maxRecentContextCharacters).toBe(5000);
-    expect(normalizeRecentContext(turns)).toEqual(turns.slice(-15));
+    expect(maxRecentContextTurns).toBe(8);
+    expect(maxRecentContextCharacters).toBe(3000);
+    expect(normalizeRecentContext(turns)).toEqual(turns.slice(-8));
     expect(normalizeRecentContext(["A".repeat(3000), "B".repeat(3000)])).toEqual([
       "B".repeat(3000)
     ]);
@@ -297,5 +341,52 @@ describe("bilingual phrase analysis", () => {
     );
     expect(body).toContain("Project: EchoGuide. Role: designed the Realtime VAD flow.");
     expect(body).not.toContain("sk-server-only");
+  });
+
+  it("reports cache and token usage from a successful Responses payload", async () => {
+    const onUsage = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValue(
+      response(
+        {
+          output_text: JSON.stringify({
+            analysisTargetText: "What was your role?",
+            speakerRole: "interviewer",
+            russianMeaning: "Какую роль ты выполнял?",
+            isQuestion: true,
+            bridgePhrase: "Let me explain.",
+            suggestedReplies: []
+          }),
+          usage: {
+            input_tokens: 3200,
+            input_tokens_details: {
+              cached_tokens: 2800,
+              cache_write_tokens: 0
+            },
+            output_tokens: 180,
+            output_tokens_details: {
+              reasoning_tokens: 24
+            },
+            total_tokens: 3380
+          }
+        },
+        { ok: true, status: 200 }
+      )
+    );
+
+    await analyzeBilingualPhrase({
+      apiKey: "sk-server-only",
+      transcript: "What was your role?",
+      fetchImpl,
+      onUsage
+    });
+
+    expect(onUsage).toHaveBeenCalledWith({
+      inputTokens: 3200,
+      cachedInputTokens: 2800,
+      cacheWriteTokens: 0,
+      outputTokens: 180,
+      reasoningTokens: 24,
+      totalTokens: 3380
+    });
   });
 });

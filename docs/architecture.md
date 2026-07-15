@@ -83,9 +83,15 @@ The selected settings are persisted locally and sent through `session.update` af
 Completed meaningful phrases are analyzed separately through the Responses API. The request combines:
 
 - the active transcript phrase;
-- a bounded window of recent meaningful turns;
+- up to eight recent meaningful turns within roughly 3,000 characters;
 - a bounded personal knowledge context;
 - a strict JSON Schema response contract.
+
+Training Mode waits 1.2 seconds before automatic analysis. When Realtime emits
+several short completed fragments during that window, only the newest fragment
+starts a request and the preceding fragments remain in its recent context. The
+stable system instructions and personal knowledge prefix end at an explicit
+prompt-cache breakpoint; changing transcript text stays outside that prefix.
 
 The local server reads the phrase-card model and its reasoning effort from
 `OPENAI_BILINGUAL_MODEL` and `OPENAI_BILINGUAL_REASONING_EFFORT` in `.env.local`.
@@ -106,7 +112,9 @@ presented in the manual message editor before it can be saved.
 
 ## Diagnostics and privacy
 
-The diagnostic path records connection states, microphone-track lifecycle, aggregate audio levels, WebRTC outbound counters, VAD lifecycle, and safe error codes.
+The diagnostic path records connection states, microphone-track lifecycle,
+aggregate audio levels, WebRTC outbound counters, VAD lifecycle, safe error
+codes, and aggregate phrase-analysis token, cache-read, and cache-write counters.
 
 It must never record:
 

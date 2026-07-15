@@ -19,6 +19,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Automatic phrase analysis now waits briefly and combines rapid transcript
+  fragments into one request. Stable instructions and pasted notes use an
+  explicit prompt-cache boundary, recent context is smaller, and local
+  diagnostics record privacy-safe token and cache counters.
 - Realtime and recovery transcription prompts are now topic-neutral and preserve
   brief, informal, and incomplete speech instead of assuming a software
   interview.

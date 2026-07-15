@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultRealtimeVadTurnDetection } from "../realtime/realtimeSession";
 import type { RealtimeServerEvent } from "../realtime/realtimeConnection";
@@ -10,7 +10,11 @@ import type {
   SessionHistoryEntry,
   SessionHistoryEntryDraft
 } from "../domain/sessionHistory";
-import { TrainingLivePanel } from "./TrainingLivePanel";
+import { TrainingLivePanel as ProductionTrainingLivePanel } from "./TrainingLivePanel";
+
+function TrainingLivePanel(props: ComponentProps<typeof ProductionTrainingLivePanel>) {
+  return <ProductionTrainingLivePanel automaticAnalysisDelayMs={0} {...props} />;
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1544,7 +1548,72 @@ describe("Training Live Panel", () => {
     ).toBeInTheDocument();
   });
 
-  it("sends the latest fifteen transcript turns to phrase analysis", async () => {
+  it("combines rapid transcript fragments into one automatic phrase analysis", async () => {
+    vi.useFakeTimers();
+    let emitEvent: (event: RealtimeServerEvent) => void = () => {};
+    const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
+      emitEvent = onEvent;
+      return Promise.resolve(createConnection());
+    });
+    const analyzePhrase = vi.fn().mockResolvedValue({
+      analysisTargetText: "I read articles and test AI tools in small projects.",
+      russianMeaning: "Я читаю статьи и проверяю AI-инструменты в небольших проектах.",
+      isQuestion: false,
+      bridgePhrase: "Let me explain.",
+      suggestedReplies: []
+    } satisfies BilingualPhraseAnalysis);
+
+    render(
+      <TrainingLivePanel
+        automaticAnalysisDelayMs={1200}
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start live" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "I read articles."
+      });
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "I explore new AI tools."
+      });
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "I test them in small projects."
+      });
+    });
+
+    expect(analyzePhrase).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+      await Promise.resolve();
+    });
+
+    expect(analyzePhrase).toHaveBeenCalledTimes(1);
+    expect(analyzePhrase).toHaveBeenCalledWith("I test them in small projects.", "", [
+      "I read articles.",
+      "I explore new AI tools.",
+      "I test them in small projects."
+    ]);
+  });
+
+  it("sends the latest eight transcript turns to phrase analysis", async () => {
     const user = userEvent.setup();
     let emitEvent: (event: RealtimeServerEvent) => void = () => {};
     const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
@@ -1586,7 +1655,7 @@ describe("Training Live Panel", () => {
     expect(analyzePhrase).toHaveBeenLastCalledWith(
       "Turn 16.",
       "",
-      Array.from({ length: 15 }, (_, index) => `Turn ${index + 2}.`)
+      Array.from({ length: 8 }, (_, index) => `Turn ${index + 9}.`)
     );
   });
 

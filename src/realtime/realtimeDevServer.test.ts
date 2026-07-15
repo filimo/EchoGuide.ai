@@ -362,7 +362,8 @@ describe("Bilingual analysis dev middleware", () => {
         "Can you walk me through your recent project?"
       ],
       model: "gpt-5.6-sol",
-      reasoningEffort: "low"
+      reasoningEffort: "low",
+      onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({
@@ -406,7 +407,8 @@ describe("Bilingual analysis dev middleware", () => {
       knowledgeContext: "",
       recentContext: [],
       model: "gpt-5.6-luna",
-      reasoningEffort: "none"
+      reasoningEffort: "none",
+      onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
   });
@@ -449,7 +451,8 @@ describe("Bilingual analysis dev middleware", () => {
       knowledgeContext: "",
       recentContext: [],
       model: "gpt-5.6-luna",
-      reasoningEffort: "none"
+      reasoningEffort: "none",
+      onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
   });
@@ -488,9 +491,86 @@ describe("Bilingual analysis dev middleware", () => {
       knowledgeContext: "x".repeat(6000),
       recentContext: [],
       model: "gpt-5.6-luna",
-      reasoningEffort: "none"
+      reasoningEffort: "none",
+      onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("writes safe cache and token counters to the local diagnostic log", async () => {
+    const diagnosticsDirectoryPath = mkdtempSync(
+      join(tmpdir(), "echoguide-phrase-usage-")
+    );
+    const analyzePhrase = vi.fn().mockImplementation(
+      async (options: {
+        onUsage?: (usage: {
+          inputTokens: number;
+          cachedInputTokens: number;
+          cacheWriteTokens: number;
+          outputTokens: number;
+          reasoningTokens: number;
+          totalTokens: number;
+        }) => void;
+      }) => {
+        options.onUsage?.({
+          inputTokens: 3200,
+          cachedInputTokens: 2800,
+          cacheWriteTokens: 0,
+          outputTokens: 180,
+          reasoningTokens: 24,
+          totalTokens: 3380
+        });
+
+        return {
+          russianMeaning: "Какую роль ты выполнял?",
+          isQuestion: true,
+          bridgePhrase: "Let me explain.",
+          suggestedReplies: []
+        };
+      }
+    );
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: { OPENAI_API_KEY: "sk-process" },
+      readLocalEnv: () => "",
+      analyzePhrase,
+      realtimeDiagnosticsDirectoryPath: diagnosticsDirectoryPath,
+      now: () => new Date("2026-07-15T10:00:00.000Z")
+    });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "POST",
+        url: "/api/realtime/analyze-phrase",
+        body: JSON.stringify({
+          transcript: "What was your role?",
+          knowledgeContext: "Private notes that must not be logged."
+        })
+      },
+      res,
+      vi.fn()
+    );
+
+    const records = readFileSync(
+      join(diagnosticsDirectoryPath, "realtime-2026-07-15.jsonl"),
+      "utf8"
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const completed = records.find((record) => record.type === "phrase_analysis.completed");
+
+    expect(completed).toMatchObject({
+      inputTokens: 3200,
+      cachedInputTokens: 2800,
+      cacheWriteTokens: 0,
+      outputTokens: 180,
+      reasoningTokens: 24,
+      totalTokens: 3380
+    });
+    expect(JSON.stringify(records)).not.toContain("What was your role?");
+    expect(JSON.stringify(records)).not.toContain("Private notes");
+    expect(JSON.stringify(records)).not.toContain("sk-process");
   });
 
   it("rejects invalid phrase analysis JSON before calling OpenAI", async () => {

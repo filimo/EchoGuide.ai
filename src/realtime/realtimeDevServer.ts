@@ -13,6 +13,7 @@ import {
   defaultBilingualReasoningEffort,
   normalizeKnowledgeContext,
   normalizeRecentContext,
+  type BilingualAnalysisUsage,
   type BilingualPhraseAnalysis
 } from "./bilingualAnalysis";
 import {
@@ -72,6 +73,7 @@ type AnalyzePhrase = (options: {
   recentContext?: string[];
   model?: string;
   reasoningEffort?: string;
+  onUsage?: (usage: BilingualAnalysisUsage) => void;
 }) => Promise<BilingualPhraseAnalysis>;
 
 type RecoverTranscript = (options: {
@@ -489,19 +491,24 @@ export function createRealtimeClientSecretMiddleware({
       });
 
       try {
+        let analysisUsage: BilingualAnalysisUsage | null = null;
         const analysis = await analyzePhrase({
           apiKey,
           transcript,
           knowledgeContext,
           recentContext,
           model,
-          reasoningEffort
+          reasoningEffort,
+          onUsage: (usage) => {
+            analysisUsage = usage;
+          }
         });
         appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
           source: "backend",
           type: "phrase_analysis.completed",
           transcriptCharacters: transcript.length,
-          suggestedReplyCount: analysis.suggestedReplies.length
+          suggestedReplyCount: analysis.suggestedReplies.length,
+          ...(analysisUsage ?? {})
         });
         sendJson(res, 200, analysis);
       } catch (error) {

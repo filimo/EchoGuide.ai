@@ -57,6 +57,12 @@ type TranscriptEditorState = {
   originalText?: string;
 };
 
+type PendingAutomaticAnalysis = {
+  transcript: string;
+  phraseId: string;
+  shouldShowAnalysis: boolean;
+};
+
 type RealtimeStatus = "disconnected" | "connecting" | "connected" | "error";
 
 const localBridgePhrases = [
@@ -92,8 +98,9 @@ const localBridgePhrases = [
 
 const fillerTranscripts = new Set(["ah", "er", "huh", "hm", "hmm", "mm", "uh", "um"]);
 const testTranscripts = new Set(["test", "testing", "hi test"]);
-const maxFreshThoughtTurns = 15;
-const maxFreshThoughtCharacters = 5000;
+const maxFreshThoughtTurns = 8;
+const maxFreshThoughtCharacters = 3000;
+const defaultAutomaticAnalysisDelayMs = 1200;
 const unacknowledgedSpeechDelayMs = 2500;
 const loudSpeechRmsThreshold = 0.01;
 const loudSpeechPeakThreshold = 0.05;
@@ -111,6 +118,7 @@ type TrainingLivePanelProps = {
     knowledgeContext: string,
     recentContext: string[]
   ) => Promise<BilingualPhraseAnalysis>;
+  automaticAnalysisDelayMs?: number;
   recoverTranscript?: (audio: Blob) => Promise<string>;
   copyText?: (text: string) => Promise<void> | void;
   sessionHistoryClient?: SessionHistoryClient;
@@ -399,6 +407,7 @@ export function TrainingLivePanel({
   sessionHistoryClient = defaultSessionHistoryClient,
   createSessionId = createDefaultSessionId,
   autoOpenLatestSession = false,
+  automaticAnalysisDelayMs = defaultAutomaticAnalysisDelayMs,
   onRequestMicrophone,
   onStopMicrophone,
   onNotesChange,
@@ -456,6 +465,8 @@ export function TrainingLivePanel({
   const manuallyAssignedSpeakerTurnIdsRef = useRef<Set<string>>(new Set());
   const phraseAnalysisRevisionRef = useRef<Map<string, number>>(new Map());
   const phraseAnalysisSequenceRef = useRef(0);
+  const automaticAnalysisTimerRef = useRef<number | null>(null);
+  const pendingAutomaticAnalysisRef = useRef<PendingAutomaticAnalysis | null>(null);
   const autoOpenedLatestSessionRef = useRef(false);
   const diagnosticEventsRef = useRef<RealtimeDiagnosticEvent[]>([]);
   const audioStatsRef = useRef<RealtimeAudioStats | null>(null);
@@ -692,6 +703,11 @@ export function TrainingLivePanel({
       realtimeStatusRef.current = "disconnected";
       connectionRef.current?.disconnect();
       recoveryAudioRecorderRef.current?.stop();
+      if (automaticAnalysisTimerRef.current != null) {
+        window.clearTimeout(automaticAnalysisTimerRef.current);
+      }
+      automaticAnalysisTimerRef.current = null;
+      pendingAutomaticAnalysisRef.current = null;
     };
   }, []);
 
@@ -1014,6 +1030,94 @@ export function TrainingLivePanel({
     }
   }
 
+  function cancelPendingAutomaticAnalysis(phraseIds?: Set<string>) {
+    const pendingAnalysis = pendingAutomaticAnalysisRef.current;
+
+    if (pendingAnalysis == null || (phraseIds != null && !phraseIds.has(pendingAnalysis.phraseId))) {
+      return;
+    }
+
+    if (automaticAnalysisTimerRef.current != null) {
+      window.clearTimeout(automaticAnalysisTimerRef.current);
+      automaticAnalysisTimerRef.current = null;
+    }
+    pendingAutomaticAnalysisRef.current = null;
+    setPendingAnalysisIds((current) => {
+      const next = new Set(current);
+      next.delete(pendingAnalysis.phraseId);
+      return next;
+    });
+  }
+
+  function flushPendingAutomaticAnalysis() {
+    const pendingAnalysis = pendingAutomaticAnalysisRef.current;
+
+    if (pendingAnalysis == null) {
+      return;
+    }
+
+    if (automaticAnalysisTimerRef.current != null) {
+      window.clearTimeout(automaticAnalysisTimerRef.current);
+      automaticAnalysisTimerRef.current = null;
+    }
+    pendingAutomaticAnalysisRef.current = null;
+
+    if (deletedTranscriptTurnIdsRef.current.has(pendingAnalysis.phraseId)) {
+      setPendingAnalysisIds((current) => {
+        const next = new Set(current);
+        next.delete(pendingAnalysis.phraseId);
+        return next;
+      });
+      return;
+    }
+
+    void analyzeCompletedTranscript(
+      pendingAnalysis.transcript,
+      pendingAnalysis.phraseId,
+      pendingAnalysis.shouldShowAnalysis,
+      buildRecentAnalysisContext(transcriptTurnsRef.current, pendingAnalysis.phraseId)
+    );
+  }
+
+  function scheduleAutomaticAnalysis(
+    transcript: string,
+    phraseId: string,
+    shouldShowAnalysis: boolean
+  ) {
+    const previousPendingAnalysis = pendingAutomaticAnalysisRef.current;
+
+    if (automaticAnalysisTimerRef.current != null) {
+      window.clearTimeout(automaticAnalysisTimerRef.current);
+      automaticAnalysisTimerRef.current = null;
+    }
+
+    pendingAutomaticAnalysisRef.current = { transcript, phraseId, shouldShowAnalysis };
+    setPendingAnalysisIds((current) => {
+      const next = new Set(current);
+
+      if (previousPendingAnalysis != null) {
+        next.delete(previousPendingAnalysis.phraseId);
+      }
+      next.add(phraseId);
+      return next;
+    });
+
+    if (shouldShowAnalysis) {
+      setAnalysisStatus("loading");
+      setSelectedReplyIndex(null);
+    }
+
+    if (automaticAnalysisDelayMs <= 0) {
+      flushPendingAutomaticAnalysis();
+      return;
+    }
+
+    automaticAnalysisTimerRef.current = window.setTimeout(
+      flushPendingAutomaticAnalysis,
+      automaticAnalysisDelayMs
+    );
+  }
+
   function handleRealtimeEvent(event: RealtimeServerEvent) {
     recordDiagnostic("realtime.server_event", { eventType: event.type });
 
@@ -1134,12 +1238,7 @@ export function TrainingLivePanel({
       }
       setLiveTranscriptDraft("");
       if (completedTranscript.length > 0) {
-        void analyzeCompletedTranscript(
-          completedTranscript,
-          phraseId,
-          shouldShowAnalysis,
-          buildRecentAnalysisContext(transcriptTurnsRef.current, phraseId)
-        );
+        scheduleAutomaticAnalysis(completedTranscript, phraseId, shouldShowAnalysis);
       }
     }
   }
@@ -1251,6 +1350,7 @@ export function TrainingLivePanel({
   }
 
   function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
+    flushPendingAutomaticAnalysis();
     const liveConnection = connectionRef.current;
 
     connectionRef.current = null;
@@ -1431,6 +1531,7 @@ export function TrainingLivePanel({
     selectedIds.forEach((turnId) => deletedTranscriptTurnIdsRef.current.add(turnId));
     selectedIds.forEach((turnId) => manuallyAssignedSpeakerTurnIdsRef.current.delete(turnId));
     selectedIds.forEach((turnId) => invalidatePhraseAnalysis(turnId));
+    cancelPendingAutomaticAnalysis(selectedIds);
 
     const nextTranscriptTurns = transcriptTurns.filter((turn) => !selectedIds.has(turn.id));
     const nextPhraseCards = phraseCards.filter((card) => !selectedIds.has(card.id));
@@ -1735,6 +1836,7 @@ export function TrainingLivePanel({
   }
 
   function handleNewSession() {
+    cancelPendingAutomaticAnalysis();
     currentSessionIdRef.current = null;
     setFollowLiveMode(true);
     transcriptTurnsRef.current = [];
@@ -1758,6 +1860,7 @@ export function TrainingLivePanel({
   }
 
   function handleOpenSavedSession(session: SessionHistoryEntry) {
+    cancelPendingAutomaticAnalysis();
     const normalizedSession = ensureUniqueSessionPhraseIds(session);
     const lastCardId =
       normalizedSession.transcriptTurns.at(-1)?.id ??
