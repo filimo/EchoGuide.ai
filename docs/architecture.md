@@ -12,6 +12,7 @@ flowchart LR
     U["Manual additions<br/>and corrections"] --> T
     T --> A["Phrase analysis request"]
     K["Pasted notes"] --> A
+    P["My point<br/>card-local answer hint"] --> A
     A --> C["Bilingual phrase card"]
     T --> H["Local session history"]
     C --> H
@@ -85,6 +86,7 @@ Completed meaningful phrases are analyzed separately through the Responses API. 
 - the active transcript phrase;
 - up to eight recent meaningful turns within roughly 3,000 characters;
 - a bounded personal knowledge context;
+- an optional bounded answer hint for the selected card;
 - a strict JSON Schema response contract.
 
 Training Mode waits 1.2 seconds before automatic analysis. When Realtime emits
@@ -92,6 +94,9 @@ several short completed fragments during that window, only the newest fragment
 starts a request and the preceding fragments remain in its recent context. The
 stable system instructions and personal knowledge prefix end at an explicit
 prompt-cache breakpoint; changing transcript text stays outside that prefix.
+The card-local answer hint also stays after the breakpoint. It can be written in
+Russian or English and directs the suggested replies without being treated as
+interviewer speech or persistent knowledge.
 
 The local server reads the phrase-card model and its reasoning effort from
 `OPENAI_BILINGUAL_MODEL` and `OPENAI_BILINGUAL_REASONING_EFFORT` in `.env.local`.
@@ -105,6 +110,9 @@ the superseded text is ignored, and the user can generate a replacement card.
 ### Local persistence
 
 Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Transcript turns record whether they came from Realtime or manual input; corrected Realtime turns retain the original recognized text so it can be restored. Raw audio is not stored.
+
+When a card is regenerated from `My point`, the normalized hint is stored only
+with that phrase card so reopening the local session restores the same grounding.
 
 Recovery audio is never written to session history or diagnostics. The rolling
 buffer is cleared when the live connection stops, and the recovered transcript is
@@ -121,6 +129,7 @@ It must never record:
 - raw audio;
 - transcript text;
 - pasted notes or knowledge context;
+- answer hint text;
 - API keys or ephemeral secrets.
 
 When local speech levels rise but the server does not acknowledge speech, WebRTC counters help distinguish a frozen outbound sender from a server-side VAD miss.

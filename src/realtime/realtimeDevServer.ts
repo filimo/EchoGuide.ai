@@ -11,6 +11,7 @@ import {
   analyzeBilingualPhrase,
   defaultBilingualModel,
   defaultBilingualReasoningEffort,
+  normalizeAnswerHint,
   normalizeKnowledgeContext,
   normalizeRecentContext,
   type BilingualAnalysisUsage,
@@ -71,6 +72,7 @@ type AnalyzePhrase = (options: {
   transcript: string;
   knowledgeContext?: string;
   recentContext?: string[];
+  answerHint?: string;
   model?: string;
   reasoningEffort?: string;
   onUsage?: (usage: BilingualAnalysisUsage) => void;
@@ -474,6 +476,11 @@ export function createRealtimeClientSecretMiddleware({
             )
           : []
       );
+      const answerHint = normalizeAnswerHint(
+        typeof (requestBody as { answerHint?: unknown } | null)?.answerHint === "string"
+          ? (requestBody as { answerHint: string }).answerHint
+          : ""
+      );
 
       if (transcript.length === 0) {
         sendJson(res, 400, {
@@ -487,7 +494,8 @@ export function createRealtimeClientSecretMiddleware({
         type: "phrase_analysis.started",
         transcriptCharacters: transcript.length,
         knowledgeCharacters: knowledgeContext.length,
-        recentTurnCount: recentContext.length
+        recentTurnCount: recentContext.length,
+        answerHintCharacters: answerHint.length
       });
 
       try {
@@ -497,6 +505,7 @@ export function createRealtimeClientSecretMiddleware({
           transcript,
           knowledgeContext,
           recentContext,
+          ...(answerHint.length > 0 ? { answerHint } : {}),
           model,
           reasoningEffort,
           onUsage: (usage) => {

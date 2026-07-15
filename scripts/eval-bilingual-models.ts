@@ -14,6 +14,7 @@ type EvalCase = {
   expectedIsQuestion: boolean;
   knowledgeContext?: string;
   recentContext?: string[];
+  answerHint?: string;
 };
 
 type Usage = {
@@ -131,6 +132,14 @@ const cases: EvalCase[] = [
       "Interviewer: Are you using AI tools during this interview?",
       "Me: Yes. I use AI to practice English. The experience and examples are my own."
     ]
+  },
+  {
+    id: "card-local-answer-hint",
+    description: "Ответ на вопрос строится из явной card-local подсказки пользователя",
+    transcript: "Why did the prototype take so long?",
+    expectedIsQuestion: true,
+    answerHint:
+      "Я использовал обычный режим. Generation mode работает примерно на 50% быстрее."
   }
 ];
 
@@ -316,7 +325,8 @@ async function runCandidate(apiKey: string, evalCase: EvalCase, model: string): 
       evalCase.transcript,
       model,
       evalCase.knowledgeContext,
-      evalCase.recentContext
+      evalCase.recentContext,
+      { answerHint: evalCase.answerHint }
     );
     const { payload, latencyMs } = await requestJson(apiKey, request);
     const analysis = parseBilingualPhraseAnalysis(payload);
@@ -375,7 +385,7 @@ async function judgeCandidates(
       {
         role: "system",
         content:
-          "You are a strict, model-blind evaluator for a live English interview copilot used by a Russian-speaking senior software engineer at A2/B1 English level. Score each candidate from 0 to 100. Use this rubric: factual grounding and no invented details 30 points; usefulness during a live interview 25; short natural A2/B1 English 20; correct handling of the freshest coherent thought 15; accurate Russian meaning, translations, and whyUse 10. Penalize polished long templates, unsupported metrics or technologies, awkward English, weak answer strategies, and answers that ignore the transcript. Judge only the candidate content. Do not infer which model produced it. Return every candidate exactly once. Notes must be concise and in Russian."
+          "You are a strict, model-blind evaluator for a live English interview copilot used by a Russian-speaking senior software engineer at A2/B1 English level. Score each candidate from 0 to 100. Use this rubric: factual grounding and no invented details 30 points; usefulness during a live interview 25; short natural A2/B1 English 20; correct handling of the freshest coherent thought 15; accurate Russian meaning, translations, and whyUse 10. Penalize polished long templates, unsupported metrics or technologies, awkward English, weak answer strategies, and answers that ignore the transcript or an explicit answer hint. Judge only the candidate content. Do not infer which model produced it. Return every candidate exactly once. Notes must be concise and in Russian."
       },
       {
         role: "user",
@@ -385,7 +395,8 @@ async function judgeCandidates(
             transcript: evalCase.transcript,
             expectedIsQuestion: evalCase.expectedIsQuestion,
             knowledgeContext: evalCase.knowledgeContext ?? "",
-            recentContext: evalCase.recentContext ?? []
+            recentContext: evalCase.recentContext ?? [],
+            answerHint: evalCase.answerHint ?? ""
           },
           candidates: blinded.map(({ key, analysis }) => ({ key, analysis }))
         })

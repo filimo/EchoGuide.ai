@@ -345,7 +345,8 @@ describe("Bilingual analysis dev middleware", () => {
             "I read articles.",
             "I test AI tools in small projects.",
             "Can you walk me through your recent project?"
-          ]
+          ],
+          answerHint: "Я хочу объяснить, что выбрал более медленный стандартный режим."
         })
       },
       res,
@@ -361,6 +362,7 @@ describe("Bilingual analysis dev middleware", () => {
         "I test AI tools in small projects.",
         "Can you walk me through your recent project?"
       ],
+      answerHint: "Я хочу объяснить, что выбрал более медленный стандартный режим.",
       model: "gpt-5.6-sol",
       reasoningEffort: "low",
       onUsage: expect.any(Function)
@@ -544,7 +546,8 @@ describe("Bilingual analysis dev middleware", () => {
         url: "/api/realtime/analyze-phrase",
         body: JSON.stringify({
           transcript: "What was your role?",
-          knowledgeContext: "Private notes that must not be logged."
+          knowledgeContext: "Private notes that must not be logged.",
+          answerHint: "Private answer hint that must not be logged."
         })
       },
       res,
@@ -570,6 +573,7 @@ describe("Bilingual analysis dev middleware", () => {
     });
     expect(JSON.stringify(records)).not.toContain("What was your role?");
     expect(JSON.stringify(records)).not.toContain("Private notes");
+    expect(JSON.stringify(records)).not.toContain("Private answer hint");
     expect(JSON.stringify(records)).not.toContain("sk-process");
   });
 

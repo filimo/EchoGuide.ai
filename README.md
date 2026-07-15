@@ -36,6 +36,8 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - instant bridge phrases for filling a pause naturally;
 - two or three concise suggested replies with translations and full sentences;
 - `Pasted notes` as personal context for grounded answers;
+- a card-local `My point` hint for regenerating the current answer from the
+  user's intended facts or direction;
 - manual card generation from a selected group of transcript turns;
 - manual transcript messages and in-place corrections with speaker selection;
 - in-memory recovery of a missed phrase without storing raw call audio;
@@ -50,6 +52,7 @@ flowchart LR
     A["Room audio<br/>iPad microphone"] --> B["OpenAI Realtime<br/>WebRTC + transcription"]
     B --> C["Live transcript<br/>and fresh thought"]
     D["Pasted notes<br/>personal context"] --> E["Bilingual phrase analysis"]
+    P["My point<br/>card-local answer hint"] --> E
     C --> E
     E --> F["Russian meaning<br/>bridge phrase<br/>2–3 replies"]
     C --> G["Local session history"]

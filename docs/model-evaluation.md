@@ -30,7 +30,7 @@ Candidate models, judge model, and judge reasoning effort are configured through
 
 ## Fixtures
 
-Each candidate receives the same eight synthetic, privacy-safe scenarios:
+Each candidate receives the same nine synthetic, privacy-safe scenarios:
 
 1. a direct interviewer question about the user's role;
 2. a short draft answer without an outcome;
@@ -40,6 +40,8 @@ Each candidate receives the same eight synthetic, privacy-safe scenarios:
 6. a technical challenge with bounded factual context.
 7. a direct weakness question that should not be forced into a STAR template;
 8. a pressure question about AI use that requires a direct, honest answer.
+9. an interviewer question whose replies must follow an explicit card-local
+   answer hint without inventing supporting details.
 
 ## Scoring
 
@@ -73,6 +75,16 @@ Two runs on July 11, 2026 produced the following comparison:
 - `gpt-5.6-sol` performed well on the hardest technical scenario but was slower, more expensive, and more likely to add plausible unsupported details.
 - `gpt-5.6-terra` did not outperform the lower-cost option under this prompt contract.
 - `gpt-5.4-mini` handled one noisy scenario well but violated compactness constraints more often.
+
+### Card-local answer hint regression
+
+A targeted July 15, 2026 run added the ninth `card-local-answer-hint` case and
+checked the current `gpt-5.6-luna` default without repeating the full four-model
+comparison. The new case scored **97.2** overall with a **96** blind-judge score
+and 2.54-second latency. The first reply preserved both supplied facts in compact
+spoken English: the prototype used the slower standard mode, while Generation
+mode is about 50% faster. Across all nine cases, the single-model regression run
+averaged 93.4 with a 100% success rate.
 
 ## Next evaluation step
 

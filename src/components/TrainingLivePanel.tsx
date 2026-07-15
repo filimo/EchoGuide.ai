@@ -15,7 +15,10 @@ import {
   type SessionHistoryTranscriptTurn,
   type SessionSpeakerLabel
 } from "../domain/sessionHistory";
-import type { BilingualPhraseAnalysis } from "../realtime/bilingualAnalysis";
+import {
+  maxAnswerHintCharacters,
+  type BilingualPhraseAnalysis
+} from "../realtime/bilingualAnalysis";
 import {
   connectRealtimeTranscription,
   type RealtimeAudioStats,
@@ -45,6 +48,7 @@ type TrainingPhraseCard = {
   transcript: string;
   analysis: BilingualPhraseAnalysis;
   source?: "auto" | "selected-group";
+  answerHint?: string;
 };
 
 type TranscriptTurn = SessionHistoryTranscriptTurn;
@@ -116,7 +120,8 @@ type TrainingLivePanelProps = {
   analyzePhrase?: (
     transcript: string,
     knowledgeContext: string,
-    recentContext: string[]
+    recentContext: string[],
+    answerHint?: string
   ) => Promise<BilingualPhraseAnalysis>;
   automaticAnalysisDelayMs?: number;
   recoverTranscript?: (audio: Blob) => Promise<string>;
@@ -176,14 +181,20 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
 async function requestDefaultPhraseAnalysis(
   transcript: string,
   knowledgeContext: string,
-  recentContext: string[]
+  recentContext: string[],
+  answerHint = ""
 ): Promise<BilingualPhraseAnalysis> {
   const response = await fetch("/api/realtime/analyze-phrase", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ transcript, knowledgeContext, recentContext })
+    body: JSON.stringify({
+      transcript,
+      knowledgeContext,
+      recentContext,
+      ...(answerHint.trim().length > 0 ? { answerHint } : {})
+    })
   });
 
   if (!response.ok) {
@@ -425,6 +436,8 @@ export function TrainingLivePanel({
   );
   const [selectedReplyIndex, setSelectedReplyIndex] = useState<number | null>(null);
   const [selectedReplies, setSelectedReplies] = useState<SessionHistorySelectedReply[]>([]);
+  const [answerHint, setAnswerHint] = useState("");
+  const [answerHintOpen, setAnswerHintOpen] = useState(false);
   const [selectedBridgePhraseIndex, setSelectedBridgePhraseIndex] = useState(0);
   const [transcriptSelectionMode, setTranscriptSelectionMode] = useState(false);
   const [selectedTranscriptTurnIds, setSelectedTranscriptTurnIds] = useState<Set<string>>(
@@ -750,6 +763,7 @@ export function TrainingLivePanel({
   const selectedTranscriptTurn =
     transcriptTurns.find((turn) => turn.id === selectedPhraseCardId) ?? null;
   const visibleAnalysis = selectedPhraseCard?.analysis ?? null;
+  const selectedCardAnswerHint = selectedPhraseCard?.answerHint ?? "";
   const selectedPhraseIsPreloading =
     selectedPhraseCard == null &&
     selectedTranscriptTurn != null &&
@@ -793,6 +807,11 @@ export function TrainingLivePanel({
       return visibleAnalysis.suggestedReplies.length > 0 ? 0 : null;
     });
   }, [visibleAnalysis]);
+
+  useEffect(() => {
+    setAnswerHint(selectedCardAnswerHint);
+    setAnswerHintOpen(selectedCardAnswerHint.length > 0);
+  }, [selectedPhraseCardId, selectedCardAnswerHint]);
 
   const hasSessionContent =
     transcriptTurns.length > 0 ||
@@ -1608,8 +1627,15 @@ export function TrainingLivePanel({
     }
   }
 
-  async function generateTranscriptTurnCard(turn: TranscriptTurn, contextTurns: TranscriptTurn[]) {
+  async function generateTranscriptTurnCard(
+    turn: TranscriptTurn,
+    contextTurns: TranscriptTurn[],
+    requestedAnswerHint = ""
+  ) {
     const transcript = turn.text.trim();
+    const normalizedAnswerHint = requestedAnswerHint
+      .trim()
+      .slice(0, maxAnswerHintCharacters);
 
     if (transcript.length === 0) {
       return;
@@ -1623,11 +1649,11 @@ export function TrainingLivePanel({
     const analysisRevision = beginPhraseAnalysis(phraseId);
 
     try {
-      const nextAnalysis = await analyzePhrase(
-        transcript,
-        notes,
-        buildRecentAnalysisContext(contextTurns, phraseId)
-      );
+      const recentContext = buildRecentAnalysisContext(contextTurns, phraseId);
+      const nextAnalysis =
+        normalizedAnswerHint.length > 0
+          ? await analyzePhrase(transcript, notes, recentContext, normalizedAnswerHint)
+          : await analyzePhrase(transcript, notes, recentContext);
 
       if (!isCurrentPhraseAnalysis(phraseId, analysisRevision)) {
         return;
@@ -1641,13 +1667,17 @@ export function TrainingLivePanel({
         id: phraseId,
         transcript,
         analysis: nextAnalysis,
-        source: "auto" as const
+        source: "auto" as const,
+        ...(normalizedAnswerHint.length > 0 ? { answerHint: normalizedAnswerHint } : {})
       };
 
       setPhraseCards((current) => [
         ...current.filter((card) => card.id !== phraseId),
         nextCard
       ].slice(-20));
+      setSelectedReplies((current) =>
+        current.filter((selectedReply) => selectedReply.phraseId !== phraseId)
+      );
       finishPhraseAnalysis(phraseId, analysisRevision);
       setAnalysisStatus("ready");
     } catch (error) {
@@ -1666,7 +1696,19 @@ export function TrainingLivePanel({
       return;
     }
 
-    await generateTranscriptTurnCard(selectedTranscriptTurn, transcriptTurns);
+    await generateTranscriptTurnCard(
+      selectedTranscriptTurn,
+      transcriptTurns,
+      selectedPhraseCard?.answerHint
+    );
+  }
+
+  async function handleGenerateAnswerFromHint() {
+    if (selectedTranscriptTurn == null || answerHint.trim().length === 0) {
+      return;
+    }
+
+    await generateTranscriptTurnCard(selectedTranscriptTurn, transcriptTurns, answerHint);
   }
 
   function handleOpenAddTranscriptEditor() {
@@ -2470,6 +2512,53 @@ export function TrainingLivePanel({
             <p className="hint">Analyzing phrase...</p>
           ) : null}
           {analysisStatus === "error" ? <p className="error-text">Phrase analysis failed.</p> : null}
+          {selectedTranscriptTurn != null && !answerHintOpen ? (
+            <button
+              type="button"
+              className="answer-hint-open"
+              onClick={() => setAnswerHintOpen(true)}
+            >
+              Add my point
+            </button>
+          ) : null}
+          {selectedTranscriptTurn != null && answerHintOpen ? (
+            <form
+              className="answer-hint-form"
+              aria-label="Generate answer from my point"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleGenerateAnswerFromHint();
+              }}
+            >
+              <div className="answer-hint-header">
+                <label htmlFor="training-answer-hint">My point</label>
+                <button type="button" onClick={() => setAnswerHintOpen(false)}>
+                  Hide
+                </button>
+              </div>
+              <textarea
+                id="training-answer-hint"
+                value={answerHint}
+                maxLength={maxAnswerHintCharacters}
+                placeholder="What do you want to say? Russian or English is fine."
+                onChange={(event) => setAnswerHint(event.target.value)}
+                disabled={pendingAnalysisIds.has(selectedTranscriptTurn.id)}
+              />
+              <div className="answer-hint-actions">
+                <span>Used only for this card.</span>
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={
+                    answerHint.trim().length === 0 ||
+                    pendingAnalysisIds.has(selectedTranscriptTurn.id)
+                  }
+                >
+                  {selectedPhraseCard == null ? "Generate answer" : "Regenerate answer"}
+                </button>
+              </div>
+            </form>
+          ) : null}
           {selectedPhraseIsPreloading && selectedTranscriptTurn != null ? (
             <div className="bilingual-card">
               <p className="selected-phrase-text">{selectedTranscriptTurn.text}</p>

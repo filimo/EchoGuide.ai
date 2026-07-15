@@ -2340,6 +2340,89 @@ describe("Training Live Panel", () => {
     expect(screen.getAllByRole("button", { name: "Heard Current message." })).toHaveLength(1);
   });
 
+  it("regenerates the current answer from a card-local point and saves the hint", async () => {
+    const user = userEvent.setup();
+    let emitEvent: (event: RealtimeServerEvent) => void = () => {};
+    const savedSessions: SessionHistoryEntry[] = [];
+    const answerHint =
+      "Я использовал обычный режим. Generation mode работает примерно на 50% быстрее.";
+    const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
+      emitEvent = onEvent;
+      return Promise.resolve(createConnection());
+    });
+    const analyzePhrase = vi.fn().mockImplementation(
+      async (
+        _transcript: string,
+        _knowledgeContext: string,
+        _recentContext: string[],
+        currentAnswerHint?: string
+      ) => ({
+        speakerRole: "interviewer" as const,
+        russianMeaning: "Почему прототип делался так долго?",
+        isQuestion: true,
+        bridgePhrase: "Let me explain.",
+        suggestedReplies: [
+          {
+            shortLabel: currentAnswerHint == null ? "Initial" : "Direct",
+            shortLabelTranslation: currentAnswerHint == null ? "Начальный" : "Прямо",
+            fullSentence:
+              currentAnswerHint == null
+                ? "I used the standard mode."
+                : "The prototype took longer because I used the standard mode. The generation mode is about 50% faster.",
+            fullSentenceTranslation:
+              currentAnswerHint == null
+                ? "Я использовал стандартный режим."
+                : "Прототип занял больше времени, потому что я использовал стандартный режим. Режим генерации примерно на 50% быстрее.",
+            whyUse: "Когда нужно прямо объяснить причину."
+          }
+        ]
+      }) satisfies BilingualPhraseAnalysis
+    );
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+        sessionHistoryClient={createInMemorySessionHistoryClient(savedSessions)}
+        createSessionId={() => "session-answer-hint"}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await act(async () => {
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Why did the prototype take so long?"
+      });
+    });
+
+    expect(await screen.findByText("I used the standard mode.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add my point" }));
+    await user.type(screen.getByLabelText("My point"), answerHint);
+    await user.click(screen.getByRole("button", { name: "Regenerate answer" }));
+
+    expect(analyzePhrase).toHaveBeenLastCalledWith(
+      "Why did the prototype take so long?",
+      "",
+      ["Interviewer: Why did the prototype take so long?"],
+      answerHint
+    );
+    expect(
+      await screen.findByText(
+        "The prototype took longer because I used the standard mode. The generation mode is about 50% faster."
+      )
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(savedSessions[0]?.phraseCards[0]?.answerHint).toBe(answerHint);
+    });
+  });
+
   it("generates a missing card for the current saved transcript message", async () => {
     const user = userEvent.setup();
     const analyzePhrase = vi.fn().mockResolvedValue({

@@ -31,6 +31,7 @@ type AnalyzePhraseOptions = {
   transcript: string;
   knowledgeContext?: string;
   recentContext?: string[];
+  answerHint?: string;
   model?: string;
   reasoningEffort?: string;
   fetchImpl?: typeof fetch;
@@ -39,16 +40,18 @@ type AnalyzePhraseOptions = {
 
 type BilingualModelOptions = {
   reasoningEffort?: string;
+  answerHint?: string;
 };
 
 const fallbackBridgePhrase = "Sure, let me think for a second.";
 
 export const defaultBilingualModel = "gpt-5.6-luna";
 export const defaultBilingualReasoningEffort = "none";
-export const defaultBilingualPromptCacheKey = "echoguide:phrase-analysis:v1";
+export const defaultBilingualPromptCacheKey = "echoguide:phrase-analysis:v2";
 export const maxKnowledgeContextCharacters = 6000;
 export const maxRecentContextTurns = 8;
 export const maxRecentContextCharacters = 3000;
+export const maxAnswerHintCharacters = 1200;
 
 const bilingualAnalysisInstructions = [
   "You help a Russian-speaking senior software engineer practice English interviews.",
@@ -63,6 +66,8 @@ const bilingualAnalysisInstructions = [
   "If the active transcript is only a test, filler, duplicate, or unusable noise, do not invent facts; keep analysisTargetText literal and make the reply safe and minimal.",
   "Detect whether the freshest coherent thought is an interviewer question, the user's draft answer, or noise or unclear speech.",
   "For every interviewer question, explain the meaning in Russian, provide one short English bridge phrase the user can say while thinking, and provide 2-3 short answer options.",
+  "An optional answer hint is the user's card-local description of what they want to say. It can be written in Russian or English. Treat it as the intended factual direction for the suggested replies, not as something the interviewer said.",
+  "When an answer hint is present, make the first reply express that point in natural spoken English. Preserve the user's meaning, but do not copy awkward wording or add facts that are absent from the hint, transcript, recent context, or personal knowledge context.",
   "For every user draft answer, keep the user's intent and simple speaking style. Improve it into natural spoken English instead of giving feedback about it. Add a detail only when it is supported by the transcript, recent context, or personal knowledge context.",
   "Choose the answer structure from the question type. For direct, opinion, weakness, yes-or-no, or pressure questions, answer directly in the first sentence and add only the explanation needed. For behavioral questions such as Tell me about a time, use a brief situation-action-result flow when those facts are available. For technical questions, state the approach and the relevant result or trade-off. Never force a challenge, action, or outcome into every answer.",
   "Make the first reply the most natural answer closest to the user's meaning. Make the second reply simpler or shorter. Add a third reply only when it offers a genuinely different useful angle.",
@@ -81,6 +86,10 @@ const bilingualAnalysisInstructions = [
 
 export function normalizeKnowledgeContext(value: string | undefined): string {
   return value?.trim().slice(0, maxKnowledgeContextCharacters) ?? "";
+}
+
+export function normalizeAnswerHint(value: string | undefined): string {
+  return value?.trim().slice(0, maxAnswerHintCharacters) ?? "";
 }
 
 export function normalizeRecentContext(value: string[] | undefined): string[] {
@@ -318,15 +327,20 @@ export function buildBilingualPhraseAnalysisRequest(
     modelOptions.reasoningEffort?.trim() || defaultBilingualReasoningEffort;
   const normalizedKnowledgeContext = normalizeKnowledgeContext(knowledgeContext);
   const normalizedRecentContext = normalizeRecentContext(recentContext);
+  const normalizedAnswerHint = normalizeAnswerHint(modelOptions.answerHint);
   const formattedRecentContext = normalizedRecentContext
     .map((turn, index) =>
       `${index + 1}. ${/^(Interviewer|Me|Heard):\s/.test(turn) ? turn : `Heard: ${turn}`}`
     )
     .join("\n");
-  const activeTranscriptMessage =
+  const transcriptContextMessage =
     normalizedRecentContext.length > 0
       ? `Recent transcript context:\n${formattedRecentContext}\n\nActive transcript: ${transcript}\nBuild the card for the freshest coherent thought.`
       : `Active transcript: ${transcript}`;
+  const activeTranscriptMessage =
+    normalizedAnswerHint.length > 0
+      ? `${transcriptContextMessage}\n\nAnswer hint from the user:\n${normalizedAnswerHint}\nUse this point to generate the suggested replies for this card.`
+      : transcriptContextMessage;
   const usesExplicitPromptCaching = supportsExplicitPromptCaching(model);
   const stableSystemContent = usesExplicitPromptCaching
     ? [
@@ -396,6 +410,7 @@ export async function analyzeBilingualPhrase({
   transcript,
   knowledgeContext,
   recentContext,
+  answerHint,
   model = process.env.OPENAI_BILINGUAL_MODEL?.trim() || defaultBilingualModel,
   reasoningEffort =
     process.env.OPENAI_BILINGUAL_REASONING_EFFORT?.trim() ||
@@ -412,7 +427,8 @@ export async function analyzeBilingualPhrase({
     },
     body: JSON.stringify(
       buildBilingualPhraseAnalysisRequest(transcript, model, knowledgeContext, recentContext, {
-        reasoningEffort
+        reasoningEffort,
+        answerHint
       })
     )
   });

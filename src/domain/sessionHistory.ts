@@ -14,6 +14,7 @@ export type SessionHistoryPhraseCard = {
   id: string;
   transcript: string;
   source?: "auto" | "selected-group";
+  answerHint?: string;
   analysis: BilingualPhraseAnalysis;
 };
 
@@ -145,6 +146,7 @@ function isPhraseCard(value: unknown): value is SessionHistoryPhraseCard {
     (candidate.source == null ||
       candidate.source === "auto" ||
       candidate.source === "selected-group") &&
+    (candidate.answerHint == null || isString(candidate.answerHint)) &&
     isAnalysis(candidate.analysis)
   );
 }

@@ -5,8 +5,10 @@ import {
   analyzeBilingualPhrase,
   buildBilingualPhraseAnalysisRequest,
   defaultBilingualPromptCacheKey,
+  maxAnswerHintCharacters,
   maxRecentContextCharacters,
   maxRecentContextTurns,
+  normalizeAnswerHint,
   normalizeRecentContext,
   parseBilingualPhraseAnalysis
 } from "./bilingualAnalysis";
@@ -221,6 +223,29 @@ describe("bilingual phrase analysis", () => {
           "Recent transcript context:\n1. Interviewer: How do you keep learning?\n2. Heard: And exploring new AI tools regularly.\n3. Heard: I test them in small projects. This helps me find useful methods.\n\nActive transcript: Find useful method.\nBuild the card for the freshest coherent thought."
       }
     ]);
+  });
+
+  it("adds a bounded card-local answer hint after the transcript context", () => {
+    const request = buildBilingualPhraseAnalysisRequest(
+      "Why did the prototype take so long?",
+      "gpt-test",
+      "",
+      ["Interviewer: Why did the prototype take so long?"],
+      {
+        answerHint:
+          "Я использовал обычный режим. Generation mode работает примерно на 50% быстрее."
+      }
+    );
+
+    expect(request.input[0]?.content).toContain("optional answer hint");
+    expect(request.input.at(-1)?.content).toContain(
+      "Answer hint from the user:\nЯ использовал обычный режим. Generation mode работает примерно на 50% быстрее."
+    );
+    expect(request.input.at(-1)?.content).toContain(
+      "Use this point to generate the suggested replies for this card."
+    );
+    expect(maxAnswerHintCharacters).toBe(1200);
+    expect(normalizeAnswerHint(`  ${"A".repeat(1300)}  `)).toBe("A".repeat(1200));
   });
 
   it("keeps up to eight recent turns within a three-thousand-character window", () => {

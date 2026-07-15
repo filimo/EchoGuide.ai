@@ -1032,6 +1032,63 @@ textarea {
   gap: 8px;
 }
 
+.answer-hint-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #d8dde8;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.answer-hint-open {
+  width: 100%;
+  margin-bottom: 12px;
+  border-style: dashed;
+  color: #1d4ed8;
+}
+
+.answer-hint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.answer-hint-header button {
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+.answer-hint-form label {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.answer-hint-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.answer-hint-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.answer-hint-actions span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.answer-hint-actions .primary-action {
+  margin-top: 0;
+}
+
 .translation-block p,
 .bridge-block p,
 .reply-full {

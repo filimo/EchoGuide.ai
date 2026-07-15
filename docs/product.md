@@ -28,6 +28,8 @@ The product is not intended to automate the conversation. It keeps the user in c
 - Russian meaning and question detection;
 - instant local bridge phrases;
 - grounded suggested replies based on recent context and pasted notes;
+- card-local answer regeneration from a short `My point` hint in Russian or
+  English;
 - manual transcript additions and corrections with explicit speaker roles;
 - a 60-second in-memory microphone buffer with manual recovery of the latest
   30 seconds when Realtime misses a phrase;
@@ -59,6 +61,11 @@ The user chooses the active transcript turn, can add a missed phrase or correct 
 recognized phrase, selects the speaker role, reply, bridge phrase, and whether the
 UI follows the latest live phrase. EchoGuide assists the conversation; it does not
 speak on the user's behalf.
+
+For the selected transcript turn, the user can add a short `My point` hint and
+regenerate the card. The hint supplies the intended facts and direction only for
+that card; it does not modify persistent `Pasted notes` or authorize unsupported
+details.
 
 Recovered audio follows the same boundary: a separate transcription request opens
 the result in the message editor, and the user confirms the text and speaker before

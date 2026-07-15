@@ -24,6 +24,7 @@ const draftEntry: SessionHistoryEntryDraft = {
       id: "training-phrase-0",
       transcript: "Can you walk me through your recent project?",
       source: "selected-group",
+      answerHint: "Я хочу коротко рассказать о контексте проекта.",
       analysis: {
         russianMeaning: "Можешь рассказать о последнем проекте?",
         isQuestion: true,
@@ -97,6 +98,9 @@ describe("session history storage", () => {
       "Можешь рассказать о последнем проекте?"
     );
     expect(history.sessions[0]?.phraseCards[0]?.source).toBe("selected-group");
+    expect(history.sessions[0]?.phraseCards[0]?.answerHint).toBe(
+      "Я хочу коротко рассказать о контексте проекта."
+    );
     expect(history.sessions[0]?.selectedReplies[0]?.reply.fullSentence).toBe(
       "Sure, the project focused on improving a core user workflow."
     );
