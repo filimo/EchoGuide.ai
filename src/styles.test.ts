@@ -25,6 +25,13 @@ describe("Training Mode layout styles", () => {
     expect(styles).toMatch(/\.transcript-action-icon\s*\{[^}]*width:\s*42px/s);
   });
 
+  it("keeps the jump-to-latest action aligned with the title in narrow transcript columns", () => {
+    expect(styles).toMatch(/\.conversation-panel\s*\{[^}]*container-type:\s*inline-size/s);
+    expect(styles).toMatch(
+      /@container\s*\(max-width:\s*560px\)[\s\S]*?\.jump-latest-button\s*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*1/s
+    );
+  });
+
   it("keeps transcript roles and text in compact single rows", () => {
     expect(styles).toMatch(/\.transcript-dialogue\s*\{[^}]*gap:\s*4px/s);
     expect(styles).toMatch(
@@ -37,10 +44,19 @@ describe("Training Mode layout styles", () => {
   it("keeps the suggestions card compact inside a landscape tablet viewport", () => {
     expect(styles).toMatch(/\.reply-full p\s*\{[^}]*margin:\s*0/s);
     expect(styles).toMatch(
-      /@media\s*\(min-width:\s*701px\)\s*and\s*\(max-height:\s*900px\)[\s\S]*?\.suggestions-panel-sticky\s*\{[^}]*height:\s*calc\(100dvh - 118px\)[^}]*max-height:\s*calc\(100dvh - 118px\)/s
+      /\.suggestions-panel-sticky\s*\{[^}]*height:\s*min\(68vh, 680px\)[^}]*max-height:\s*min\(68vh, 680px\)/s
     );
     expect(styles).toMatch(
       /@media\s*\(min-width:\s*701px\)\s*and\s*\(max-height:\s*900px\)[\s\S]*?\.suggestions-panel-sticky \.bilingual-card\s*\{[^}]*gap:\s*10px/s
+    );
+  });
+
+  it("keeps continuous translation compact and opens history as an overlay", () => {
+    expect(styles).toMatch(
+      /\.live-translation-copy\s*\{[^}]*max-height:\s*4\.35em[^}]*overflow-y:\s*auto/s
+    );
+    expect(styles).toMatch(
+      /\.translation-history-drawer\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*16px/s
     );
   });
 });

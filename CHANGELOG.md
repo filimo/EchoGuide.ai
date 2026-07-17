@@ -32,6 +32,14 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Continuous Russian translation now stays in a compact three-line subtitle
+  strip. Its rolling text can be opened in a separate drawer without pushing
+  the transcript and reply card below the viewport.
+- The transcript follows new messages independently from the selected reply
+  card. Scrolling the transcript upward pauses that movement until `Latest
+  message` is used, while the right-hand card remains on the user's selection.
+  The control stays aligned with the transcript title in narrow two-column
+  layouts instead of dropping with the secondary actions.
 - Automatic phrase analysis now waits briefly and combines rapid transcript
   fragments into one request. Stable instructions and pasted notes use an
   explicit prompt-cache boundary, recent context is smaller, and local

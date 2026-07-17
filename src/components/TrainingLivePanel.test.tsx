@@ -219,6 +219,15 @@ describe("Training Live Panel", () => {
     });
 
     expect(translationRegion).toHaveTextContent("Расскажите о вашем опыте.");
+    await user.click(within(translationRegion).getByRole("button", { name: "Expand" }));
+    expect(
+      screen.getByRole("dialog", { name: "Recent live translation" })
+    ).toHaveTextContent("Расскажите о вашем опыте.");
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Recent live translation" })
+    ).not.toBeInTheDocument();
+
     await user.click(
       within(translationRegion).getByRole("button", { name: "Stop streaming translation" })
     );
@@ -2235,7 +2244,7 @@ describe("Training Live Panel", () => {
     expect(within(suggestionsPanel).getByText("Второй смысл.")).toBeInTheDocument();
   });
 
-  it("brings the transcript into view and selects the latest message", async () => {
+  it("keeps transcript scrolling independent from the selected phrase card", async () => {
     const user = userEvent.setup();
     let emitEvent: (event: RealtimeServerEvent) => void = () => {};
     let keepLatestAnalysisPending: (() => void) | null = null;
@@ -2289,6 +2298,7 @@ describe("Training Live Panel", () => {
       height: 120
     } as DOMRect);
     Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 640 });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 200 });
 
     const jumpToLatestButton = screen.getByRole("button", { name: "Jump to latest message" });
 
@@ -2303,6 +2313,9 @@ describe("Training Live Panel", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Pause following live" }));
+    transcript.scrollTop = 100;
+    fireEvent.scroll(transcript);
+    scrollTo.mockClear();
 
     await act(async () => {
       emitEvent({
@@ -2315,15 +2328,18 @@ describe("Training Live Panel", () => {
     expect(
       screen.getByRole("button", { name: "Heard First phrase." }).closest("article")
     ).toHaveClass("transcript-turn-selected");
+    expect(scrollTo).not.toHaveBeenCalled();
 
     await user.click(jumpToLatestButton);
 
     expect(pageScrollTo).toHaveBeenCalledWith({ behavior: "smooth", top: 368 });
     expect(scrollTo).toHaveBeenLastCalledWith({ behavior: "smooth", top: 640 });
     expect(
-      screen.getByRole("button", { name: "Heard Latest phrase." }).closest("article")
+      screen.getByRole("button", { name: "Heard First phrase." }).closest("article")
     ).toHaveClass("transcript-turn-selected");
-    expect(screen.getByText("Loading phrase details...")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Первый смысл.")
+    ).toBeInTheDocument();
     expect(screen.getByText("Paused on selected phrase")).toBeInTheDocument();
 
     await act(async () => {

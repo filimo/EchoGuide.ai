@@ -529,7 +529,9 @@ export function TrainingLivePanel({
   const [savedSessions, setSavedSessions] = useState<SessionHistoryEntry[]>([]);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
+  const [translationHistoryOpen, setTranslationHistoryOpen] = useState(false);
   const [followLive, setFollowLive] = useState(true);
+  const [transcriptFollowsLatest, setTranscriptFollowsLatest] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [recoveryStatus, setRecoveryStatus] = useState<"idle" | "loading">("idle");
@@ -554,8 +556,10 @@ export function TrainingLivePanel({
   const recoveryAudioRecorderRef = useRef<RecoveryAudioRecorder | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const followLiveRef = useRef(true);
+  const transcriptScrollBehaviorRef = useRef<ScrollBehavior>("auto");
   const trainingControlRailRef = useRef<HTMLElement | null>(null);
   const conversationPanelRef = useRef<HTMLDivElement | null>(null);
+  const liveTranslationPreviewRef = useRef<HTMLParagraphElement | null>(null);
   const transcriptDialogueRef = useRef<HTMLDivElement | null>(null);
   const recoveryPickerRef = useRef<HTMLElement | null>(null);
   const transcriptEditorRef = useRef<HTMLFormElement | null>(null);
@@ -1075,11 +1079,35 @@ export function TrainingLivePanel({
     transcriptDialogue.scrollTop = transcriptDialogue.scrollHeight;
   }
 
-  useLayoutEffect(() => {
-    if (followLive) {
-      scrollTranscriptToLatest("auto");
+  function handleTranscriptScroll() {
+    const transcriptDialogue = transcriptDialogueRef.current;
+
+    if (transcriptDialogue == null) {
+      return;
     }
-  }, [followLive, liveTranscriptDraft, transcriptTurns]);
+
+    const distanceFromLatest =
+      transcriptDialogue.scrollHeight -
+      transcriptDialogue.scrollTop -
+      transcriptDialogue.clientHeight;
+
+    setTranscriptFollowsLatest(distanceFromLatest <= 48);
+  }
+
+  useLayoutEffect(() => {
+    if (transcriptFollowsLatest) {
+      scrollTranscriptToLatest(transcriptScrollBehaviorRef.current);
+      transcriptScrollBehaviorRef.current = "auto";
+    }
+  }, [liveTranscriptDraft, transcriptFollowsLatest, transcriptTurns]);
+
+  useLayoutEffect(() => {
+    const liveTranslationPreview = liveTranslationPreviewRef.current;
+
+    if (liveTranslationPreview != null) {
+      liveTranslationPreview.scrollTop = liveTranslationPreview.scrollHeight;
+    }
+  }, [streamingTranslationText]);
 
   useEffect(() => {
     if (!hasSessionContent) {
@@ -2157,6 +2185,8 @@ export function TrainingLivePanel({
     cancelPendingAutomaticAnalysis();
     currentSessionIdRef.current = null;
     setFollowLiveMode(true);
+    transcriptScrollBehaviorRef.current = "auto";
+    setTranscriptFollowsLatest(true);
     transcriptTurnsRef.current = [];
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
@@ -2192,6 +2222,7 @@ export function TrainingLivePanel({
 
     currentSessionIdRef.current = normalizedSession.id;
     setFollowLiveMode(false);
+    setTranscriptFollowsLatest(true);
     phraseCardSequence.current = getNextPhraseCardSequence(normalizedSession);
     transcriptTurnsRef.current = normalizedSession.transcriptTurns;
     deletedTranscriptTurnIdsRef.current = new Set();
@@ -2253,15 +2284,16 @@ export function TrainingLivePanel({
     const trainingControlRail = trainingControlRailRef.current;
     const conversationPanel = conversationPanelRef.current;
     const transcriptDialogue = transcriptDialogueRef.current;
-    const latestCardId = transcriptTurns.at(-1)?.id ?? phraseCards.at(-1)?.id ?? null;
 
     if (transcriptDialogue == null) {
       return;
     }
 
-    if (latestCardId != null) {
-      setSelectedPhraseCardId(latestCardId);
-      setSelectedReplyIndex(resolveSelectedReplyIndex(latestCardId, phraseCards, selectedReplies));
+    if (transcriptFollowsLatest) {
+      scrollTranscriptToLatest("smooth");
+    } else {
+      transcriptScrollBehaviorRef.current = "smooth";
+      setTranscriptFollowsLatest(true);
     }
 
     const stickyRailHeight = trainingControlRail?.getBoundingClientRect().height ?? 0;
@@ -2273,8 +2305,6 @@ export function TrainingLivePanel({
         behavior: "smooth"
       });
     }
-
-    scrollTranscriptToLatest("smooth");
   }
 
   return (
@@ -2468,6 +2498,29 @@ export function TrainingLivePanel({
         </div>
       ) : null}
 
+      {translationHistoryOpen ? (
+        <div className="translation-history-layer">
+          <section
+            className="translation-history-drawer"
+            role="dialog"
+            aria-labelledby="translation-history-title"
+          >
+            <div className="translation-history-header">
+              <div>
+                <p className="eyebrow">Rolling subtitle buffer</p>
+                <h2 id="translation-history-title">Recent live translation</h2>
+              </div>
+              <button type="button" onClick={() => setTranslationHistoryOpen(false)}>
+                Close
+              </button>
+            </div>
+            <p className="translation-history-copy" lang="ru">
+              {streamingTranslationText.trim() || "No live translation yet."}
+            </p>
+          </section>
+        </div>
+      ) : null}
+
       <TurnDetectionControls
         settings={turnDetectionSettings}
         disabled={connection != null || realtimeStatus === "connecting"}
@@ -2485,37 +2538,50 @@ export function TrainingLivePanel({
         aria-labelledby="live-translation-title"
       >
         <div className="live-translation-header">
-          <div>
-            <p className="eyebrow">Experimental continuous layer</p>
+          <div className="live-translation-heading">
             <h2 id="live-translation-title">Live Russian translation</h2>
+            <span className={`status status-${streamingTranslationStatus}`}>
+              {streamingTranslationStatus}
+            </span>
           </div>
           <div className="live-translation-actions">
-            <span className={`status status-${streamingTranslationStatus}`}>
-              Streaming: {streamingTranslationStatus}
-            </span>
+            {streamingTranslationText.trim().length > 0 ? (
+              <button
+                type="button"
+                className="live-translation-expand"
+                onClick={() => setTranslationHistoryOpen(true)}
+              >
+                Expand
+              </button>
+            ) : null}
             {translationConnection == null ? (
               <button
                 type="button"
+                aria-label="Start streaming translation"
                 disabled={connection == null || streamingTranslationStatus === "connecting"}
                 onClick={() => void handleStartStreamingTranslation()}
               >
                 {streamingTranslationStatus === "connecting"
-                  ? "Starting translation..."
-                  : "Start streaming translation"}
+                  ? "Starting..."
+                  : "Start translation"}
               </button>
             ) : (
-              <button type="button" onClick={handleStopStreamingTranslation}>
-                Stop streaming translation
+              <button
+                type="button"
+                aria-label="Stop streaming translation"
+                onClick={handleStopStreamingTranslation}
+              >
+                Stop translation
               </button>
             )}
           </div>
         </div>
-        <p className="live-translation-copy">
+        <p ref={liveTranslationPreviewRef} className="live-translation-copy" lang="ru">
           {streamingTranslationText.length > 0
             ? streamingTranslationText
             : streamingTranslationStatus === "connected"
               ? "Listening for speech..."
-              : "Start live mode, then enable this sidecar to compare continuous subtitles with per-phrase translation."}
+              : "Start live mode, then start translation."}
         </p>
         {streamingTranslationError.length > 0 ? (
           <p className="live-translation-error" role="alert">
@@ -2600,16 +2666,6 @@ export function TrainingLivePanel({
               ) : null}
               <button
                 type="button"
-                className="jump-latest-button transcript-action-icon"
-                aria-label="Jump to latest message"
-                title="Latest message"
-                onClick={handleJumpToLatestMessage}
-                disabled={transcriptTurns.length === 0 && liveTranscriptDraft.trim().length === 0}
-              >
-                <ArrowDownToLine aria-hidden="true" size={18} strokeWidth={1.8} />
-              </button>
-              <button
-                type="button"
                 className={transcriptSelectionMode ? "transcript-action-icon" : undefined}
                 aria-label={transcriptSelectionMode ? "Cancel select" : undefined}
                 title={transcriptSelectionMode ? "Cancel select" : undefined}
@@ -2622,6 +2678,16 @@ export function TrainingLivePanel({
                 )}
               </button>
             </div>
+            <button
+              type="button"
+              className="jump-latest-button transcript-action-icon"
+              aria-label="Jump to latest message"
+              title="Latest message"
+              onClick={handleJumpToLatestMessage}
+              disabled={transcriptTurns.length === 0 && liveTranscriptDraft.trim().length === 0}
+            >
+              <ArrowDownToLine aria-hidden="true" size={18} strokeWidth={1.8} />
+            </button>
           </div>
           {recoveryPhrases.length > 0 ? (
             <section
@@ -2765,6 +2831,7 @@ export function TrainingLivePanel({
             ref={transcriptDialogueRef}
             className="transcript-box transcript-dialogue"
             aria-label="Conversation transcript"
+            onScroll={handleTranscriptScroll}
           >
             {transcriptTurns.length === 0 && liveTranscriptDraft.trim().length === 0 ? (
               <p className="transcript-empty">Waiting for transcript...</p>

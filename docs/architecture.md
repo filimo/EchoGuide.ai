@@ -66,8 +66,11 @@ Training Mode can also start an independent translation sidecar explicitly.
 `connectRealtimeTranslation()` attaches the same microphone audio track to a
 second WebRTC peer connection, exchanges SDP through
 `/v1/realtime/translations/calls`, and appends
-`session.output_transcript.delta` events to a separate rolling Russian subtitle
-block. The browser does not attach the remote translated audio track to a player.
+`session.output_transcript.delta` events to a rolling Russian subtitle buffer.
+Training Mode shows the latest lines in a compact strip and opens the longer
+rolling text in an overlay drawer, so continuous translation does not take height
+from the transcript and reply card. The browser does not attach the remote
+translated audio track to a player.
 Stopping the sidecar leaves the primary transcription connection active, while
 `Stop live` closes both connections. The separate start action makes the extra
 Realtime session and its cost visible to the user.
