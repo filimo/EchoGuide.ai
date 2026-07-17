@@ -618,6 +618,87 @@ describe("Bilingual analysis dev middleware", () => {
   });
 });
 
+describe("Fast translation dev middleware", () => {
+  it("translates a completed phrase with the dedicated low-latency model", async () => {
+    const translatePhrase = vi.fn().mockResolvedValue("Какова была ваша роль?");
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: {},
+      readLocalEnv: () =>
+        [
+          "OPENAI_API_KEY=sk-local-only",
+          "OPENAI_TRANSLATION_MODEL=gpt-5-nano",
+          "OPENAI_TRANSLATION_REASONING_EFFORT=minimal"
+        ].join("\n"),
+      translatePhrase
+    });
+    const res = createResponse();
+
+    await middleware(
+      {
+        method: "POST",
+        url: "/api/realtime/translate-phrase",
+        body: JSON.stringify({ transcript: "What was your role?" })
+      },
+      res,
+      vi.fn()
+    );
+
+    expect(translatePhrase).toHaveBeenCalledWith({
+      apiKey: "sk-local-only",
+      transcript: "What was your role?",
+      model: "gpt-5-nano",
+      reasoningEffort: "minimal"
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ translation: "Какова была ваша роль?" });
+    expect(res.body).not.toContain("sk-local-only");
+  });
+});
+
+describe("Realtime translation dev middleware", () => {
+  it("creates an opt-in streaming translation client secret", async () => {
+    const createTranslationClientSecret = vi.fn().mockResolvedValue({
+      clientSecret: "ek_translation",
+      expiresAt: 1756310470,
+      sessionId: "translation-session",
+      model: "gpt-realtime-translate",
+      outputLanguage: "ru"
+    });
+    const middleware = createRealtimeClientSecretMiddleware({
+      env: {},
+      readLocalEnv: () =>
+        [
+          "OPENAI_API_KEY=sk-local-only",
+          "OPENAI_REALTIME_TRANSLATION_MODEL=gpt-realtime-translate",
+          "OPENAI_REALTIME_TRANSLATION_LANGUAGE=ru"
+        ].join("\n"),
+      createTranslationClientSecret
+    });
+    const res = createResponse();
+
+    await middleware(
+      { method: "POST", url: "/api/realtime/translation-client-secret" },
+      res,
+      vi.fn()
+    );
+
+    expect(createTranslationClientSecret).toHaveBeenCalledWith({
+      apiKey: "sk-local-only",
+      model: "gpt-realtime-translate",
+      outputLanguage: "ru"
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      clientSecret: "ek_translation",
+      expiresAt: 1756310470,
+      sessionId: "translation-session",
+      model: "gpt-realtime-translate",
+      outputLanguage: "ru"
+    });
+    expect(res.body).not.toContain("sk-local-only");
+  });
+});
+
 describe("Recovered audio dev middleware", () => {
   it("transcribes a recent WAV buffer with the server key and returns phrase candidates", async () => {
     const realtimeDiagnosticsDirectoryPath = mkdtempSync(

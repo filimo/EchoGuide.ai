@@ -33,9 +33,22 @@ import {
   splitRecoveredTranscript,
   transcribeRecoveredAudio
 } from "./audioRecovery";
+import {
+  defaultFastTranslationModel,
+  defaultFastTranslationReasoningEffort,
+  translatePhraseToRussian
+} from "./fastTranslation";
+import {
+  createRealtimeTranslationClientSecret,
+  defaultRealtimeTranslationLanguage,
+  defaultRealtimeTranslationModel,
+  type RealtimeTranslationClientSecret
+} from "./realtimeTranslation";
 
 const realtimeClientSecretPath = "/api/realtime/client-secret";
+const realtimeTranslationClientSecretPath = "/api/realtime/translation-client-secret";
 const realtimeAnalyzePhrasePath = "/api/realtime/analyze-phrase";
+const realtimeTranslatePhrasePath = "/api/realtime/translate-phrase";
 const realtimeRecoverTranscriptPath = "/api/realtime/recover-transcript";
 const localKnowledgePath = "/api/knowledge/local";
 const sessionsPath = "/api/sessions";
@@ -68,6 +81,12 @@ type CreateClientSecret = (options: {
   whisperModel: string;
 }) => Promise<RealtimeClientSecret>;
 
+type CreateTranslationClientSecret = (options: {
+  apiKey: string;
+  model: string;
+  outputLanguage: string;
+}) => Promise<RealtimeTranslationClientSecret>;
+
 type AnalyzePhrase = (options: {
   apiKey: string;
   transcript: string;
@@ -79,6 +98,13 @@ type AnalyzePhrase = (options: {
   onUsage?: (usage: BilingualAnalysisUsage) => void;
 }) => Promise<BilingualPhraseAnalysis>;
 
+type TranslatePhrase = (options: {
+  apiKey: string;
+  transcript: string;
+  model?: string;
+  reasoningEffort?: string;
+}) => Promise<string>;
+
 type RecoverTranscript = (options: {
   apiKey: string;
   audioBytes: Uint8Array;
@@ -89,7 +115,9 @@ type RealtimeClientSecretMiddlewareOptions = {
   env?: NodeJS.ProcessEnv;
   readLocalEnv?: () => string;
   createClientSecret?: CreateClientSecret;
+  createTranslationClientSecret?: CreateTranslationClientSecret;
   analyzePhrase?: AnalyzePhrase;
+  translatePhrase?: TranslatePhrase;
   recoverTranscript?: RecoverTranscript;
   sessionHistoryFilePath?: string;
   localKnowledgeFilePath?: string;
@@ -132,12 +160,28 @@ function matchesRealtimeClientSecretRoute(req: BasicRequest): boolean {
   return new URL(req.url, "http://localhost").pathname === realtimeClientSecretPath;
 }
 
+function matchesRealtimeTranslationClientSecretRoute(req: BasicRequest): boolean {
+  if (req.method !== "POST" || req.url == null) {
+    return false;
+  }
+
+  return new URL(req.url, "http://localhost").pathname === realtimeTranslationClientSecretPath;
+}
+
 function matchesRealtimeAnalyzePhraseRoute(req: BasicRequest): boolean {
   if (req.method !== "POST" || req.url == null) {
     return false;
   }
 
   return new URL(req.url, "http://localhost").pathname === realtimeAnalyzePhrasePath;
+}
+
+function matchesRealtimeTranslatePhraseRoute(req: BasicRequest): boolean {
+  if (req.method !== "POST" || req.url == null) {
+    return false;
+  }
+
+  return new URL(req.url, "http://localhost").pathname === realtimeTranslatePhrasePath;
 }
 
 function matchesRealtimeRecoverTranscriptRoute(req: BasicRequest): boolean {
@@ -281,7 +325,9 @@ export function createRealtimeClientSecretMiddleware({
   env = process.env,
   readLocalEnv = readDefaultLocalEnv,
   createClientSecret = createRealtimeClientSecret,
+  createTranslationClientSecret = createRealtimeTranslationClientSecret,
   analyzePhrase = analyzeBilingualPhrase,
+  translatePhrase = translatePhraseToRussian,
   recoverTranscript = transcribeRecoveredAudio,
   sessionHistoryFilePath = defaultSessionHistoryFilePath,
   localKnowledgeFilePath = defaultLocalKnowledgeFilePath,
@@ -290,7 +336,9 @@ export function createRealtimeClientSecretMiddleware({
 }: RealtimeClientSecretMiddlewareOptions = {}) {
   return async (req: BasicRequest, res: BasicResponse, next: MiddlewareNext): Promise<void> => {
     const handlesClientSecret = matchesRealtimeClientSecretRoute(req);
+    const handlesTranslationClientSecret = matchesRealtimeTranslationClientSecretRoute(req);
     const handlesAnalyzePhrase = matchesRealtimeAnalyzePhraseRoute(req);
+    const handlesTranslatePhrase = matchesRealtimeTranslatePhraseRoute(req);
     const handlesRecoverTranscript = matchesRealtimeRecoverTranscriptRoute(req);
     const handlesLoadLocalKnowledge = matchesLoadLocalKnowledgeRoute(req);
     const handlesSaveLocalKnowledge = matchesSaveLocalKnowledgeRoute(req);
@@ -415,7 +463,13 @@ export function createRealtimeClientSecretMiddleware({
       return;
     }
 
-    if (!handlesClientSecret && !handlesAnalyzePhrase && !handlesRecoverTranscript) {
+    if (
+      !handlesClientSecret &&
+      !handlesTranslationClientSecret &&
+      !handlesAnalyzePhrase &&
+      !handlesTranslatePhrase &&
+      !handlesRecoverTranscript
+    ) {
       next();
       return;
     }
@@ -429,13 +483,65 @@ export function createRealtimeClientSecretMiddleware({
         type: "openai_api_key.missing",
         route: handlesAnalyzePhrase
           ? realtimeAnalyzePhrasePath
-          : handlesRecoverTranscript
-            ? realtimeRecoverTranscriptPath
-            : realtimeClientSecretPath
+          : handlesTranslationClientSecret
+            ? realtimeTranslationClientSecretPath
+            : handlesTranslatePhrase
+              ? realtimeTranslatePhrasePath
+              : handlesRecoverTranscript
+                ? realtimeRecoverTranscriptPath
+                : realtimeClientSecretPath
       });
       sendJson(res, 500, {
         error: "OPENAI_API_KEY is not configured for the Realtime Lab."
       });
+      return;
+    }
+
+    if (handlesTranslationClientSecret) {
+      const model =
+        readEnvironmentValue(env, "OPENAI_REALTIME_TRANSLATION_MODEL", localEnvText) ??
+        defaultRealtimeTranslationModel;
+      const outputLanguage =
+        readEnvironmentValue(env, "OPENAI_REALTIME_TRANSLATION_LANGUAGE", localEnvText) ??
+        defaultRealtimeTranslationLanguage;
+
+      appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+        source: "backend",
+        type: "translation_client_secret.started",
+        model,
+        outputLanguage
+      });
+
+      try {
+        const clientSecret = await createTranslationClientSecret({
+          apiKey,
+          model,
+          outputLanguage
+        });
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "translation_client_secret.completed",
+          model,
+          outputLanguage,
+          expiresAt: clientSecret.expiresAt,
+          sessionId: clientSecret.sessionId ?? null
+        });
+        sendJson(res, 200, clientSecret);
+      } catch (error) {
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "translation_client_secret.failed",
+          model,
+          outputLanguage,
+          errorName: error instanceof Error ? error.name : "UnknownError"
+        });
+        sendJson(res, 502, {
+          error: "Could not create an OpenAI Realtime translation client secret.",
+          details:
+            error instanceof Error ? error.message.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted") : null
+        });
+      }
+
       return;
     }
 
@@ -529,6 +635,71 @@ export function createRealtimeClientSecretMiddleware({
         });
         sendJson(res, 502, {
           error: "Could not analyze the phrase with OpenAI.",
+          details:
+            error instanceof Error ? error.message.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted") : null
+        });
+      }
+
+      return;
+    }
+
+    if (handlesTranslatePhrase) {
+      const model =
+        readEnvironmentValue(env, "OPENAI_TRANSLATION_MODEL", localEnvText) ??
+        defaultFastTranslationModel;
+      const reasoningEffort =
+        readEnvironmentValue(env, "OPENAI_TRANSLATION_REASONING_EFFORT", localEnvText) ??
+        defaultFastTranslationReasoningEffort;
+      let requestBody: unknown;
+
+      try {
+        requestBody = await readJsonBody(req);
+      } catch {
+        sendJson(res, 400, { error: "Translation request body must be valid JSON." });
+        return;
+      }
+
+      const transcript =
+        typeof (requestBody as { transcript?: unknown } | null)?.transcript === "string"
+          ? (requestBody as { transcript: string }).transcript.trim()
+          : "";
+
+      if (transcript.length === 0) {
+        sendJson(res, 400, { error: "Phrase transcript is required." });
+        return;
+      }
+
+      appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+        source: "backend",
+        type: "phrase_translation.started",
+        transcriptCharacters: transcript.length,
+        model
+      });
+
+      try {
+        const translation = await translatePhrase({
+          apiKey,
+          transcript,
+          model,
+          reasoningEffort
+        });
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "phrase_translation.completed",
+          transcriptCharacters: transcript.length,
+          translationCharacters: translation.length,
+          model
+        });
+        sendJson(res, 200, { translation });
+      } catch (error) {
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend",
+          type: "phrase_translation.failed",
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          model
+        });
+        sendJson(res, 502, {
+          error: "Could not translate the phrase with OpenAI.",
           details:
             error instanceof Error ? error.message.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted") : null
         });

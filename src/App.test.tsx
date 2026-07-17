@@ -301,7 +301,7 @@ describe("EchoGuide iPad setup flow", () => {
     expect((await screen.findAllByText("What did you build in EchoGuide?")).length).toBeGreaterThan(
       0
     );
-    expect(screen.getByText("Что ты построил в EchoGuide?")).toBeInTheDocument();
+    expect(screen.getAllByText("Что ты построил в EchoGuide?").length).toBeGreaterThan(1);
     expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
     expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
   });

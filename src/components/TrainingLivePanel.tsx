@@ -40,6 +40,12 @@ import {
   type RealtimeClientSecret,
   type RealtimeLabMode
 } from "../realtime/realtimeSession";
+import {
+  connectRealtimeTranslation,
+  type RealtimeTranslationClientSecret,
+  type RealtimeTranslationConnection,
+  type RealtimeTranslationEvent
+} from "../realtime/realtimeTranslation";
 import { SpeechLanguageControls } from "./SpeechLanguageControls";
 import { TurnDetectionControls } from "./TurnDetectionControls";
 
@@ -105,6 +111,7 @@ const testTranscripts = new Set(["test", "testing", "hi test"]);
 const maxFreshThoughtTurns = 8;
 const maxFreshThoughtCharacters = 3000;
 const defaultAutomaticAnalysisDelayMs = 1200;
+const maxStreamingTranslationCharacters = 2000;
 const unacknowledgedSpeechDelayMs = 2500;
 const loudSpeechRmsThreshold = 0.01;
 const loudSpeechPeakThreshold = 0.05;
@@ -116,6 +123,8 @@ type TrainingLivePanelProps = {
   sourceLabel?: string;
   requestClientSecret?: (mode: RealtimeLabMode) => Promise<RealtimeClientSecret>;
   connectRealtime?: typeof connectRealtimeTranscription;
+  requestTranslationClientSecret?: () => Promise<RealtimeTranslationClientSecret>;
+  connectTranslation?: typeof connectRealtimeTranslation;
   createRecoveryAudioRecorder?: typeof createBrowserRecoveryAudioRecorder;
   analyzePhrase?: (
     transcript: string,
@@ -123,6 +132,7 @@ type TrainingLivePanelProps = {
     recentContext: string[],
     answerHint?: string
   ) => Promise<BilingualPhraseAnalysis>;
+  translatePhrase?: (transcript: string) => Promise<string>;
   automaticAnalysisDelayMs?: number;
   recoverPhrases?: (audio: Blob) => Promise<string[]>;
   copyText?: (text: string) => Promise<void> | void;
@@ -178,6 +188,41 @@ async function requestDefaultClientSecret(mode: RealtimeLabMode): Promise<Realti
   };
 }
 
+async function requestDefaultTranslationClientSecret(): Promise<RealtimeTranslationClientSecret> {
+  const response = await fetch("/api/realtime/translation-client-secret", {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not create an OpenAI Realtime translation client secret.");
+  }
+
+  const payload = (await response.json()) as {
+    clientSecret?: unknown;
+    expiresAt?: unknown;
+    sessionId?: unknown;
+    model?: unknown;
+    outputLanguage?: unknown;
+  };
+
+  if (
+    typeof payload.clientSecret !== "string" ||
+    typeof payload.expiresAt !== "number" ||
+    typeof payload.model !== "string" ||
+    typeof payload.outputLanguage !== "string"
+  ) {
+    throw new Error("Realtime translation client secret response is invalid.");
+  }
+
+  return {
+    clientSecret: payload.clientSecret,
+    expiresAt: payload.expiresAt,
+    ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {}),
+    model: payload.model,
+    outputLanguage: payload.outputLanguage
+  };
+}
+
 async function requestDefaultPhraseAnalysis(
   transcript: string,
   knowledgeContext: string,
@@ -202,6 +247,26 @@ async function requestDefaultPhraseAnalysis(
   }
 
   return (await response.json()) as BilingualPhraseAnalysis;
+}
+
+async function requestDefaultFastTranslation(transcript: string): Promise<string> {
+  const response = await fetch("/api/realtime/translate-phrase", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript })
+  });
+
+  if (!response.ok) {
+    throw new Error("Phrase translation failed.");
+  }
+
+  const payload = (await response.json()) as { translation?: unknown };
+
+  if (typeof payload.translation !== "string" || payload.translation.trim().length === 0) {
+    throw new Error("Phrase translation returned an empty result.");
+  }
+
+  return payload.translation.trim();
 }
 
 async function requestDefaultRecoveredPhrases(audio: Blob): Promise<string[]> {
@@ -414,8 +479,11 @@ export function TrainingLivePanel({
   sourceLabel = "",
   requestClientSecret = requestDefaultClientSecret,
   connectRealtime = connectRealtimeTranscription,
+  requestTranslationClientSecret = requestDefaultTranslationClientSecret,
+  connectTranslation = connectRealtimeTranslation,
   createRecoveryAudioRecorder = createBrowserRecoveryAudioRecorder,
   analyzePhrase = requestDefaultPhraseAnalysis,
+  translatePhrase = requestDefaultFastTranslation,
   recoverPhrases = requestDefaultRecoveredPhrases,
   copyText = copyTextToClipboard,
   sessionHistoryClient = defaultSessionHistoryClient,
@@ -429,10 +497,20 @@ export function TrainingLivePanel({
 }: TrainingLivePanelProps) {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
   const [connection, setConnection] = useState<RealtimeTranscriptionConnection | null>(null);
+  const [translationConnection, setTranslationConnection] =
+    useState<RealtimeTranslationConnection | null>(null);
+  const [streamingTranslationStatus, setStreamingTranslationStatus] =
+    useState<RealtimeStatus>("disconnected");
+  const [streamingTranslationText, setStreamingTranslationText] = useState("");
+  const [streamingTranslationError, setStreamingTranslationError] = useState("");
   const [transcriptTurns, setTranscriptTurns] = useState<TranscriptTurn[]>([]);
   const [liveTranscriptDraft, setLiveTranscriptDraft] = useState("");
   const [phraseCards, setPhraseCards] = useState<TrainingPhraseCard[]>([]);
   const [pendingAnalysisIds, setPendingAnalysisIds] = useState<Set<string>>(() => new Set());
+  const [fastTranslations, setFastTranslations] = useState<Record<string, string>>({});
+  const [pendingTranslationIds, setPendingTranslationIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [selectedPhraseCardId, setSelectedPhraseCardId] = useState<string | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle"
@@ -472,6 +550,7 @@ export function TrainingLivePanel({
   );
   const phraseCardSequence = useRef(0);
   const connectionRef = useRef<RealtimeTranscriptionConnection | null>(null);
+  const translationConnectionRef = useRef<RealtimeTranslationConnection | null>(null);
   const recoveryAudioRecorderRef = useRef<RecoveryAudioRecorder | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const followLiveRef = useRef(true);
@@ -487,6 +566,8 @@ export function TrainingLivePanel({
   const manuallyAssignedSpeakerTurnIdsRef = useRef<Set<string>>(new Set());
   const phraseAnalysisRevisionRef = useRef<Map<string, number>>(new Map());
   const phraseAnalysisSequenceRef = useRef(0);
+  const translationRevisionRef = useRef<Map<string, number>>(new Map());
+  const translationSequenceRef = useRef(0);
   const automaticAnalysisTimerRef = useRef<number | null>(null);
   const pendingAutomaticAnalysisRef = useRef<PendingAutomaticAnalysis | null>(null);
   const autoOpenedLatestSessionRef = useRef(false);
@@ -735,6 +816,7 @@ export function TrainingLivePanel({
     return () => {
       realtimeStatusRef.current = "disconnected";
       connectionRef.current?.disconnect();
+      translationConnectionRef.current?.disconnect();
       recoveryAudioRecorderRef.current?.stop();
       if (automaticAnalysisTimerRef.current != null) {
         window.clearTimeout(automaticAnalysisTimerRef.current);
@@ -904,6 +986,51 @@ export function TrainingLivePanel({
       next.delete(phraseId);
       return next;
     });
+  }
+
+  function invalidateFastTranslation(phraseId: string) {
+    translationSequenceRef.current += 1;
+    translationRevisionRef.current.set(phraseId, translationSequenceRef.current);
+    setPendingTranslationIds((current) => {
+      const next = new Set(current);
+      next.delete(phraseId);
+      return next;
+    });
+    setFastTranslations((current) => {
+      const next = { ...current };
+      delete next[phraseId];
+      return next;
+    });
+  }
+
+  async function translateCompletedTranscript(transcript: string, phraseId: string) {
+    translationSequenceRef.current += 1;
+    const revision = translationSequenceRef.current;
+    translationRevisionRef.current.set(phraseId, revision);
+    setPendingTranslationIds((current) => new Set(current).add(phraseId));
+
+    try {
+      const translation = await translatePhrase(transcript.trim());
+
+      if (
+        deletedTranscriptTurnIdsRef.current.has(phraseId) ||
+        translationRevisionRef.current.get(phraseId) !== revision
+      ) {
+        return;
+      }
+
+      setFastTranslations((current) => ({ ...current, [phraseId]: translation.trim() }));
+    } catch {
+      // The phrase card remains the fallback source for Russian meaning.
+    } finally {
+      if (translationRevisionRef.current.get(phraseId) === revision) {
+        setPendingTranslationIds((current) => {
+          const next = new Set(current);
+          next.delete(phraseId);
+          return next;
+        });
+      }
+    }
   }
 
   function updateTranscriptSpeakerLabel(
@@ -1279,9 +1406,105 @@ export function TrainingLivePanel({
       }
       setLiveTranscriptDraft("");
       if (completedTranscript.length > 0) {
+        void translateCompletedTranscript(completedTranscript, phraseId);
         scheduleAutomaticAnalysis(completedTranscript, phraseId, shouldShowAnalysis);
       }
     }
+  }
+
+  function releaseStreamingTranslation(
+    nextStatus: Extract<RealtimeStatus, "disconnected" | "error"> = "disconnected"
+  ) {
+    const liveTranslationConnection = translationConnectionRef.current;
+
+    translationConnectionRef.current = null;
+    setTranslationConnection(null);
+    setStreamingTranslationStatus(nextStatus);
+    liveTranslationConnection?.disconnect();
+  }
+
+  function handleRealtimeTranslationEvent(event: RealtimeTranslationEvent) {
+    if (
+      event.type === "session.output_transcript.delta" &&
+      typeof event.delta === "string"
+    ) {
+      setStreamingTranslationText((current) =>
+        `${current}${event.delta}`.slice(-maxStreamingTranslationCharacters)
+      );
+      return;
+    }
+
+    if (event.type === "session.closed") {
+      releaseStreamingTranslation("disconnected");
+      return;
+    }
+
+    if (event.type === "error") {
+      const errorMessage =
+        typeof (event.error as { message?: unknown } | undefined)?.message === "string"
+          ? (event.error as { message: string }).message
+          : "Realtime translation became unavailable.";
+
+      setStreamingTranslationError(errorMessage);
+      releaseStreamingTranslation("error");
+    }
+  }
+
+  async function handleStartStreamingTranslation() {
+    if (
+      translationConnectionRef.current != null ||
+      streamingTranslationStatus === "connecting"
+    ) {
+      return;
+    }
+
+    const liveStream = activeStreamRef.current;
+
+    if (connectionRef.current == null || liveStream == null) {
+      setStreamingTranslationError("Start live mode before streaming translation.");
+      return;
+    }
+
+    setStreamingTranslationStatus("connecting");
+    setStreamingTranslationText("");
+    setStreamingTranslationError("");
+    recordDiagnostic("streaming_translation.start");
+
+    try {
+      const clientSecret = await requestTranslationClientSecret();
+      const liveTranslationConnection = await connectTranslation({
+        stream: liveStream,
+        clientSecret: clientSecret.clientSecret,
+        onEvent: handleRealtimeTranslationEvent,
+        onError: (message) => setStreamingTranslationError(message)
+      });
+
+      if (connectionRef.current == null || activeStreamRef.current !== liveStream) {
+        liveTranslationConnection.disconnect();
+        setStreamingTranslationStatus("disconnected");
+        return;
+      }
+
+      translationConnectionRef.current = liveTranslationConnection;
+      setTranslationConnection(liveTranslationConnection);
+      setStreamingTranslationStatus("connected");
+      recordDiagnostic("streaming_translation.connected", {
+        model: clientSecret.model,
+        outputLanguage: clientSecret.outputLanguage,
+        expiresAt: clientSecret.expiresAt
+      });
+    } catch (error) {
+      translationConnectionRef.current = null;
+      setTranslationConnection(null);
+      setStreamingTranslationStatus("error");
+      setStreamingTranslationError(toErrorMessage(error));
+      recordDiagnostic("streaming_translation.start_error");
+    }
+  }
+
+  function handleStopStreamingTranslation() {
+    recordDiagnostic("streaming_translation.stop");
+    releaseStreamingTranslation("disconnected");
   }
 
   async function handleStartLive() {
@@ -1394,6 +1617,7 @@ export function TrainingLivePanel({
     flushPendingAutomaticAnalysis();
     const liveConnection = connectionRef.current;
 
+    releaseStreamingTranslation("disconnected");
     connectionRef.current = null;
     setConnection(null);
     realtimeStatusRef.current = nextStatus;
@@ -1597,6 +1821,7 @@ export function TrainingLivePanel({
     selectedIds.forEach((turnId) => deletedTranscriptTurnIdsRef.current.add(turnId));
     selectedIds.forEach((turnId) => manuallyAssignedSpeakerTurnIdsRef.current.delete(turnId));
     selectedIds.forEach((turnId) => invalidatePhraseAnalysis(turnId));
+    selectedIds.forEach((turnId) => invalidateFastTranslation(turnId));
     cancelPendingAutomaticAnalysis(selectedIds);
 
     const nextTranscriptTurns = transcriptTurns.filter((turn) => !selectedIds.has(turn.id));
@@ -1846,6 +2071,7 @@ export function TrainingLivePanel({
         turn.id === savedTurn.id ? savedTurn : turn
       );
       invalidatePhraseAnalysis(savedTurn.id);
+      invalidateFastTranslation(savedTurn.id);
       setPhraseCards((current) => current.filter((card) => card.id !== savedTurn.id));
       setSelectedReplies((current) =>
         current.filter((selectedReply) => selectedReply.phraseId !== savedTurn.id)
@@ -1870,6 +2096,7 @@ export function TrainingLivePanel({
     setSelectedPhraseCardId(savedTurn.id);
     setTranscriptEditor(null);
     setFollowLiveMode(false);
+    void translateCompletedTranscript(savedTurn.text, savedTurn.id);
 
     if (generateCard) {
       void generateTranscriptTurnCard(savedTurn, nextTranscriptTurns);
@@ -1934,10 +2161,13 @@ export function TrainingLivePanel({
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
     phraseAnalysisRevisionRef.current = new Map();
+    translationRevisionRef.current = new Map();
     setTranscriptTurns([]);
     setLiveTranscriptDraft("");
     setPhraseCards([]);
     setPendingAnalysisIds(new Set());
+    setFastTranslations({});
+    setPendingTranslationIds(new Set());
     setSelectedPhraseCardId(null);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
@@ -1967,10 +2197,13 @@ export function TrainingLivePanel({
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
     phraseAnalysisRevisionRef.current = new Map();
+    translationRevisionRef.current = new Map();
     setTranscriptTurns(normalizedSession.transcriptTurns);
     setLiveTranscriptDraft("");
     setPhraseCards(normalizedSession.phraseCards);
     setPendingAnalysisIds(new Set());
+    setFastTranslations({});
+    setPendingTranslationIds(new Set());
     setSelectedPhraseCardId(lastCardId);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
@@ -2247,10 +2480,54 @@ export function TrainingLivePanel({
         onChange={handleSpeechLanguageChange}
       />
 
+      <section
+        className="live-translation-panel"
+        aria-labelledby="live-translation-title"
+      >
+        <div className="live-translation-header">
+          <div>
+            <p className="eyebrow">Experimental continuous layer</p>
+            <h2 id="live-translation-title">Live Russian translation</h2>
+          </div>
+          <div className="live-translation-actions">
+            <span className={`status status-${streamingTranslationStatus}`}>
+              Streaming: {streamingTranslationStatus}
+            </span>
+            {translationConnection == null ? (
+              <button
+                type="button"
+                disabled={connection == null || streamingTranslationStatus === "connecting"}
+                onClick={() => void handleStartStreamingTranslation()}
+              >
+                {streamingTranslationStatus === "connecting"
+                  ? "Starting translation..."
+                  : "Start streaming translation"}
+              </button>
+            ) : (
+              <button type="button" onClick={handleStopStreamingTranslation}>
+                Stop streaming translation
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="live-translation-copy">
+          {streamingTranslationText.length > 0
+            ? streamingTranslationText
+            : streamingTranslationStatus === "connected"
+              ? "Listening for speech..."
+              : "Start live mode, then enable this sidecar to compare continuous subtitles with per-phrase translation."}
+        </p>
+        {streamingTranslationError.length > 0 ? (
+          <p className="live-translation-error" role="alert">
+            {streamingTranslationError}
+          </p>
+        ) : null}
+      </section>
+
       <section className="copilot-grid">
         <div ref={conversationPanelRef} className="conversation-panel">
           <div className="transcript-panel-header transcript-panel-header-sticky">
-            <h2>Live English transcript</h2>
+            <h2>Live bilingual transcript</h2>
             <div className="transcript-panel-actions">
               {transcriptSelectionMode ? (
                 <div className="transcript-selection-actions" aria-label="Transcript selection actions">
@@ -2492,50 +2769,76 @@ export function TrainingLivePanel({
             {transcriptTurns.length === 0 && liveTranscriptDraft.trim().length === 0 ? (
               <p className="transcript-empty">Waiting for transcript...</p>
             ) : null}
-            {transcriptTurns.map((turn) => (
-              <article
-                className={[
-                  "transcript-turn",
-                  turn.id === selectedPhraseCardId ? "transcript-turn-selected" : "",
-                  selectedTranscriptTurnIds.has(turn.id) ? "transcript-turn-group-selected" : ""
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                key={turn.id}
-              >
-                <button
-                  type="button"
-                  className="transcript-speaker transcript-speaker-control"
-                  aria-label={`Change speaker for ${turn.text}. Current role ${turn.speakerLabel}`}
-                  title="Change speaker role"
-                  onClick={() => cycleTranscriptSpeakerLabel(turn)}
-                >
-                  {getCompactSpeakerLabel(turn.speakerLabel)}
-                </button>
-                <button
-                  type="button"
-                  className="transcript-turn-content"
-                  aria-label={`${turn.speakerLabel} ${turn.text}`}
-                  aria-pressed={
-                    transcriptSelectionMode ? selectedTranscriptTurnIds.has(turn.id) : undefined
-                  }
-                  onClick={() => {
-                    if (transcriptSelectionMode) {
-                      toggleTranscriptTurnSelection(turn.id);
-                      return;
-                    }
+            {transcriptTurns.map((turn) => {
+              const turnPhraseCard = phraseCards.find((card) => card.id === turn.id);
+              const russianMeaning =
+                fastTranslations[turn.id]?.trim() ??
+                turnPhraseCard?.analysis.russianMeaning.trim() ??
+                "";
+              const translationId = `${turn.id}-russian-meaning`;
+              const translationPending =
+                pendingTranslationIds.has(turn.id) && russianMeaning.length === 0;
+              const hasTranslationStatus = translationPending || russianMeaning.length > 0;
 
-                    setFollowLiveMode(false);
-                    setSelectedPhraseCardId(turn.id);
-                    setSelectedReplyIndex(
-                      resolveSelectedReplyIndex(turn.id, phraseCards, selectedReplies)
-                    );
-                  }}
+              return (
+                <article
+                  className={[
+                    "transcript-turn",
+                    turn.id === selectedPhraseCardId ? "transcript-turn-selected" : "",
+                    selectedTranscriptTurnIds.has(turn.id) ? "transcript-turn-group-selected" : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={turn.id}
                 >
-                  <p>{turn.text}</p>
-                </button>
-              </article>
-            ))}
+                  <button
+                    type="button"
+                    className="transcript-speaker transcript-speaker-control"
+                    aria-label={`Change speaker for ${turn.text}. Current role ${turn.speakerLabel}`}
+                    title="Change speaker role"
+                    onClick={() => cycleTranscriptSpeakerLabel(turn)}
+                  >
+                    {getCompactSpeakerLabel(turn.speakerLabel)}
+                  </button>
+                  <button
+                    type="button"
+                    className="transcript-turn-content"
+                    aria-label={`${turn.speakerLabel} ${turn.text}`}
+                    aria-describedby={hasTranslationStatus ? translationId : undefined}
+                    aria-pressed={
+                      transcriptSelectionMode ? selectedTranscriptTurnIds.has(turn.id) : undefined
+                    }
+                    onClick={() => {
+                      if (transcriptSelectionMode) {
+                        toggleTranscriptTurnSelection(turn.id);
+                        return;
+                      }
+
+                      setFollowLiveMode(false);
+                      setSelectedPhraseCardId(turn.id);
+                      setSelectedReplyIndex(
+                        resolveSelectedReplyIndex(turn.id, phraseCards, selectedReplies)
+                      );
+                    }}
+                  >
+                    <p>{turn.text}</p>
+                    {translationPending ? (
+                      <span
+                        id={translationId}
+                        className="transcript-turn-translation transcript-turn-translation-pending"
+                      >
+                        Переводим…
+                      </span>
+                    ) : null}
+                    {!translationPending && russianMeaning.length > 0 ? (
+                      <span id={translationId} className="transcript-turn-translation" lang="ru">
+                        {russianMeaning}
+                      </span>
+                    ) : null}
+                  </button>
+                </article>
+              );
+            })}
             {liveTranscriptDraft.trim().length > 0 ? (
               <article className="transcript-turn transcript-turn-live">
                 <span className="transcript-speaker">Live</span>

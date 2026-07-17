@@ -32,7 +32,10 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - live transcription through OpenAI Realtime and WebRTC;
 - `English`, `Russian`, and bilingual speech modes;
 - `server_vad`, `semantic_vad`, and manual turn control;
-- Russian meaning with an explicit `Question` / `Statement` marker;
+- Russian meaning beneath completed transcript turns and in the active phrase
+  card, with an explicit `Question` / `Statement` marker;
+- an opt-in continuous Russian subtitle block powered by a separate
+  `gpt-realtime-translate` WebRTC sidecar;
 - instant bridge phrases for filling a pause naturally;
 - two or three concise suggested replies with translations and full sentences;
 - `Pasted notes` as personal context for grounded answers;
@@ -51,6 +54,7 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 flowchart LR
     A["Room audio<br/>iPad microphone"] --> B["OpenAI Realtime<br/>WebRTC + transcription"]
     B --> C["Live transcript<br/>and fresh thought"]
+    B --> X["Optional translation sidecar<br/>continuous Russian subtitles"]
     D["Pasted notes<br/>personal context"] --> E["Bilingual phrase analysis"]
     P["My point<br/>card-local answer hint"] --> E
     C --> E
@@ -126,6 +130,18 @@ The evaluation-only model settings live in `.env.local`:
 These variables affect only `npm run eval:models`; the live phrase-card model is
 configured separately through `OPENAI_BILINGUAL_MODEL`.
 
+Fast Russian captions use a separate `OPENAI_TRANSLATION_MODEL` setting, which
+defaults to `gpt-5-nano` with `OPENAI_TRANSLATION_REASONING_EFFORT=minimal`. The
+translation request starts as soon as Realtime completes a transcript turn and
+does not wait for the fuller phrase-card analysis.
+
+An independent experimental subtitle block can be started after `Start live`.
+It reuses the microphone stream through a second WebRTC peer connection to the
+dedicated Realtime translation endpoint. Its defaults are
+`OPENAI_REALTIME_TRANSLATION_MODEL=gpt-realtime-translate` and
+`OPENAI_REALTIME_TRANSLATION_LANGUAGE=ru`. The sidecar stays opt-in because it is
+an additional active Realtime session; translated audio is not played.
+
 The methodology, rubric, and current results are documented in [docs/model-evaluation.md](docs/model-evaluation.md).
 
 ## Technology
@@ -133,7 +149,7 @@ The methodology, rubric, and current results are documented in [docs/model-evalu
 | Area | Technology |
 | --- | --- |
 | UI | React 19, TypeScript, Vite, CSS |
-| Speech | OpenAI Realtime API, WebRTC, `gpt-4o-transcribe` |
+| Speech | OpenAI Realtime API, WebRTC, `gpt-4o-transcribe`, optional `gpt-realtime-translate` |
 | Phrase cards | OpenAI Responses API, JSON Schema structured outputs |
 | State | Browser setup preferences, server-side local notes and JSON session history |
 | Quality | Vitest, Testing Library, TypeScript checks, model-evaluation fixtures |

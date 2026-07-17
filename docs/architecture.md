@@ -9,6 +9,8 @@ flowchart LR
     M["Browser microphone"] --> W["WebRTC peer connection"]
     W --> R["OpenAI Realtime transcription"]
     R --> T["Realtime transcript turns"]
+    W --> X["Optional Realtime translation sidecar"]
+    X --> S["Continuous Russian subtitles"]
     U["Manual additions<br/>and corrections"] --> T
     T --> A["Phrase analysis request"]
     K["Pasted notes"] --> A
@@ -30,6 +32,7 @@ flowchart LR
 `vite.config.ts` installs `createRealtimeDevServerPlugin()`. The plugin exposes development-only routes for:
 
 - ephemeral Realtime client secrets;
+- ephemeral Realtime translation client secrets;
 - bilingual phrase analysis;
 - local knowledge loading and replacement through `GET` / `PUT`;
 - session-history persistence;
@@ -58,6 +61,16 @@ WebKit still reports a suspended or interrupted context, the UI keeps the
 every explicit tap; visibility restoration also triggers a best-effort resume.
 
 The primary mode is transcription-only. EchoGuide does not request model audio output or create a speaking voice-agent session.
+
+Training Mode can also start an independent translation sidecar explicitly.
+`connectRealtimeTranslation()` attaches the same microphone audio track to a
+second WebRTC peer connection, exchanges SDP through
+`/v1/realtime/translations/calls`, and appends
+`session.output_transcript.delta` events to a separate rolling Russian subtitle
+block. The browser does not attach the remote translated audio track to a player.
+Stopping the sidecar leaves the primary transcription connection active, while
+`Stop live` closes both connections. The separate start action makes the extra
+Realtime session and its cost visible to the user.
 
 The transcription prompt is topic-neutral: it accepts everyday conversation,
 hobbies, personal stories, work, and technical subjects, and asks the model to
@@ -109,6 +122,19 @@ The resulting card contains the normalized thought, speaker role, Russian meanin
 question marker, bridge phrase, and two or three bilingual suggested replies. A
 manual correction invalidates the previous card for that turn; a late response for
 the superseded text is ignored, and the user can generate a replacement card.
+
+For lower visible translation latency, Training Mode also starts a small dedicated
+`/api/realtime/translate-phrase` request as soon as Realtime completes a transcript
+turn. It defaults to `gpt-5-nano` with minimal reasoning and runs independently of
+the 1.2-second phrase-analysis grouping window. The matching transcript turn shows
+the fast result first and falls back to the phrase card's cached `russianMeaning`
+if translation fails. This adds one bounded text request per completed phrase.
+
+The continuous sidecar is deliberately not mapped onto completed turns or phrase
+cards: translation sessions stream while the speaker is still talking and do not
+use the voice-agent conversation/response lifecycle. This lets the prototype
+compare continuous subtitles with stable per-turn `gpt-5-nano` translations
+without forcing either representation to replace the other.
 
 ### Local persistence
 

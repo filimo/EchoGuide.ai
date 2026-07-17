@@ -4,6 +4,10 @@ import { useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultRealtimeVadTurnDetection } from "../realtime/realtimeSession";
 import type { RealtimeServerEvent } from "../realtime/realtimeConnection";
+import type {
+  ConnectRealtimeTranslationOptions,
+  RealtimeTranslationEvent
+} from "../realtime/realtimeTranslation";
 import type { BilingualPhraseAnalysis } from "../realtime/bilingualAnalysis";
 import type {
   SessionHistoryClient,
@@ -13,7 +17,15 @@ import type {
 import { TrainingLivePanel as ProductionTrainingLivePanel } from "./TrainingLivePanel";
 
 function TrainingLivePanel(props: ComponentProps<typeof ProductionTrainingLivePanel>) {
-  return <ProductionTrainingLivePanel automaticAnalysisDelayMs={0} {...props} />;
+  return (
+    <ProductionTrainingLivePanel
+      automaticAnalysisDelayMs={0}
+      translatePhrase={() =>
+        Promise.reject(new Error("Fast translation is not configured in this test."))
+      }
+      {...props}
+    />
+  );
 }
 
 afterEach(() => {
@@ -139,6 +151,88 @@ describe("Training Live Panel", () => {
     expect(screen.queryByRole("button", { name: "Stop live" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
     expect(onStopMicrophone).not.toHaveBeenCalled();
+  });
+
+  it("streams Russian translation in an independent opt-in block", async () => {
+    const user = userEvent.setup();
+    const stream = createStream();
+    const mainConnection = createConnection();
+    const translationConnection = { disconnect: vi.fn() };
+    let emitTranslation: ((event: RealtimeTranslationEvent) => void) | null = null;
+    const connectTranslation = vi.fn(
+      async (options: ConnectRealtimeTranslationOptions) => {
+        emitTranslation = options.onEvent;
+        return translationConnection;
+      }
+    );
+
+    render(
+      <TrainingLivePanel
+        stream={stream}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_transcription",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={vi.fn().mockResolvedValue(mainConnection)}
+        requestTranslationClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_translation",
+          expiresAt: 1756310470,
+          model: "gpt-realtime-translate",
+          outputLanguage: "ru"
+        })}
+        connectTranslation={connectTranslation}
+        createRecoveryAudioRecorder={vi.fn().mockReturnValue(createRecoveryRecorder())}
+        sessionHistoryClient={createEmptySessionHistoryClient()}
+      />
+    );
+
+    const translationRegion = screen.getByRole("region", {
+      name: "Live Russian translation"
+    });
+    expect(
+      within(translationRegion).getByRole("button", { name: "Start streaming translation" })
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(
+      within(translationRegion).getByRole("button", { name: "Start streaming translation" })
+    );
+
+    expect(connectTranslation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream,
+        clientSecret: "ek_translation",
+        onEvent: expect.any(Function)
+      })
+    );
+
+    act(() => {
+      emitTranslation?.({
+        type: "session.output_transcript.delta",
+        delta: "Расскажите "
+      });
+      emitTranslation?.({
+        type: "session.output_transcript.delta",
+        delta: "о вашем опыте."
+      });
+    });
+
+    expect(translationRegion).toHaveTextContent("Расскажите о вашем опыте.");
+    await user.click(
+      within(translationRegion).getByRole("button", { name: "Stop streaming translation" })
+    );
+    expect(translationConnection.disconnect).toHaveBeenCalled();
+    expect(mainConnection.disconnect).not.toHaveBeenCalled();
+
+    translationConnection.disconnect.mockClear();
+    await user.click(
+      within(translationRegion).getByRole("button", { name: "Start streaming translation" })
+    );
+    await user.click(screen.getByRole("button", { name: "Stop live" }));
+
+    expect(translationConnection.disconnect).toHaveBeenCalled();
+    expect(mainConnection.disconnect).toHaveBeenCalled();
   });
 
   it("activates the recovery recorder before requesting a Realtime client secret", async () => {
@@ -754,7 +848,15 @@ describe("Training Live Panel", () => {
         name: /Change speaker for Can you walk me through your recent project.*Current role Interviewer/
       })
     ).toHaveTextContent("INT");
-    expect(screen.getByText("Можешь рассказать о последнем проекте?")).toBeInTheDocument();
+    const transcriptTurn = screen
+      .getByRole("button", {
+        name: "Interviewer Can you walk me through your recent project?"
+      })
+      .closest(".transcript-turn");
+
+    expect(transcriptTurn).not.toBeNull();
+    expect(within(transcriptTurn as HTMLElement).getByText("Можешь рассказать о последнем проекте?"))
+      .toHaveClass("transcript-turn-translation");
     expect(screen.getByText("Sure, let me start with the context.")).toBeInTheDocument();
     expect(
       screen.getByText("Sure, the project focused on improving a core user workflow.")
@@ -770,6 +872,68 @@ describe("Training Live Panel", () => {
     expect(
       screen.getByText("Sure, the project focused on improving a core user workflow.")
     ).toBeInTheDocument();
+  });
+
+  it("shows translation progress and then Russian meaning inside the transcript turn", async () => {
+    const user = userEvent.setup();
+    let emitEvent: (event: RealtimeServerEvent) => void = () => {};
+    let resolveTranslation: (translation: string) => void = () => {};
+    const connectRealtime = vi.fn().mockImplementation(({ onEvent }) => {
+      emitEvent = onEvent;
+      return Promise.resolve(createConnection());
+    });
+    const analyzePhrase = vi.fn().mockImplementation(
+      () =>
+        new Promise<BilingualPhraseAnalysis>(() => {})
+    );
+    const translatePhrase = vi.fn().mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveTranslation = resolve;
+        })
+    );
+
+    render(
+      <TrainingLivePanel
+        stream={createStream()}
+        notes=""
+        requestClientSecret={vi.fn().mockResolvedValue({
+          clientSecret: "ek_ephemeral",
+          expiresAt: 1756310470
+        })}
+        connectRealtime={connectRealtime}
+        analyzePhrase={analyzePhrase}
+        translatePhrase={translatePhrase}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await act(async () => {
+      emitEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "How do you approach a difficult bug?"
+      });
+    });
+
+    const transcriptTurn = screen
+      .getByRole("button", { name: "Heard How do you approach a difficult bug?" })
+      .closest(".transcript-turn");
+
+    expect(transcriptTurn).not.toBeNull();
+    expect(within(transcriptTurn as HTMLElement).getByText("Переводим…")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveTranslation("Как вы подходите к поиску сложной ошибки?");
+    });
+
+    expect(within(transcriptTurn as HTMLElement).queryByText("Переводим…")).not.toBeInTheDocument();
+    expect(
+      within(transcriptTurn as HTMLElement).getByText(
+        "Как вы подходите к поиску сложной ошибки?"
+      )
+    ).toHaveClass("transcript-turn-translation");
+    expect(translatePhrase).toHaveBeenCalledOnce();
+    expect(translatePhrase).toHaveBeenCalledWith("How do you approach a difficult bug?");
   });
 
   it("lets the user correct a speaker role and uses it in following context", async () => {
@@ -1286,7 +1450,9 @@ describe("Training Live Panel", () => {
       });
     });
 
-    expect(screen.getByText("Старый смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Старый смысл.")
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Edit message" }));
 
     let editor = screen.getByRole("form", { name: "Edit message" });
@@ -1375,7 +1541,9 @@ describe("Training Live Panel", () => {
       ["Interviewer: Could you explain the outcome?"]
     );
     expect(
-      await screen.findByText("Можете подробнее рассказать о результате?")
+      await within(screen.getByLabelText("Current phrase suggestions")).findByText(
+        "Можете подробнее рассказать о результате?"
+      )
     ).toBeInTheDocument();
     expect(realtimeConnection.disconnect).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Stop live" })).toBeInTheDocument();
@@ -1486,11 +1654,15 @@ describe("Training Live Panel", () => {
     });
 
     expect(screen.queryByLabelText("Recent phrases")).not.toBeInTheDocument();
-    expect(screen.getByText("Второй смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Второй смысл.")
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Heard First phrase?" }));
 
-    expect(screen.getByText("Первый смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Первый смысл.")
+    ).toBeInTheDocument();
     expect(analyzePhrase).toHaveBeenCalledTimes(2);
     expect(analyzePhrase).toHaveBeenNthCalledWith(1, "First phrase?", "", [
       "First phrase?"
@@ -2051,8 +2223,8 @@ describe("Training Live Panel", () => {
     });
 
     expect(screen.getAllByText("Second phrase.").length).toBeGreaterThan(0);
-    expect(screen.getByText("Первый смысл.")).toBeInTheDocument();
-    expect(screen.queryByText("Второй смысл.")).not.toBeInTheDocument();
+    expect(within(suggestionsPanel).getByText("Первый смысл.")).toBeInTheDocument();
+    expect(within(suggestionsPanel).queryByText("Второй смысл.")).not.toBeInTheDocument();
 
     const followLiveButton = within(suggestionsPanel).getByRole("button", { name: "Follow live" });
 
@@ -2060,7 +2232,7 @@ describe("Training Live Panel", () => {
 
     await user.click(followLiveButton);
 
-    expect(screen.getByText("Второй смысл.")).toBeInTheDocument();
+    expect(within(suggestionsPanel).getByText("Второй смысл.")).toBeInTheDocument();
   });
 
   it("brings the transcript into view and selects the latest message", async () => {
@@ -2234,7 +2406,9 @@ describe("Training Live Panel", () => {
     });
 
     expect(screen.getByText("I built a small tool.")).toBeInTheDocument();
-    expect(screen.queryByText("Второй смысл.")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).queryByText("Второй смысл.")
+    ).not.toBeInTheDocument();
   });
 
   it("shows progress when a selected transcript turn is still preloading analysis", async () => {
@@ -2312,7 +2486,9 @@ describe("Training Live Panel", () => {
       });
     });
 
-    expect(screen.getByText("Второй смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Второй смысл.")
+    ).toBeInTheDocument();
     expect(screen.queryByText("Loading phrase details...")).not.toBeInTheDocument();
     expect(analyzePhrase).toHaveBeenCalledTimes(2);
   });
@@ -2357,12 +2533,16 @@ describe("Training Live Panel", () => {
       });
     });
 
-    expect(screen.getByText("Первый смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Первый смысл.")
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Regenerate card" }));
 
     expect(analyzePhrase).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Обновлённый смысл.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText("Обновлённый смысл.")
+    ).toBeInTheDocument();
     expect(screen.queryByText("Первый смысл.")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Heard Current message." })).toHaveLength(1);
   });
@@ -2491,7 +2671,11 @@ describe("Training Live Panel", () => {
     expect(analyzePhrase).toHaveBeenCalledWith("Message without card.", "", [
       "Message without card."
     ]);
-    expect(screen.getByText("Смысл восстановленной карточки.")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText(
+        "Смысл восстановленной карточки."
+      )
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Regenerate card" })).toBeInTheDocument();
   });
 
@@ -2590,7 +2774,11 @@ describe("Training Live Panel", () => {
     expect(screen.getAllByText("Can you walk me through your recent project?").length).toBeGreaterThan(
       0
     );
-    expect(screen.getByText("Можешь рассказать о последнем проекте?")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText(
+        "Можешь рассказать о последнем проекте?"
+      )
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Sure, the project focused on improving a core user workflow.")
     ).toBeInTheDocument();
@@ -2675,7 +2863,11 @@ describe("Training Live Panel", () => {
     expect((await screen.findAllByText("What did you build in EchoGuide?")).length).toBeGreaterThan(
       0
     );
-    expect(screen.getByText("Что ты построил в EchoGuide?")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).getByText(
+        "Что ты построил в EchoGuide?"
+      )
+    ).toBeInTheDocument();
     expect(screen.queryByText("Session loaded.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
   });
@@ -2761,8 +2953,16 @@ describe("Training Live Panel", () => {
       />
     );
 
-    expect(await screen.findByText("Как вы расставляете приоритеты?")).toBeInTheDocument();
-    expect(screen.queryByText("Следующие пять вопросов.")).not.toBeInTheDocument();
+    expect(
+      await within(screen.getByLabelText("Current phrase suggestions")).findByText(
+        "Как вы расставляете приоритеты?"
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Current phrase suggestions")).queryByText(
+        "Следующие пять вопросов."
+      )
+    ).not.toBeInTheDocument();
 
     const selectedTurns = document.querySelectorAll(".transcript-turn-selected");
 

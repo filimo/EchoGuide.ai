@@ -10,6 +10,14 @@ Until the first versioned release, changes are grouped by date.
 ### Added
 
 - A public changelog linked from the project README.
+- Completed transcript turns now show their Russian meaning directly beneath
+  the English text, including a compact translation-in-progress state while the
+  dedicated low-latency `gpt-5-nano` translation request is running. Full phrase
+  cards continue to use the separately configured bilingual model.
+- Training Mode now has an independent, opt-in live Russian subtitle block. It
+  sends the active microphone track through a second WebRTC connection to
+  `gpt-realtime-translate`, appends continuous translation deltas, and leaves
+  translated audio muted so the existing conversation audio stays unchanged.
 - Training Mode can regenerate the current phrase card from a short `My point`
   hint in Russian or English. The hint stays attached to that card and grounds
   the generated replies without changing global pasted notes.
