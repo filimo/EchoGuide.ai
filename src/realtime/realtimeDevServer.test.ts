@@ -41,6 +41,39 @@ function createResponse(): FakeResponse {
 }
 
 describe("Realtime dev server middleware", () => {
+  it("generates bounded contextual openings using server credentials and logs only metadata", async () => {
+    const quickStart = vi.fn().mockResolvedValue({ mode: "start", english: "PRIVATE OPENING", russian: "PRIVATE TRANSLATION" });
+    const directory = mkdtempSync(join(tmpdir(), "echoguide-quick-"));
+    const middleware = createRealtimeClientSecretMiddleware({ env: { OPENAI_API_KEY: "fake-key" }, readLocalEnv: () => "",
+      quickStart, realtimeDiagnosticsDirectoryPath: directory, now: () => new Date("2026-09-18T10:00:00Z") });
+    const res = createResponse();
+    await middleware({ method: "POST", url: "/api/realtime/quick-start", body: JSON.stringify({
+      transcript: "PRIVATE QUESTION", recentContext: [12, "PRIVATE CONTEXT", "x".repeat(4000)], speakerLabel: "Interviewer"
+    }) }, res, vi.fn());
+    expect(res.statusCode).toBe(200);
+    expect(quickStart).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "fake-key", speakerLabel: "Interviewer",
+      transcript: "PRIVATE QUESTION", recentContext: ["x".repeat(3000)] }));
+    const log = readFileSync(join(directory, "realtime-2026-09-18.jsonl"), "utf8");
+    expect(log).toContain("quick_start.completed");
+    expect(log).not.toContain("PRIVATE");
+    expect(log).not.toContain("fake-key");
+  });
+
+  it("rejects invalid quick inputs and never sends upstream error details to the browser", async () => {
+    const quickStart = vi.fn().mockRejectedValue(new Error("PRIVATE UPSTREAM"));
+    const middleware = createRealtimeClientSecretMiddleware({ env: { OPENAI_API_KEY: "fake" }, readLocalEnv: () => "", quickStart });
+    for (const body of ["{", "null", JSON.stringify({ transcript: "x".repeat(4001) })]) {
+      const res = createResponse();
+      await middleware({ method: "POST", url: "/api/realtime/quick-start", body }, res, vi.fn());
+      expect(res.statusCode).toBe(400);
+    }
+    expect(quickStart).not.toHaveBeenCalled();
+    const res = createResponse();
+    await middleware({ method: "POST", url: "/api/realtime/quick-start", body: JSON.stringify({ transcript: "Why?" }) }, res, vi.fn());
+    expect(res.statusCode).toBe(502);
+    expect(res.body).not.toContain("PRIVATE");
+  });
+
   it("continuously stores privacy-safe frontend Realtime diagnostics without an OpenAI key", async () => {
     const realtimeDiagnosticsDirectoryPath = mkdtempSync(
       join(tmpdir(), "echoguide-frontend-diagnostics-")

@@ -1,4 +1,5 @@
 import type { BilingualPhraseAnalysis, BilingualSuggestedReply } from "../realtime/bilingualAnalysis";
+import { isQuickStart } from "../realtime/quickStart";
 
 export type SessionSpeakerLabel = "Heard" | "Interviewer" | "Me";
 
@@ -108,6 +109,7 @@ function isAnalysis(value: unknown): value is BilingualPhraseAnalysis {
     isString(candidate.russianMeaning) &&
     typeof candidate.isQuestion === "boolean" &&
     isString(candidate.bridgePhrase) &&
+    (candidate.quickStart == null || isQuickStart(candidate.quickStart)) &&
     Array.isArray(candidate.suggestedReplies) &&
     candidate.suggestedReplies.every(isReply)
   );

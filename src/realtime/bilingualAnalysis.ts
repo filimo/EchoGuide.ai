@@ -1,3 +1,5 @@
+import type { QuickStart } from "./quickStart";
+
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 export type BilingualSuggestedReply = {
@@ -9,6 +11,7 @@ export type BilingualSuggestedReply = {
 };
 
 export type BilingualPhraseAnalysis = {
+  quickStart?: QuickStart;
   analysisTargetText?: string;
   speakerRole?: "interviewer" | "me" | "unknown";
   russianMeaning: string;
@@ -27,6 +30,7 @@ export type BilingualAnalysisUsage = {
 };
 
 type AnalyzePhraseOptions = {
+  quickStart?: QuickStart;
   apiKey: string;
   transcript: string;
   knowledgeContext?: string;
@@ -39,6 +43,7 @@ type AnalyzePhraseOptions = {
 };
 
 type BilingualModelOptions = {
+  quickStart?: QuickStart;
   reasoningEffort?: string;
   answerHint?: string;
 };
@@ -81,7 +86,8 @@ const bilingualAnalysisInstructions = [
   "If exact metrics are unknown, do not invent numbers. Use a safe qualitative result only when the available context supports it.",
   "If the personal knowledge context is absent or irrelevant, make replies safe generic software-engineering frames the user can adapt.",
   "Prefer answer strategies as labels, for example: direct, simple, example, approach, result, trade-off, or clarification.",
-  "Keep answers concise, natural, grounded, and useful during a live interview."
+  "Keep answers concise, natural, grounded, and useful during a live interview.",
+  "If a Quick start already shown is supplied, treat it as AI-generated wording, NOT evidence and NOT confirmed user speech. For start or continue, each suggested reply must naturally continue that wording without repeating its opening. Ground every personal claim independently. For clarify, provide clarification alternatives without assuming the other speaker has answered. Never strengthen an unsupported assertion in the opening."
 ].join(" ");
 
 export function normalizeKnowledgeContext(value: string | undefined): string {
@@ -337,10 +343,13 @@ export function buildBilingualPhraseAnalysisRequest(
     normalizedRecentContext.length > 0
       ? `Recent transcript context:\n${formattedRecentContext}\n\nActive transcript: ${transcript}\nBuild the card for the freshest coherent thought.`
       : `Active transcript: ${transcript}`;
-  const activeTranscriptMessage =
+  const hintedTranscriptMessage =
     normalizedAnswerHint.length > 0
       ? `${transcriptContextMessage}\n\nAnswer hint from the user:\n${normalizedAnswerHint}\nUse this point to generate the suggested replies for this card.`
       : transcriptContextMessage;
+  const activeTranscriptMessage = modelOptions.quickStart
+    ? `${hintedTranscriptMessage}\n\nQuick start already shown (generated wording, not evidence):\n${JSON.stringify(modelOptions.quickStart)}\nWrite suggestedReplies.fullSentence as the NEXT sentences after this opening, not a standalone answer. Do not repeat or paraphrase the opening. The English sequence [opening + fullSentence] must read naturally. The opening is not evidence of personal facts. Only the transcript, recent user speech, personal knowledge and explicit answer hint can ground personal facts. If those do not establish the user's decision or role, offer a clarification or a general approach without inventing a past action. For a clarify opening, do not pretend clarification has already arrived.`
+    : hintedTranscriptMessage;
   const usesExplicitPromptCaching = supportsExplicitPromptCaching(model);
   const stableSystemContent = usesExplicitPromptCaching
     ? [
@@ -411,6 +420,7 @@ export async function analyzeBilingualPhrase({
   knowledgeContext,
   recentContext,
   answerHint,
+  quickStart,
   model = process.env.OPENAI_BILINGUAL_MODEL?.trim() || defaultBilingualModel,
   reasoningEffort =
     process.env.OPENAI_BILINGUAL_REASONING_EFFORT?.trim() ||
@@ -428,7 +438,8 @@ export async function analyzeBilingualPhrase({
     body: JSON.stringify(
       buildBilingualPhraseAnalysisRequest(transcript, model, knowledgeContext, recentContext, {
         reasoningEffort,
-        answerHint
+        answerHint,
+        quickStart
       })
     )
   });
@@ -452,5 +463,5 @@ export async function analyzeBilingualPhrase({
     onUsage?.(usage);
   }
 
-  return parseBilingualPhraseAnalysis(payload);
+  return { ...parseBilingualPhraseAnalysis(payload), ...(quickStart ? { quickStart } : {}) };
 }

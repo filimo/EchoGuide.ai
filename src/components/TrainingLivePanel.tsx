@@ -48,6 +48,7 @@ import {
 } from "../realtime/realtimeTranslation";
 import { SpeechLanguageControls } from "./SpeechLanguageControls";
 import { TurnDetectionControls } from "./TurnDetectionControls";
+import { isQuickStart, quickStartTimeoutMs, type QuickStart } from "../realtime/quickStart";
 
 type TrainingPhraseCard = {
   id: string;
@@ -130,8 +131,11 @@ type TrainingLivePanelProps = {
     transcript: string,
     knowledgeContext: string,
     recentContext: string[],
-    answerHint?: string
+    answerHint?: string,
+    quickStart?: QuickStart
   ) => Promise<BilingualPhraseAnalysis>;
+  generateQuickStart?: (transcript: string, recentContext: string[], speakerLabel: string,
+    signal: AbortSignal) => Promise<QuickStart | null>;
   translatePhrase?: (transcript: string) => Promise<string>;
   automaticAnalysisDelayMs?: number;
   recoverPhrases?: (audio: Blob) => Promise<string[]>;
@@ -227,7 +231,8 @@ async function requestDefaultPhraseAnalysis(
   transcript: string,
   knowledgeContext: string,
   recentContext: string[],
-  answerHint = ""
+  answerHint = "",
+  quickStart?: QuickStart
 ): Promise<BilingualPhraseAnalysis> {
   const response = await fetch("/api/realtime/analyze-phrase", {
     method: "POST",
@@ -238,6 +243,7 @@ async function requestDefaultPhraseAnalysis(
       transcript,
       knowledgeContext,
       recentContext,
+      ...(quickStart ? { quickStart } : {}),
       ...(answerHint.trim().length > 0 ? { answerHint } : {})
     })
   });
@@ -267,6 +273,18 @@ async function requestDefaultFastTranslation(transcript: string): Promise<string
   }
 
   return payload.translation.trim();
+}
+
+async function requestDefaultQuickStart(transcript: string, recentContext: string[],
+  speakerLabel: string, signal: AbortSignal): Promise<QuickStart> {
+  const response = await fetch("/api/realtime/quick-start", {
+    method: "POST", signal, headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript, recentContext, speakerLabel })
+  });
+  if (!response.ok) throw new Error("Quick start unavailable.");
+  const result: unknown = await response.json();
+  if (!isQuickStart(result)) throw new Error("Invalid quick start.");
+  return result;
 }
 
 async function requestDefaultRecoveredPhrases(audio: Blob): Promise<string[]> {
@@ -483,6 +501,7 @@ export function TrainingLivePanel({
   connectTranslation = connectRealtimeTranslation,
   createRecoveryAudioRecorder = createBrowserRecoveryAudioRecorder,
   analyzePhrase = requestDefaultPhraseAnalysis,
+  generateQuickStart = requestDefaultQuickStart,
   translatePhrase = requestDefaultFastTranslation,
   recoverPhrases = requestDefaultRecoveredPhrases,
   copyText = copyTextToClipboard,
@@ -507,6 +526,10 @@ export function TrainingLivePanel({
   const [liveTranscriptDraft, setLiveTranscriptDraft] = useState("");
   const [phraseCards, setPhraseCards] = useState<TrainingPhraseCard[]>([]);
   const [pendingAnalysisIds, setPendingAnalysisIds] = useState<Set<string>>(() => new Set());
+  const [quickStarts, setQuickStarts] = useState<Record<string, {
+    status: "loading" | "ready" | "unavailable" | "wait"; value?: QuickStart
+  }>>({});
+  const quickStartControllersRef = useRef(new Map<string, AbortController>());
   const [fastTranslations, setFastTranslations] = useState<Record<string, string>>({});
   const [pendingTranslationIds, setPendingTranslationIds] = useState<Set<string>>(
     () => new Set()
@@ -819,6 +842,9 @@ export function TrainingLivePanel({
   useEffect(() => {
     return () => {
       realtimeStatusRef.current = "disconnected";
+      phraseAnalysisRevisionRef.current.clear();
+      quickStartControllersRef.current.forEach((controller) => controller.abort());
+      quickStartControllersRef.current.clear();
       connectionRef.current?.disconnect();
       translationConnectionRef.current?.disconnect();
       recoveryAudioRecorderRef.current?.stop();
@@ -869,6 +895,8 @@ export function TrainingLivePanel({
   const selectedTranscriptTurn =
     transcriptTurns.find((turn) => turn.id === selectedPhraseCardId) ?? null;
   const visibleAnalysis = selectedPhraseCard?.analysis ?? null;
+  const quickStartState = selectedPhraseCardId ? quickStarts[selectedPhraseCardId] : undefined;
+  const visibleQuickStart = quickStartState ? quickStartState.value : visibleAnalysis?.quickStart;
   const selectedCardAnswerHint = selectedPhraseCard?.answerHint ?? "";
   const selectedPhraseIsPreloading =
     selectedPhraseCard == null &&
@@ -958,6 +986,7 @@ export function TrainingLivePanel({
   }
 
   function beginPhraseAnalysis(phraseId: string): number {
+    quickStartControllersRef.current.get(phraseId)?.abort();
     phraseAnalysisSequenceRef.current += 1;
     const revision = phraseAnalysisSequenceRef.current;
 
@@ -983,6 +1012,13 @@ export function TrainingLivePanel({
   }
 
   function invalidatePhraseAnalysis(phraseId: string) {
+    quickStartControllersRef.current.get(phraseId)?.abort();
+    quickStartControllersRef.current.delete(phraseId);
+    setQuickStarts((current) => {
+      const next = { ...current };
+      delete next[phraseId];
+      return next;
+    });
     phraseAnalysisSequenceRef.current += 1;
     phraseAnalysisRevisionRef.current.set(phraseId, phraseAnalysisSequenceRef.current);
     setPendingAnalysisIds((current) => {
@@ -1167,6 +1203,51 @@ export function TrainingLivePanel({
     return replyIndex >= 0 ? replyIndex : null;
   }
 
+  async function analyzeWithQuickStart(
+    transcript: string, recentContext: string[], phraseId: string,
+    revision: number, hint = ""
+  ): Promise<BilingualPhraseAnalysis> {
+    const controller = new AbortController();
+    quickStartControllersRef.current.set(phraseId, controller);
+    setQuickStarts((current) => ({ ...current, [phraseId]: { status: "loading" } }));
+    const timeout = window.setTimeout(() => controller.abort(), quickStartTimeoutMs + 250);
+    const speakerLabel = transcriptTurnsRef.current.find((turn) => turn.id === phraseId)?.speakerLabel ?? "Heard";
+    let onAbort: () => void = () => {};
+    let opening: QuickStart | null = null;
+    try {
+      opening = await Promise.race([
+        Promise.resolve().then(() => generateQuickStart(transcript, recentContext, speakerLabel, controller.signal)).catch(() => null),
+        new Promise<null>((resolve) => {
+          onAbort = () => resolve(null);
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+        })
+      ]);
+    } finally {
+      window.clearTimeout(timeout);
+      controller.signal.removeEventListener("abort", onAbort);
+      if (quickStartControllersRef.current.get(phraseId) === controller) {
+        quickStartControllersRef.current.delete(phraseId);
+      }
+    }
+    if (!isCurrentPhraseAnalysis(phraseId, revision)) throw new Error("Superseded phrase.");
+    const usable = isQuickStart(opening) && opening.mode !== "wait" ? opening : undefined;
+    setQuickStarts((current) => ({ ...current, [phraseId]: {
+      status: usable ? "ready" : opening?.mode === "wait" ? "wait" : "unavailable",
+      ...(usable ? { value: usable } : {})
+    } }));
+    const result = usable
+      ? await analyzePhrase(transcript, notes, recentContext, hint, usable)
+      : hint ? await analyzePhrase(transcript, notes, recentContext, hint)
+        : await analyzePhrase(transcript, notes, recentContext);
+    return { ...result, ...(usable ? { quickStart: usable } : {}) };
+  }
+
+  function resetQuickStarts() {
+    quickStartControllersRef.current.forEach((controller) => controller.abort());
+    quickStartControllersRef.current.clear();
+    setQuickStarts({});
+  }
+
   async function analyzeCompletedTranscript(
     completedTranscript: string,
     phraseId: string,
@@ -1187,7 +1268,7 @@ export function TrainingLivePanel({
     }
 
     try {
-      const nextAnalysis = await analyzePhrase(trimmedTranscript, notes, recentContext);
+      const nextAnalysis = await analyzeWithQuickStart(trimmedTranscript, recentContext, phraseId, analysisRevision);
 
       if (
         deletedTranscriptTurnIdsRef.current.has(phraseId) ||
@@ -1643,6 +1724,7 @@ export function TrainingLivePanel({
 
   function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
     flushPendingAutomaticAnalysis();
+    quickStartControllersRef.current.forEach((controller) => controller.abort());
     const liveConnection = connectionRef.current;
 
     releaseStreamingTranslation("disconnected");
@@ -1900,7 +1982,7 @@ export function TrainingLivePanel({
     const analysisRevision = beginPhraseAnalysis(manualPhraseId);
 
     try {
-      const nextAnalysis = await analyzePhrase(selectedTranscript, notes, selectedContext);
+      const nextAnalysis = await analyzeWithQuickStart(selectedTranscript, selectedContext, manualPhraseId, analysisRevision);
 
       if (!isCurrentPhraseAnalysis(manualPhraseId, analysisRevision)) {
         return;
@@ -1950,10 +2032,7 @@ export function TrainingLivePanel({
 
     try {
       const recentContext = buildRecentAnalysisContext(contextTurns, phraseId);
-      const nextAnalysis =
-        normalizedAnswerHint.length > 0
-          ? await analyzePhrase(transcript, notes, recentContext, normalizedAnswerHint)
-          : await analyzePhrase(transcript, notes, recentContext);
+      const nextAnalysis = await analyzeWithQuickStart(transcript, recentContext, phraseId, analysisRevision, normalizedAnswerHint);
 
       if (!isCurrentPhraseAnalysis(phraseId, analysisRevision)) {
         return;
@@ -2182,6 +2261,7 @@ export function TrainingLivePanel({
   }
 
   function handleNewSession() {
+    resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     currentSessionIdRef.current = null;
     setFollowLiveMode(true);
@@ -2213,6 +2293,7 @@ export function TrainingLivePanel({
   }
 
   function handleOpenSavedSession(session: SessionHistoryEntry) {
+    resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     const normalizedSession = ensureUniqueSessionPhraseIds(session);
     const lastCardId =
@@ -2972,6 +3053,19 @@ export function TrainingLivePanel({
               </button>
             )}
           </div>
+          <section className="quick-start-block" aria-label="Contextual quick start" aria-live="polite">
+            <h3>{visibleQuickStart?.mode === "continue" ? "Продолжи мысль" :
+              visibleQuickStart?.mode === "clarify" ? "Уточни" : "Начни так"}</h3>
+            {visibleQuickStart ? <>
+              <p className="quick-start-english" lang="en">{visibleQuickStart.english}</p>
+              <p className="quick-start-russian" lang="ru">{visibleQuickStart.russian}</p>
+              <button type="button" onClick={() => setFollowLiveMode(false)}>Оставить на экране</button>
+              {selectedPhraseCardId && pendingAnalysisIds.has(selectedPhraseCardId)
+                ? <p className="hint">Продолжение готовится…</p> : null}
+            </> : <p className="hint">{quickStartState?.status === "loading" ? "Подбираю начало по контексту…" :
+              quickStartState?.status === "unavailable" ? "Быстрое начало недоступно." :
+              quickStartState?.status === "wait" ? "Сейчас можно продолжать слушать." : "Появится после реплики собеседника."}</p>}
+          </section>
           {analysisStatus === "idle" && !selectedPhraseIsPreloading ? (
             <p className="hint">Waiting for a completed phrase.</p>
           ) : null}
@@ -3052,12 +3146,12 @@ export function TrainingLivePanel({
                 </span>
                 <p>{visibleAnalysis.russianMeaning}</p>
               </div>
-              <div className="bridge-block">
+              {!visibleQuickStart ? <div className="bridge-block">
                 <h3>Bridge phrase</h3>
                 <p>{visibleAnalysis.bridgePhrase}</p>
-              </div>
+              </div> : null}
               <div className="reply-options">
-                <h3>Suggested replies</h3>
+                <h3>{visibleQuickStart && visibleQuickStart.mode !== "clarify" ? "Продолжи" : "Suggested replies"}</h3>
                 {visibleAnalysis.suggestedReplies.map((reply, index) => (
                   <button
                     type="button"

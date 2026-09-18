@@ -1332,6 +1332,24 @@ textarea {
   text-transform: uppercase;
 }
 
+.quick-start-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  margin: 12px 0;
+  border: 1px solid #b7cdfa;
+  border-radius: 12px;
+  background: #f0f6ff;
+  overflow-wrap: anywhere;
+}
+
+.quick-start-block h3,
+.quick-start-block p { margin: 0; }
+.quick-start-block h3 { font-size: 14px; color: #34578c; }
+.quick-start-english { font-size: 20px; line-height: 1.4; color: #172b4d; }
+.quick-start-russian { font-size: 15px; line-height: 1.4; color: #475569; }
+.quick-start-block button { justify-self: start; }
+
 .question-pill,
 .question-pill-muted {
   justify-self: start;

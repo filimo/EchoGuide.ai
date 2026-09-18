@@ -20,6 +20,7 @@ function TrainingLivePanel(props: ComponentProps<typeof ProductionTrainingLivePa
   return (
     <ProductionTrainingLivePanel
       automaticAnalysisDelayMs={0}
+      generateQuickStart={async () => null}
       translatePhrase={() =>
         Promise.reject(new Error("Fast translation is not configured in this test."))
       }
@@ -117,6 +118,89 @@ function createEmptySessionHistoryClient(): SessionHistoryClient {
 }
 
 describe("Training Live Panel", () => {
+  const quickOpening = { mode: "start" as const, english: "The workload matters here.", russian: "Здесь важна нагрузка." };
+  const quickAnalysis: BilingualPhraseAnalysis = { speakerRole: "interviewer", russianMeaning: "Почему?",
+    isQuestion: true, bridgePhrase: "Let me explain.", suggestedReplies: [{ shortLabel: "Workload",
+      shortLabelTranslation: "Нагрузка", fullSentence: "Our queries needed large scans.",
+      fullSentenceTranslation: "Нашим запросам нужны были большие сканирования.", whyUse: "Детали" }] };
+
+  async function setupQuickStart(overrides: Partial<ComponentProps<typeof ProductionTrainingLivePanel>> = {}) {
+    let emit: (event: RealtimeServerEvent) => void = () => {};
+    const analyzePhrase = vi.fn().mockResolvedValue(quickAnalysis);
+    const generateQuickStart = vi.fn().mockResolvedValue(quickOpening);
+    const history = createInMemorySessionHistoryClient();
+    render(<TrainingLivePanel stream={createStream()} notes="facts" sessionHistoryClient={history}
+      requestClientSecret={async () => ({ clientSecret: "fake", expiresAt: 9999999999 })}
+      connectRealtime={async ({ onEvent }) => { emit = onEvent; return createConnection(); }}
+      analyzePhrase={analyzePhrase} generateQuickStart={generateQuickStart} {...overrides} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start live" }));
+    const say = async (transcript: string) => act(async () => {
+      emit({ type: "conversation.item.input_audio_transcription.completed", transcript });
+    });
+    return { say, analyzePhrase, generateQuickStart, history };
+  }
+
+  it("shows a contextual opening before the full card, keeps it stable and saves it with the card", async () => {
+    let finish: (value: BilingualPhraseAnalysis) => void = () => {};
+    const analyzePhrase = vi.fn(() => new Promise<BilingualPhraseAnalysis>((resolve) => { finish = resolve; }));
+    const { say, generateQuickStart, history } = await setupQuickStart({ analyzePhrase });
+    await say("Why this database?");
+    expect(screen.getByText(quickOpening.english)).toBeInTheDocument();
+    expect(screen.getByText("Продолжение готовится…")).toBeInTheDocument();
+    expect(generateQuickStart).toHaveBeenCalledWith("Why this database?", ["Why this database?"], "Heard", expect.any(AbortSignal));
+    expect(analyzePhrase).toHaveBeenCalledWith("Why this database?", "facts", ["Why this database?"], "", quickOpening);
+    await act(async () => { finish(quickAnalysis); });
+    expect(screen.getByText(quickOpening.english)).toBeInTheDocument();
+    expect(screen.getByText(quickAnalysis.suggestedReplies[0].fullSentence)).toBeInTheDocument();
+    expect(screen.queryByText(quickAnalysis.bridgePhrase)).not.toBeInTheDocument();
+    await waitFor(() => expect(history.saveCurrentSession).toHaveBeenCalledWith(expect.any(String),
+      expect.objectContaining({ phraseCards: [expect.objectContaining({ analysis: expect.objectContaining({ quickStart: quickOpening }) })] })));
+    await userEvent.click(screen.getByRole("button", { name: "Оставить на экране" }));
+    await say("And the result?");
+    expect(screen.getByText("Paused on selected phrase")).toBeInTheDocument();
+    expect(screen.getByText(quickOpening.english)).toBeInTheDocument();
+  });
+
+  it("does not start a full answer or show a stale opening after a new session", async () => {
+    let finish: (value: typeof quickOpening) => void = () => {};
+    const generateQuickStart = vi.fn(() => new Promise<typeof quickOpening>((resolve) => { finish = resolve; }));
+    const { say, analyzePhrase } = await setupQuickStart({ generateQuickStart });
+    await say("Why this database?");
+    await userEvent.click(screen.getByRole("button", { name: "New session" }));
+    await act(async () => { finish(quickOpening); });
+    expect(analyzePhrase).not.toHaveBeenCalled();
+    expect(screen.queryByText(quickOpening.english)).not.toBeInTheDocument();
+  });
+
+  it("falls back to normal analysis when quick generation fails", async () => {
+    const { say, analyzePhrase } = await setupQuickStart({ generateQuickStart: async () => { throw new Error("down"); } });
+    await say("Why this database?");
+    expect(analyzePhrase).toHaveBeenCalledWith("Why this database?", "facts", ["Why this database?"]);
+    expect(screen.getByText(quickAnalysis.suggestedReplies[0].fullSentence)).toBeInTheDocument();
+  });
+
+  it("times out a hung opening and ignores its late result", async () => {
+    let finish: (value: typeof quickOpening) => void = () => {};
+    const generateQuickStart = vi.fn(() => new Promise<typeof quickOpening>((resolve) => { finish = resolve; }));
+    const { say, analyzePhrase } = await setupQuickStart({ generateQuickStart });
+    vi.useFakeTimers();
+    await say("Why this database?");
+    expect(analyzePhrase).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3750); });
+    expect(analyzePhrase).toHaveBeenCalledTimes(1);
+    expect(generateQuickStart.mock.calls[0]).toBeDefined();
+    await act(async () => { finish(quickOpening); });
+    expect(screen.queryByText(quickOpening.english)).not.toBeInTheDocument();
+    expect(analyzePhrase).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an ordinary completed answer quiet", async () => {
+    const { say, analyzePhrase } = await setupQuickStart({ generateQuickStart: async () => ({ mode: "wait", english: "", russian: "" }) });
+    await say("I fixed the issue and added a test.");
+    expect(screen.getByText("Сейчас можно продолжать слушать.")).toBeInTheDocument();
+    expect(analyzePhrase).toHaveBeenCalledWith("I fixed the issue and added a test.", "facts", ["I fixed the issue and added a test."]);
+  });
+
   it("keeps primary controls and live status in one sticky control rail", () => {
     render(
       <TrainingLivePanel

@@ -9,6 +9,11 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Контекстное начало ответа EN + RU в отдельном блоке «Начни так»,
+  «Продолжи мысль» или «Уточни». Быстрый запрос учитывает недавний диалог;
+  основная карточка получает показанное начало и предлагает продолжение.
+  При таймауте или ошибке карточка генерируется обычным способом.
+  Кнопка «Оставить на экране» отключает следование новым репликам.
 - A public changelog linked from the project README.
 - Completed transcript turns now show their Russian meaning directly beneath
   the English text, including a compact translation-in-progress state while the

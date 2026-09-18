@@ -37,6 +37,8 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - an opt-in continuous Russian subtitle block powered by a separate
   `gpt-realtime-translate` WebRTC sidecar;
 - instant bridge phrases for filling a pause naturally;
+- контекстное начало EN + RU (`Начни так`, `Продолжи мысль`, `Уточни`)
+  до полного ответа, с возможностью оставить его на экране;
 - two or three concise suggested replies with translations and full sentences;
 - `Pasted notes` as personal context for grounded answers;
 - a card-local `My point` hint for regenerating the current answer from the
@@ -57,13 +59,20 @@ flowchart LR
     B --> X["Optional translation sidecar<br/>continuous Russian subtitles"]
     D["Pasted notes<br/>personal context"] --> E["Bilingual phrase analysis"]
     P["My point<br/>card-local answer hint"] --> E
-    C --> E
+    C --> Q["Быстрое начало EN + RU<br/>последние реплики"]
+    Q --> E
     E --> F["Russian meaning<br/>bridge phrase<br/>2–3 replies"]
     C --> G["Local session history"]
     F --> G
 ```
 
 The frontend receives an ephemeral client secret from the local development API, streams microphone audio over WebRTC, and displays completed phrases as a dialogue log. For each meaningful phrase, a separate structured-output request combines recent conversation context with the user's notes. Session history and technical diagnostics stay local.
+
+Перед основным анализом отдельный короткий запрос предлагает начало по последним
+репликам, без `Pasted notes`. Основной запрос получает показанное начало и продолжает
+его. При ошибке или таймауте быстрого этапа основной анализ всё равно запускается.
+Загрузка файлов и поиск по базе знаний пока не подключены. Синтетическая проверка
+реального API: `npm run eval:quick-start` (использует ключ и оплачиваемые запросы).
 
 ## First-run experience
 

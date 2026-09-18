@@ -8,6 +8,7 @@
     "dev:cert": "./scripts/create-dev-cert.sh",
     "build": "tsc --noEmit && vite build",
     "eval:models": "node scripts/eval-bilingual-models.ts",
+    "eval:quick-start": "node scripts/eval-quick-start.ts",
     "test": "vitest --run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",

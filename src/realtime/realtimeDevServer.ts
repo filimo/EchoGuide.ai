@@ -28,6 +28,8 @@ import {
   type RealtimeClientSecret
 } from "./realtimeSession";
 import { sanitizeRealtimeDiagnosticReport } from "./realtimeDiagnostics";
+import { generateQuickStart, isQuickStart, defaultQuickStartModel,
+  defaultQuickStartReasoningEffort, type QuickStart } from "./quickStart";
 import {
   defaultAudioRecoveryModel,
   splitRecoveredTranscript,
@@ -48,6 +50,7 @@ import {
 const realtimeClientSecretPath = "/api/realtime/client-secret";
 const realtimeTranslationClientSecretPath = "/api/realtime/translation-client-secret";
 const realtimeAnalyzePhrasePath = "/api/realtime/analyze-phrase";
+const quickStartPath = "/api/realtime/quick-start";
 const realtimeTranslatePhrasePath = "/api/realtime/translate-phrase";
 const realtimeRecoverTranscriptPath = "/api/realtime/recover-transcript";
 const localKnowledgePath = "/api/knowledge/local";
@@ -88,6 +91,7 @@ type CreateTranslationClientSecret = (options: {
 }) => Promise<RealtimeTranslationClientSecret>;
 
 type AnalyzePhrase = (options: {
+  quickStart?: QuickStart;
   apiKey: string;
   transcript: string;
   knowledgeContext?: string;
@@ -117,6 +121,7 @@ type RealtimeClientSecretMiddlewareOptions = {
   createClientSecret?: CreateClientSecret;
   createTranslationClientSecret?: CreateTranslationClientSecret;
   analyzePhrase?: AnalyzePhrase;
+  quickStart?: typeof generateQuickStart;
   translatePhrase?: TranslatePhrase;
   recoverTranscript?: RecoverTranscript;
   sessionHistoryFilePath?: string;
@@ -327,6 +332,7 @@ export function createRealtimeClientSecretMiddleware({
   createClientSecret = createRealtimeClientSecret,
   createTranslationClientSecret = createRealtimeTranslationClientSecret,
   analyzePhrase = analyzeBilingualPhrase,
+  quickStart = generateQuickStart,
   translatePhrase = translatePhraseToRussian,
   recoverTranscript = transcribeRecoveredAudio,
   sessionHistoryFilePath = defaultSessionHistoryFilePath,
@@ -338,6 +344,7 @@ export function createRealtimeClientSecretMiddleware({
     const handlesClientSecret = matchesRealtimeClientSecretRoute(req);
     const handlesTranslationClientSecret = matchesRealtimeTranslationClientSecretRoute(req);
     const handlesAnalyzePhrase = matchesRealtimeAnalyzePhraseRoute(req);
+    const handlesQuickStart = req.method === "POST" && req.url?.split("?")[0] === quickStartPath;
     const handlesTranslatePhrase = matchesRealtimeTranslatePhraseRoute(req);
     const handlesRecoverTranscript = matchesRealtimeRecoverTranscriptRoute(req);
     const handlesLoadLocalKnowledge = matchesLoadLocalKnowledgeRoute(req);
@@ -467,6 +474,7 @@ export function createRealtimeClientSecretMiddleware({
       !handlesClientSecret &&
       !handlesTranslationClientSecret &&
       !handlesAnalyzePhrase &&
+      !handlesQuickStart &&
       !handlesTranslatePhrase &&
       !handlesRecoverTranscript
     ) {
@@ -481,7 +489,7 @@ export function createRealtimeClientSecretMiddleware({
       appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
         source: "backend",
         type: "openai_api_key.missing",
-        route: handlesAnalyzePhrase
+        route: handlesQuickStart ? quickStartPath : handlesAnalyzePhrase
           ? realtimeAnalyzePhrasePath
           : handlesTranslationClientSecret
             ? realtimeTranslationClientSecretPath
@@ -494,6 +502,38 @@ export function createRealtimeClientSecretMiddleware({
       sendJson(res, 500, {
         error: "OPENAI_API_KEY is not configured for the Realtime Lab."
       });
+      return;
+    }
+
+    if (handlesQuickStart) {
+      let body: { transcript?: unknown; recentContext?: unknown; speakerLabel?: unknown };
+      try { body = (await readJsonBody(req)) ?? {}; }
+      catch { sendJson(res, 400, { error: "Quick start request body must be valid JSON." }); return; }
+      if (typeof body.transcript !== "string" || !body.transcript.trim() || body.transcript.length > 4000) {
+        sendJson(res, 400, { error: "Quick start requires a transcript of 1-4000 characters." }); return;
+      }
+      const recentContext = normalizeRecentContext(Array.isArray(body.recentContext)
+        ? body.recentContext.filter((turn): turn is string => typeof turn === "string") : []);
+      const speakerLabel = ["Me", "Interviewer"].includes(String(body.speakerLabel))
+        ? String(body.speakerLabel) : "Heard";
+      const model = readEnvironmentValue(env, "OPENAI_QUICK_START_MODEL", localEnvText) ?? defaultQuickStartModel;
+      const reasoningEffort = readEnvironmentValue(env, "OPENAI_QUICK_START_REASONING_EFFORT", localEnvText)
+        ?? defaultQuickStartReasoningEffort;
+      const started = Date.now();
+      try {
+        const result = await quickStart({ apiKey, transcript: body.transcript.trim(), recentContext,
+          speakerLabel, model, reasoningEffort });
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend", type: "quick_start.completed", model, mode: result.mode,
+          durationMs: Date.now() - started, recentTurnCount: recentContext.length
+        });
+        sendJson(res, 200, result);
+      } catch {
+        appendRealtimeDiagnostic(realtimeDiagnosticsDirectoryPath, now, {
+          source: "backend", type: "quick_start.failed", model, durationMs: Date.now() - started
+        });
+        sendJson(res, 502, { error: "Quick start unavailable. Continue with phrase analysis." });
+      }
       return;
     }
 
@@ -588,6 +628,9 @@ export function createRealtimeClientSecretMiddleware({
           ? (requestBody as { answerHint: string }).answerHint
           : ""
       );
+      const suppliedQuickStart = (requestBody as { quickStart?: unknown } | null)?.quickStart;
+      const validQuickStart = isQuickStart(suppliedQuickStart) && suppliedQuickStart.mode !== "wait"
+        ? suppliedQuickStart : undefined;
 
       if (transcript.length === 0) {
         sendJson(res, 400, {
@@ -613,6 +656,7 @@ export function createRealtimeClientSecretMiddleware({
           knowledgeContext,
           recentContext,
           ...(answerHint.length > 0 ? { answerHint } : {}),
+          ...(validQuickStart ? { quickStart: validQuickStart } : {}),
           model,
           reasoningEffort,
           onUsage: (usage) => {
