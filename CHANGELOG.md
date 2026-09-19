@@ -20,11 +20,10 @@ Until the first versioned release, changes are grouped by date.
   evidence produces a polite follow-up phrase; archived packs stay excluded.
 
 
-- Контекстное начало ответа EN + RU в отдельном блоке «Начни так»,
-  «Продолжи мысль» или «Уточни». Быстрый запрос учитывает недавний диалог;
-  основная карточка получает показанное начало и предлагает продолжение.
-  При таймауте или ошибке карточка генерируется обычным способом.
-  Кнопка «Оставить на экране» отключает следование новым репликам.
+- Contextual EN + RU openings in a separate start, continue, or clarify block.
+  The quick request uses recent dialogue; the main card receives the displayed
+  opening and suggests a continuation. On timeout or failure, the card is
+  generated normally. The keep-on-screen button stops following new turns.
 - A public changelog linked from the project README.
 - Completed transcript turns now show their Russian meaning directly beneath
   the English text, including a compact translation-in-progress state while the

@@ -44,3 +44,19 @@ npm run eval:models
 - Keep public documentation in English.
 
 - Meeting retrieval synthetic API eval: `npm run eval:meeting` (creates and removes synthetic cloud resources).
+
+## Mandatory pre-commit language review
+
+- Before every commit or amend, inspect the staged diff against this public
+  repository's rules. Passing tests and secret checks do not replace this review.
+- Review all added documentation prose, changelog entries, code comments and
+  configuration comments for English, including `.env.example` comments.
+- Run `git diff --cached --unified=0 -- . ':!package-lock.json' | rg '^\+[^+].*[А-Яа-яЁё]'`.
+  A match requires inspecting and classifying that line before committing;
+  no matches produce exit code 1 from `rg`, which is expected.
+- Translate Russian documentation prose and explanatory comments. Preserve
+  intentional Russian translations, bilingual product content, test fixtures,
+  and exact UI labels quoted by documentation. Do not silently treat all
+  Cyrillic matches as exceptions; explain retained categories in the handoff.
+- Verify the commit message is English. Report the language review alongside
+  other checks. This review is mandatory even for a configuration-only commit.
