@@ -197,3 +197,8 @@ Feedback is welcome on live-assistance UX, Realtime/WebRTC architecture, and eva
 ## License
 
 EchoGuide is available under the [MIT License](LICENSE).
+
+## Meeting materials
+
+The local development server now supports Markdown packs and meeting assistance.
+See [Meeting assistant](docs/meeting-assistant.md) for setup, limits, and verification.

@@ -7,7 +7,18 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+### Fixed
+
+- Meeting material uploads now accept same-origin HTTP/2 requests from the
+  local HTTPS app; foreign origins remain rejected.
+
 ### Added
+
+- Opt-in meeting assistant: upload Markdown packs, index them in OpenAI, select
+  an active pack, and get one source-backed English answer with Russian meaning.
+  Contextual openings and retrieval run in parallel. Missing or conflicting
+  evidence produces a polite follow-up phrase; archived packs stay excluded.
+
 
 - Контекстное начало ответа EN + RU в отдельном блоке «Начни так»,
   «Продолжи мысль» или «Уточни». Быстрый запрос учитывает недавний диалог;

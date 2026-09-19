@@ -1598,3 +1598,22 @@ textarea {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
+
+/* Meeting packs and grounded conversation help. */
+.meeting-mode-toggle { display: flex; align-items: center; gap: .65rem; font-weight: 650; padding: .65rem 0; }
+.meeting-mode-toggle input { width: 1.2rem; height: 1.2rem; }
+.meeting-assistant { min-width: 0; }
+.meeting-assistant label:not(.meeting-mode-toggle) { display: grid; gap: .4rem; margin: .75rem 0; }
+.meeting-assistant input:not([type=checkbox]) { width: 100%; max-width: 100%; padding: .6rem; }
+.meeting-assistant button { margin: .3rem .3rem .3rem 0; }
+.meeting-materials { padding: .8rem; border: 1px solid #cbd5e1; border-radius: 12px; }
+.meeting-materials summary { cursor: pointer; font-weight: 650; }
+.meeting-packs { list-style: none; padding: 0; max-height: 360px; overflow-y: auto; }
+.meeting-packs li { padding: .8rem 0; border-bottom: 1px solid #cbd5e1; overflow-wrap: anywhere; }
+.meeting-packs p { margin: .4rem 0; }
+.meeting-opening, .meeting-answer { margin-top: 1rem; padding: 1rem; border-radius: 12px; background: #f0f7ff; color: #17202f; }
+.meeting-answer { background: #edf8f2; }
+.meeting-opening p[lang=en], .meeting-answer p[lang=en] { font-size: 1.15rem; line-height: 1.55; }
+.meeting-opening p[lang=ru], .meeting-answer p[lang=ru] { color: #475569; }
+.meeting-question { border-left: 3px solid #94a3b8; padding-left: .7rem; }
+.meeting-answer pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }

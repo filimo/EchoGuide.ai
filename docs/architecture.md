@@ -200,3 +200,10 @@ When local speech levels rise but the server does not acknowledge speech, WebRTC
 ## Production boundary
 
 The Vite plugin is intentionally local and development-only. A production deployment needs a standalone authenticated backend, explicit storage and retention policies, rate limiting, centralized observability, and user-controlled deletion.
+
+## Meeting materials extension
+
+The opt-in local meeting mode uses Markdown packs and explicit retrieval.
+See [Meeting assistant](meeting-assistant.md) for the implemented request path,
+pack lifecycle, privacy boundaries and validation. The existing training flow
+remains available when meeting mode is off.

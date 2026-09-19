@@ -42,3 +42,5 @@ npm run eval:models
 - Run the relevant validation commands before reporting completion.
 - Write git commit messages in English unless the user explicitly requests another language.
 - Keep public documentation in English.
+
+- Meeting retrieval synthetic API eval: `npm run eval:meeting` (creates and removes synthetic cloud resources).

@@ -12,7 +12,8 @@
     "test": "vitest --run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "smoke": "npm run build"
+    "smoke": "npm run build",
+    "eval:meeting": "node scripts/eval-meeting.ts"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",

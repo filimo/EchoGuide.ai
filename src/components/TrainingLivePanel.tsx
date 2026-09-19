@@ -1,3 +1,4 @@
+import { MeetingAssistant } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
@@ -514,6 +515,9 @@ export function TrainingLivePanel({
   onNotesChange,
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
+  const [meetingMode, setMeetingMode] = useState(false);
+  const meetingModeRef = useRef(false);
+  meetingModeRef.current = meetingMode;
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
   const [connection, setConnection] = useState<RealtimeTranscriptionConnection | null>(null);
   const [translationConnection, setTranslationConnection] =
@@ -1254,6 +1258,7 @@ export function TrainingLivePanel({
     shouldShowAnalysis: boolean,
     recentContext: string[]
   ) {
+    if (meetingModeRef.current) return;
     const trimmedTranscript = completedTranscript.trim();
 
     if (trimmedTranscript.length === 0) {
@@ -1361,6 +1366,7 @@ export function TrainingLivePanel({
     phraseId: string,
     shouldShowAnalysis: boolean
   ) {
+    if (meetingModeRef.current) return;
     const previousPendingAnalysis = pendingAutomaticAnalysisRef.current;
 
     if (automaticAnalysisTimerRef.current != null) {
@@ -2395,6 +2401,15 @@ export function TrainingLivePanel({
         className="training-control-rail"
         aria-label="Training Mode controls"
       >
+        <label className="meeting-mode-toggle"><input type="checkbox" checked={meetingMode} onChange={event => {
+          meetingModeRef.current = event.target.checked;
+          setMeetingMode(event.target.checked);
+          phraseAnalysisRevisionRef.current.clear();
+          setPendingAnalysisIds(new Set());
+          setAnalysisStatus("idle");
+          cancelPendingAutomaticAnalysis();
+          resetQuickStarts();
+        }} />Режим встречи с материалами</label>
         <header className="topbar">
           <div>
             <p className="eyebrow">iPad companion mode</p>
@@ -2685,7 +2700,7 @@ export function TrainingLivePanel({
                     aria-label="Generate card"
                     title="Generate card"
                     onClick={handleGenerateSelectedTranscriptCard}
-                    disabled={selectedTranscriptTurns.length === 0}
+                    disabled={meetingMode || selectedTranscriptTurns.length === 0}
                   >
                     <Sparkles aria-hidden="true" size={18} strokeWidth={1.8} />
                   </button>
@@ -2740,7 +2755,7 @@ export function TrainingLivePanel({
                   aria-label={selectedPhraseCard == null ? "Generate card" : "Regenerate card"}
                   title={selectedPhraseCard == null ? "Generate card" : "Regenerate card"}
                   onClick={() => void handleGenerateSelectedTranscriptTurnCard()}
-                  disabled={pendingAnalysisIds.has(selectedTranscriptTurn.id)}
+                  disabled={meetingMode || pendingAnalysisIds.has(selectedTranscriptTurn.id)}
                 >
                   <Sparkles aria-hidden="true" size={18} strokeWidth={1.8} />
                 </button>
@@ -3030,6 +3045,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
+          {meetingMode ? <MeetingAssistant turns={transcriptTurns} quickStart={generateQuickStart} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>
@@ -3186,6 +3202,7 @@ export function TrainingLivePanel({
               </div>
             </div>
           ) : null}
+          </>}
         </aside>
       </section>
     </main>

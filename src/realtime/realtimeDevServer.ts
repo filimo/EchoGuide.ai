@@ -1,3 +1,4 @@
+import { createMeetingMiddleware } from "../meeting/middleware";
 import { dirname } from "node:path";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Plugin } from "vite";
@@ -889,6 +890,7 @@ export function createRealtimeDevServerPlugin(): Plugin {
   return {
     name: "echoguide-realtime-dev-server",
     configureServer(server) {
+      server.middlewares.use(createMeetingMiddleware());
       server.middlewares.use(createRealtimeClientSecretMiddleware());
     }
   };

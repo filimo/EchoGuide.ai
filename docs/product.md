@@ -77,3 +77,10 @@ its text and speaker in the message editor before it becomes part of the session
 - The current server routes are local development middleware, not a production backend.
 - Authentication, cloud sync, and multi-user knowledge management are outside the prototype.
 - Session cost and latency depend on the selected OpenAI models and conversation length.
+
+## Meeting materials extension
+
+The opt-in local meeting mode uses Markdown packs and explicit retrieval.
+See [Meeting assistant](meeting-assistant.md) for the implemented request path,
+pack lifecycle, privacy boundaries and validation. The existing training flow
+remains available when meeting mode is off.
