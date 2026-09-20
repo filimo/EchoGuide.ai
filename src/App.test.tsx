@@ -45,7 +45,7 @@ describe("EchoGuide iPad setup flow", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Подключить iPad microphone" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Подключить микрофон" })).toBeInTheDocument();
     expect(screen.queryByLabelText("iPad слышит разговор рядом с MacBook")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Pasted notes")).toBeInTheDocument();
   });
@@ -162,11 +162,11 @@ describe("EchoGuide iPad setup flow", () => {
       render(<App requestMicrophone={requestMicrophone} />);
     });
 
-    await user.click(screen.getByRole("button", { name: "Подключить iPad microphone" }));
+    await user.click(screen.getByRole("button", { name: "Подключить микрофон" }));
     await user.type(screen.getByLabelText("Pasted notes"), "Mention dependency review.");
     await user.click(screen.getByRole("button", { name: "Перейти в live session" }));
 
-    expect(screen.getByRole("heading", { name: "Training Mode" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
     expect(screen.queryByText("Source: ChatGPT Real Voice practice")).not.toBeInTheDocument();
     expect(screen.queryByText("Can you commit by Friday?")).not.toBeInTheDocument();
@@ -186,7 +186,7 @@ describe("EchoGuide iPad setup flow", () => {
       render(<App requestMicrophone={requestMicrophone} />);
     });
 
-    await user.click(screen.getByRole("button", { name: "Подключить iPad microphone" }));
+    await user.click(screen.getByRole("button", { name: "Подключить микрофон" }));
     await user.type(screen.getByLabelText("Pasted notes"), "Mention dependency review.");
     await user.click(screen.getByRole("button", { name: "Перейти в live session" }));
 
@@ -202,7 +202,7 @@ describe("EchoGuide iPad setup flow", () => {
     });
     const firstRender = render(<App requestMicrophone={requestMicrophone} />);
 
-    await user.click(screen.getByRole("button", { name: "Подключить iPad microphone" }));
+    await user.click(screen.getByRole("button", { name: "Подключить микрофон" }));
     await user.clear(screen.getByLabelText("Source label"));
     await user.type(screen.getByLabelText("Source label"), "ChatGPT Real Voice practice");
     await user.type(screen.getByLabelText("Pasted notes"), "Mention dependency review.");
@@ -218,8 +218,8 @@ describe("EchoGuide iPad setup flow", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole("heading", { name: "Training Mode" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "EchoGuide" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Подключить микрофон" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
     expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
     expect(screen.queryByText("Session notes are available for this training session.")).not.toBeInTheDocument();
@@ -297,7 +297,7 @@ describe("EchoGuide iPad setup flow", () => {
       render(<App requestMicrophone={vi.fn()} />);
     });
 
-    expect(screen.getByRole("heading", { name: "Training Mode" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
     expect((await screen.findAllByText("What did you build in EchoGuide?")).length).toBeGreaterThan(
       0
     );

@@ -1646,3 +1646,86 @@ textarea {
 .transcript-capture-time { font-size: 0.75rem; opacity: 0.65; }
 
 .transcript-turn-mac { grid-template-columns: 80px minmax(0, 1fr); }
+
+/* Desktop workspace: keep the conversation and answer within the available window. */
+.desktop-workspace { padding: 10px; }
+.desktop-workspace > * { width: 100%; max-width: none; }
+.desktop-workspace button { min-height: 30px; padding: 5px 9px; font-size: 13px; }
+.desktop-workspace .training-control-rail { position: relative; padding: 0 0 8px; margin: 0; }
+.desktop-workspace .training-control-rail h1 { font-size: 18px; }
+.desktop-workspace .meeting-mode-toggle { padding: 0; font-size: 12px; }
+.desktop-workspace .topbar { margin-bottom: 6px; }
+.desktop-workspace .status { padding: 4px 8px; min-height: 28px; font-size: 12px; }
+.desktop-audio-settings { font-size: 12px; }
+.desktop-audio-settings summary { cursor: pointer; padding: 3px 0; color: #526176; }
+.desktop-audio-settings .turn-detection-panel { max-width: none; margin: 6px 0; }
+.desktop-workspace .speech-language-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 5px 8px; margin: 0; }
+.desktop-workspace .speech-language-header h2 { font-size: 13px; }
+.desktop-workspace .speech-language-header .status { display: none; }
+.desktop-workspace .speech-language-tabs { padding: 2px; }
+.desktop-workspace .speech-language-description { border: 0; padding: 0; font-size: 12px; flex: 1 1 250px; }
+.desktop-workspace .live-translation-panel { margin: 0; padding: 6px 8px; }
+.desktop-workspace .live-translation-heading h2 { font-size: 13px; }
+.desktop-workspace .live-translation-copy { min-height: 0; font-size: 13px; margin: 3px 0 0; }
+.desktop-workspace .copilot-grid { gap: 10px; margin: 0; }
+.desktop-workspace .conversation-panel, .desktop-workspace .suggestions-panel { padding: 10px; min-width: 0; }
+.desktop-workspace .transcript-panel-header h2, .desktop-workspace .suggestions-panel-header h2 { font-size: 15px; }
+.desktop-workspace .suggestions-panel-header { margin: -10px -10px 8px; padding: 10px; }
+.desktop-workspace .local-bridge-block { gap: 5px; margin-top: 8px; }
+.desktop-workspace .local-bridge-header h2 { font-size: 12px; color: #526176; }
+.desktop-workspace .local-bridge-phrases { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 4px; }
+.desktop-workspace .local-bridge-phrase { gap: 1px; padding: 4px 7px; font-size: 12px; }
+.desktop-workspace .local-bridge-translation { font-size: 11px; }
+.meeting-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: -10px; background: white; z-index: 2; padding: 8px 0; }
+.meeting-card-header h2 { font-size: 16px; margin: 0; }
+.meeting-card-header .meeting-regenerate { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; margin: 0; }
+.desktop-workspace .meeting-materials { padding: 7px 9px; border-radius: 6px; font-size: 13px; }
+.desktop-workspace .meeting-assistant > .hint { font-size: 12px; margin: 7px 0; }
+.desktop-workspace .meeting-question { font-size: 13px; line-height: 1.4; margin: 8px 0; }
+.desktop-workspace .meeting-assistant > p[role=status] { font-size: 12px; color: #526176; margin: 6px 0; }
+.desktop-workspace .meeting-opening, .desktop-workspace .meeting-answer { padding: 10px; margin-top: 8px; border-radius: 7px; }
+.desktop-workspace .meeting-opening h3, .desktop-workspace .meeting-answer h3 { font-size: 12px; margin: 0 0 6px; }
+.desktop-workspace .meeting-opening p, .desktop-workspace .meeting-answer p { margin: 6px 0; line-height: 1.45; }
+.desktop-workspace .meeting-opening p[lang=en], .desktop-workspace .meeting-answer p[lang=en] { font-size: 17px; }
+.desktop-workspace .meeting-opening p[lang=ru], .desktop-workspace .meeting-answer p[lang=ru] { font-size: 14px; }
+@media (min-width: 701px) {
+  .desktop-workspace { height: 100dvh; min-height: 620px; display: flex; flex-direction: column; gap: 6px; }
+  .desktop-workspace > * { flex-shrink: 0; }
+  .desktop-workspace .copilot-grid { flex: 1; min-height: 260px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .desktop-workspace .conversation-panel { min-height: 0; display: flex; flex-direction: column; }
+  .desktop-workspace .conversation-panel > * { flex-shrink: 0; }
+  .desktop-workspace .transcript-dialogue { flex: 1; min-height: 80px; max-height: none; }
+  .desktop-workspace .suggestions-panel-sticky { position: relative; top: auto; align-self: stretch; height: auto; max-height: none; min-height: 0; }
+}
+@media (max-width: 700px) {
+  .desktop-workspace > * { margin-bottom: 8px; }
+  .desktop-workspace .suggestions-panel-sticky { position: static; height: auto; max-height: none; }
+}
+
+.desktop-workspace .transcript-speaker-control { min-height: 0; padding: 3px 0; font-size: 10px; }
+.desktop-workspace .transcript-turn-content { min-height: 0; padding: 2px 0; }
+.desktop-workspace .transcript-action-icon { width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.desktop-workspace .audio-status-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.desktop-workspace .audio-source-mode { margin: 0; gap: 6px; font-size: 12px; }
+.desktop-workspace .audio-source-mode select { max-width: 205px; height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: inherit; padding: 3px 6px; }
+.desktop-workspace .training-status-row { gap: 6px; }
+.desktop-workspace .microphone-picker select { max-width: 190px; height: 30px; padding: 3px 6px; }
+.desktop-workspace .training-audio-level .audio-meter { width: 64px; }
+.desktop-workspace .mac-audio-controls { flex-basis: 100%; margin: 0; padding: 8px; }
+
+.desktop-workspace .workspace-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.desktop-workspace .workspace-heading .meeting-mode-toggle { font-weight: 500; white-space: nowrap; }
+
+.desktop-workspace .mac-audio-controls { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; display: flex; align-items: center; gap: 8px; }
+.desktop-workspace .mac-sources-trigger { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mac-source-error { max-width: 320px; color: #9b1c1c; font-size: 12px; }
+.mac-sources-popover { width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 40px); overflow: auto; border: 1px solid #cfd7e6; border-radius: 12px; padding: 16px; color: #17202f; background: white; box-shadow: 0 16px 60px #17202f33; }
+.mac-sources-popover::backdrop { background: #17202f22; }
+.mac-sources-popover header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.mac-sources-popover h2 { margin: 0; font-size: 16px; }
+.mac-sources-popover p, .mac-sources-popover small { font-size: 13px; line-height: 1.45; }
+.desktop-workspace .mac-sources-popover .training-status-row { display: grid; gap: 12px; }
+.desktop-workspace .mac-sources-popover label { display: grid; gap: 5px; }
+.desktop-workspace .mac-sources-popover select { width: 100%; max-width: 100%; padding: 6px; }
+
+.desktop-workspace .mac-source-level meter { width: 44px; margin-left: 0; }

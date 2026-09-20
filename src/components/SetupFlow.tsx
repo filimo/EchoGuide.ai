@@ -27,16 +27,16 @@ export function SetupFlow(props: SetupFlowProps) {
   return (
     <main className="setup-shell">
       <section className="setup-panel">
-        <p className="eyebrow">iPad companion mode</p>
+
         <h1>EchoGuide</h1>
         <p><a href="/mac-audio">Попробовать на MacBook: микрофон + звук звонка</a></p>
         <p className="lead">
-          Открой EchoGuide на iPad, поставь iPad рядом с MacBook и разреши microphone.
+          Выбери микрофон или захват звука звонка на MacBook.
         </p>
 
         <div className="setup-grid">
           <button type="button" onClick={props.onRequestMicrophone}>
-            Подключить iPad microphone
+            Подключить микрофон
           </button>
           <span className={`status status-${props.microphoneStatus}`}>
             Microphone: {statusText(props.microphoneStatus)}
@@ -44,8 +44,7 @@ export function SetupFlow(props: SetupFlowProps) {
         </div>
 
         <p className="hint">
-          Если звонок идёт в headphones, iPad может не слышать собеседника. Для MVP используй
-          speakers или другой слышимый источник.
+          Для звонка в наушниках используй режим MacBook: микрофон + звук приложения.
         </p>
 
         <label className="notes-label" htmlFor="source-label">

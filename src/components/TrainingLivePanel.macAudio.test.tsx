@@ -53,7 +53,7 @@ describe("Mac audio in Training Mode", () => {
     const latest = test.save.mock.calls.at(-1)![1].transcriptTurns;
     expect(latest.map(turn => turn.speakerLabel)).toEqual(["Me", "Interviewer"]);
     expect(latest.map(turn => turn.audioSource)).toEqual(["microphone", "application"]);
-    expect(screen.getByText("Собеседники")).toBeInTheDocument();
+    expect(screen.getByText("Собеседники", { selector: "button" })).toBeInTheDocument();
     expect(screen.getByText("Я", { selector: "button" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stop live" }));
     expect(test.options.signal.aborted).toBe(true);

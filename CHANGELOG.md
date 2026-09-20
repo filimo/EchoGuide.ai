@@ -13,6 +13,14 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+### Changed
+
+- Move Mac microphone and call application selection into a dismissible audio settings popover; keep selected sources in the toolbar.
+
+- Use a compact desktop workspace with full-height conversation and answer panels, smaller bridge phrases, collapsible turn detection settings, and an accessible regenerate icon in the meeting card header.
+- Place the meeting materials mode toggle beside the app name in the header.
+- Remove iPad companion and Training Mode labels from the main screen and update microphone setup copy for Mac use.
+
 ### Added
 
 - Remember the meeting-with-materials mode toggle across page and browser restarts.

@@ -2516,12 +2516,15 @@ export function TrainingLivePanel({
   }
 
   return (
-    <main className="copilot-shell">
+    <main className="copilot-shell desktop-workspace">
       <section
         ref={trainingControlRailRef}
         className="training-control-rail"
         aria-label="Training Mode controls"
       >
+        <header className="topbar">
+          <div className="workspace-heading">
+            <h1>EchoGuide</h1>
         <label className="meeting-mode-toggle"><input type="checkbox" checked={meetingMode} onChange={event => {
           meetingModeRef.current = event.target.checked;
           setMeetingMode(event.target.checked);
@@ -2533,10 +2536,6 @@ export function TrainingLivePanel({
           cancelPendingAutomaticAnalysis();
           resetQuickStarts();
         }} />Режим встречи с материалами</label>
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{audioMode === "mac" ? "MacBook companion mode" : "iPad companion mode"}</p>
-            <h1>Training Mode</h1>
           </div>
           <div className="topbar-actions">
 
@@ -2585,10 +2584,11 @@ export function TrainingLivePanel({
         </header>
         {meetingExportError && <p role="alert">{meetingExportError}</p>}
 
+        <div className="audio-status-toolbar">
         <label className="audio-source-mode">Audio source <select aria-label="Audio source"
           value={audioMode} disabled={connection != null || realtimeStatus === "connecting"}
           onChange={event => { setAudioMode(event.target.value as "microphone" | "mac"); saveAudioMode(event.target.value as "microphone" | "mac"); setMacSelection(null); setErrorMessage(""); }}>
-          <option value="microphone">Microphone / iPad</option>
+          <option value="microphone">Microphone</option>
           <option value="mac">MacBook: microphone + call application</option>
         </select></label>
         {audioMode === "mac" && <MacAudioControls disabled={connection != null || realtimeStatus === "connecting"}
@@ -2609,8 +2609,9 @@ export function TrainingLivePanel({
             const stats = macLevels[source];
             const fresh = stats != null && macClock - stats.seenAt < 3000;
             const label = source === "microphone" ? "Я / microphone" : "Собеседники / application";
-            return <span className="status" key={source}>
-              {label}: {fresh ? (stats.level > 0.005 ? "звук" : "тишина") : "нет аудиоданных"}
+            return <span className="status mac-source-level" key={source}
+              title={`${label}: ${fresh ? (stats.level > 0.005 ? "звук" : "тишина") : "нет аудиоданных"}`}>
+              {source === "microphone" ? "Я" : "Собеседники"}
               <meter aria-label={label} min={0} max={1} value={fresh ? Math.min(1, stats.level * 5) : 0} />
             </span>;
           })}
@@ -2643,6 +2644,7 @@ export function TrainingLivePanel({
             </span>
           </div>}
         </section>
+        </div>
       </section>
 
       {notesDialogOpen ? (
@@ -2769,11 +2771,11 @@ export function TrainingLivePanel({
         </div>
       ) : null}
 
-      {audioMode !== "mac" && <TurnDetectionControls
+      {audioMode !== "mac" && <details className="desktop-audio-settings"><summary>Turn detection settings</summary><TurnDetectionControls
         settings={turnDetectionSettings}
         disabled={connection != null || realtimeStatus === "connecting"}
         onChange={handleTurnDetectionSettingsChange}
-      />}
+      /></details>}
 
       <SpeechLanguageControls
         speechLanguage={speechLanguage}

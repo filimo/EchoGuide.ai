@@ -15,7 +15,7 @@ export function CopilotPanel(props: CopilotPanelProps) {
     <main className="copilot-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">iPad companion mode</p>
+
           <h1>Live Copilot</h1>
         </div>
         <button type="button" onClick={props.onCopyTranscript}>

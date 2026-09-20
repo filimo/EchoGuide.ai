@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { listMacAudioSources } from "../macAudio/client";
 import type { MacAudioSources } from "../macAudio/protocol";
 
@@ -9,6 +9,7 @@ export type MacAudioSelection = { pid: number; microphone: string };
 export function MacAudioControls({ disabled, selection, onChange }: {
   disabled: boolean; selection: MacAudioSelection | null; onChange: (value: MacAudioSelection | null) => void;
 }) {
+  const popoverId = useId();
   const [sources, setSources] = useState<MacAudioSources>({ applications: [], microphones: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,7 +43,17 @@ export function MacAudioControls({ disabled, selection, onChange }: {
     } finally { if (!controller.signal.aborted) setLoading(false); }
   }, [onChange]);
   useEffect(() => { void refresh(); return () => request.current?.abort(); }, [refresh]);
+  const applicationName = sources.applications.find(app => app.pid === selection?.pid)?.name;
+  const microphoneName = preference.microphone === "default" ? "System microphone" :
+    sources.microphones.find(mic => mic.id === preference.microphone)?.name ?? "Microphone unavailable";
   return <section className="mac-audio-controls" aria-label="MacBook audio sources">
+    <button type="button" className="mac-sources-trigger" popoverTarget={popoverId}
+      title={selection ? `${applicationName} + ${microphoneName}` : "Choose microphone and call application"}>
+      <span aria-hidden="true">⚙</span> {loading ? "Loading sources…" : selection ? `${applicationName} + ${microphoneName}` : "Настроить источники"}
+    </button>
+    {error && <span className="mac-source-error" role="alert">{error}</span>}
+    <div id={popoverId} popover="auto" className="mac-sources-popover">
+      <header><h2>Источники звука</h2><button type="button" popoverTarget={popoverId} popoverTargetAction="hide" aria-label="Закрыть настройки звука">×</button></header>
     <p>Два источника: микрофон — «Я», приложение звонка — «Собеседники». Используй наушники.</p>
     <div className="training-status-row">
       <button type="button" disabled={disabled || loading} onClick={() => void refresh()}>
@@ -75,6 +86,6 @@ export function MacAudioControls({ disabled, selection, onChange }: {
     </div>
     <small>Для Meet выбери браузер. Захватывается звук всего выбранного приложения, включая другие его вкладки.
       Первый запуск требует разрешений macOS. В прототипе пауза 1,2 с завершает реплику автоматически.</small>
-    {error && <p role="alert">{error}</p>}
+    </div>
   </section>;
 }

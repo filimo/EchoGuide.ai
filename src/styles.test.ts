@@ -9,12 +9,6 @@ describe("Training Mode layout styles", () => {
   it("keeps transcript and reply controls available while long panels scroll", () => {
     expect(styles).toMatch(/\.transcript-dialogue\s*\{[^}]*max-height:/s);
     expect(styles).toMatch(/\.transcript-dialogue\s*\{[^}]*overflow-y:\s*auto/s);
-    expect(styles).not.toMatch(
-      /@media\s*\(max-width:\s*860px\)[\s\S]*?\.suggestions-panel-sticky\s*\{[^}]*position:\s*static/s
-    );
-    expect(styles).not.toMatch(
-      /@media\s*\(max-width:\s*860px\)[\s\S]*?\.copilot-grid[\s\S]*?grid-template-columns:\s*1fr/s
-    );
     expect(styles).toMatch(
       /@media\s*\(max-width:\s*700px\)[\s\S]*?\.copilot-grid\s*\{[^}]*grid-template-columns:\s*1fr/s
     );

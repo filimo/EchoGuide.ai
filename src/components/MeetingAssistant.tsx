@@ -1,3 +1,4 @@
+import { RotateCw } from "lucide-react";
 import { prepareGenerationInput } from "../realtime/generationInput";
 import { useEffect, useRef, useState } from "react";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
@@ -162,14 +163,16 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
   }, [active?.id, sessionId, selected, requestVersion]);
 
   return <div className="meeting-assistant">
-    <h2>Помощник на встрече</h2>
+    <div className="meeting-card-header"><h2>Помощник на встрече</h2>
+    {active && selection && <button className="meeting-regenerate" aria-label="Новый вариант" title="Новый вариант" type="button" disabled={historyLoading || generating || !!historyError} onClick={() => {
+      regenerate.current = meetingCardKey({ sessionId, phraseId: selection.id, text: selection.text.slice(0,4000), speaker: selection.speaker, context: selection.context, packId: active.id });
+      setRequestVersion(v => v + 1);
+    }}><RotateCw size={17} aria-hidden="true" /></button>}
+    </div>
     {historyError && <div role="alert"><p>{historyError}</p>
       <button type="button" onClick={async () => { try { await meetingHistoryClient.retry(); setHistoryError(""); setRequestVersion(v => v + 1); } catch { setHistoryError("Не удалось сохранить историю. Не закрывай страницу и повтори попытку."); } }}>Повторить сохранение / загрузку</button>
     </div>}
-    {active && selection && <button type="button" disabled={historyLoading || generating || !!historyError} onClick={() => {
-      regenerate.current = meetingCardKey({ sessionId, phraseId: selection.id, text: selection.text.slice(0,4000), speaker: selection.speaker, context: selection.context, packId: active.id });
-      setRequestVersion(v => v + 1);
-    }}>Новый вариант</button>}
+
     <details className="meeting-materials" open={!active}>
       <summary>Материалы встречи{active ? `: ${active.name}` : " — выбери или загрузи набор"}</summary>
       <p className="hint">MD-файлы загружаются в OpenAI. Поиск использует только выбранный набор.</p>
@@ -203,7 +206,7 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
       {active && <button type="button" disabled={busy} onClick={() => void activate(null)}>Убрать активный набор</button>}
     </details>
     {error && <p role="alert" className="error-text">{error}</p>}
-    <p className="hint">Нажми нужную реплику в разговоре. Ответ останется на экране, пока ты не выберешь другую.</p>
+    {!question && <p className="hint">Выбери реплику в разговоре, чтобы подготовить ответ.</p>}
     {question && <p className="meeting-question">{question}</p>}
     <p role="status">{progress}</p>
     {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">
