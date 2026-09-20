@@ -1,3 +1,4 @@
+import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
 import { connectMacAudio } from "../macAudio/client";
 import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
@@ -542,6 +543,20 @@ export function TrainingLivePanel({
     const timer = window.setInterval(() => setMacClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [audioMode]);
+  async function exportHistory() {
+    const sessionId = currentSessionIdRef.current;
+    if (!sessionId) return;
+    setMeetingExportError("");
+    try {
+      const snapshots = await meetingHistoryClient.load(sessionId);
+      const blob = new Blob([JSON.stringify({ version: 1, sessionId, exportedAt: new Date().toISOString(),
+        hasUnsavedSnapshots: meetingHistoryClient.hasPending(), snapshots }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob); const link = document.createElement("a");
+      link.href = url; link.download = `meeting-cards-${sessionId}.json`; link.click(); URL.revokeObjectURL(url);
+    } catch { setMeetingExportError("Не удалось экспортировать историю. Повтори попытку."); }
+  }
+
+  const [meetingExportError, setMeetingExportError] = useState("");
   const [meetingMode, setMeetingMode] = useState(false);
   const [meetingSelection, setMeetingSelection] = useState<MeetingSelection | null>(null);
   const meetingModeRef = useRef(false);
@@ -2557,8 +2572,10 @@ export function TrainingLivePanel({
             <button type="button" onClick={handleCopyTranscript}>
               Copy transcript
             </button>
+            <button type="button" onClick={() => void exportHistory()}>Экспорт ответов сессии (JSON)</button>
           </div>
         </header>
+        {meetingExportError && <p role="alert">{meetingExportError}</p>}
 
         <label className="audio-source-mode">Audio source <select aria-label="Audio source"
           value={audioMode} disabled={connection != null || realtimeStatus === "connecting"}

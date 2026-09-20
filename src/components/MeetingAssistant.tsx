@@ -153,19 +153,8 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
     return () => controller.abort();
   }, [active?.id, sessionId, selected, requestVersion]);
 
-  async function exportHistory() {
-    try {
-      const snapshots = await meetingHistoryClient.load(sessionId);
-      const blob = new Blob([JSON.stringify({ version: 1, sessionId, exportedAt: new Date().toISOString(),
-        hasUnsavedSnapshots: meetingHistoryClient.hasPending(), snapshots }, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob); const link = document.createElement("a");
-      link.href = url; link.download = `meeting-cards-${sessionId}.json`; link.click(); URL.revokeObjectURL(url);
-    } catch { setHistoryError("Не удалось экспортировать историю. Повтори попытку."); }
-  }
-
   return <div className="meeting-assistant">
     <h2>Помощник на встрече</h2>
-    <button type="button" onClick={() => void exportHistory()}>Экспорт ответов сессии (JSON)</button>
     {historyError && <div role="alert"><p>{historyError}</p>
       <button type="button" onClick={async () => { try { await meetingHistoryClient.retry(); setHistoryError(""); setRequestVersion(v => v + 1); } catch { setHistoryError("Не удалось сохранить историю. Не закрывай страницу и повтори попытку."); } }}>Повторить сохранение / загрузку</button>
     </div>}

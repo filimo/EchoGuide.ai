@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Move session answer export to the top action bar beside Copy transcript.
+
 - Automatically save meeting openings, continuations, sources and timings locally.
   Revisiting a phrase restores its saved answer; explicit regeneration keeps
   previous attempts. Export the session's snapshots as JSON.
