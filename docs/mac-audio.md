@@ -47,7 +47,9 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   stored; ScreenCaptureKit supplies the selected application's audio.
 - The server sends separate 100 ms PCM chunks for each source, filling missing
   audio with silence so VAD can complete turns when application playback stops.
-  Buffers are bounded; an overloaded transport stops rather than accumulating delay.
+  The sender uses elapsed monotonic time, so late timer callbacks do not accumulate
+  an ever-growing queue. Buffers remain bounded; a stall over one second or an
+  overloaded transport stops rather than silently dropping speech.
 - The existing `OPENAI_REALTIME_TRANSCRIPTION_MODEL` is reused. Each source uses
   its own paid session and fixed `server_vad` with the existing default 1.2 s pause.
   The model is not changed by this feature.
@@ -64,6 +66,10 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 - Only a loopback client at `localhost`, `127.0.0.1`, or `[::1]`, with a matching Origin
   and the custom request header, can start capture. LAN/iPad requests are rejected.
   One capture session owns the helper at a time. The API key remains in Node.
+- Capture start, readiness, queue/chunk counters every ten seconds and the stop reason
+  are recorded in `.echoguide/diagnostics/realtime-YYYY-MM-DD.jsonl` with a capture
+  session ID. Reasons distinguish queue overflow, sender clock stalls, upstream
+  errors/disconnects, native exit, browser backpressure and client/server shutdown.
 - Raw audio and transcripts are not written to diagnostic logs. Existing local session
   history still saves text, roles and optional source/timestamp metadata under `.echoguide/`.
 

@@ -13,6 +13,8 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Fix Mac audio stopping after accumulated timer delays: pace both channels by elapsed time and record privacy-safe stop reasons and queue counters.
+
 ### Fixed
 
 - Meeting answers can resolve likely spoken product-name substitutions from

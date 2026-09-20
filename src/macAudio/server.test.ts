@@ -37,12 +37,13 @@ function response() {
   return res;
 }
 const cleanups: (() => void)[] = [];
-afterEach(() => { cleanups.splice(0).forEach(fn => fn()); });
+afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
 function setup() {
   const sockets: Socket[] = [];
   const helper = new Helper();
   const spawnHelper = vi.fn(() => helper as unknown as ChildProcessWithoutNullStreams);
-  const bridge = createMacAudioMiddleware({ platform: "darwin", helperExists: () => true, spawnHelper,
+  const diagnostic = vi.fn();
+  const bridge = createMacAudioMiddleware({ diagnostic, platform: "darwin", helperExists: () => true, spawnHelper,
     connectSocket: () => { const socket = new Socket(); sockets.push(socket); return socket as unknown as WebSocket; },
     readEnv: () => "OPENAI_API_KEY=test-only" });
   cleanups.push(bridge.dispose);
@@ -52,7 +53,7 @@ function setup() {
     return res;
   };
   const ready = () => sockets.forEach(socket => { socket.emit("open"); socket.message({ type: "session.updated" }); });
-  return { sockets, helper, spawnHelper, bridge, run, ready };
+  return { sockets, helper, spawnHelper, bridge, run, ready, diagnostic };
 }
 
 describe("Mac audio local bridge", () => {
@@ -113,6 +114,8 @@ describe("Mac audio local bridge", () => {
     expect(res.body).not.toContain("private");
     expect(test.sockets[1].terminate).toHaveBeenCalled();
     expect(test.helper.kill).toHaveBeenCalled();
+    expect(test.diagnostic).toHaveBeenLastCalledWith(expect.objectContaining({ type: "mac_audio.stopped", reason: "microphone_upstream_error" }));
+    expect(JSON.stringify(test.diagnostic.mock.calls)).not.toContain("sk-sensitive");
   });
   it("stops instead of building an unbounded audio queue", async () => {
     const test = setup(); const res = await test.run(); test.ready();
@@ -120,6 +123,26 @@ describe("Mac audio local bridge", () => {
     test.helper.line({ type: "audio", source: "microphone", audio: "AAAAAA==" });
     expect(res.body).toContain("fell behind");
     expect(test.helper.kill).toHaveBeenCalled();
+  });
+  it("keeps running when the audio timer is consistently two milliseconds late", async () => {
+    let pump: () => void = () => {};
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    vi.spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void, ms: number) => {
+      if (ms === 100) pump = callback;
+      return {} as ReturnType<typeof setInterval>;
+    }) as typeof setInterval);
+    const test = setup(); const res = await test.run(); test.ready();
+    test.helper.line({ type: "ready" });
+    const pcm = Buffer.alloc(480, 1).toString("base64");
+    for (clock = 2; clock <= 180_000; clock += 2) {
+      if (clock % 10 === 0) test.helper.line({ type: "audio", source: "microphone", audio: pcm });
+      if (clock % 102 === 0) pump();
+    }
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    expect(res.body).not.toContain('"type":"error"');
+    const packets = test.sockets[0].send.mock.calls.filter(([message]) => JSON.parse(message).type === "input_audio_buffer.append");
+    expect(packets.length).toBeGreaterThanOrEqual(1799);
   });
   it("fails invalid selection before opening sockets", async () => {
     const test = setup();

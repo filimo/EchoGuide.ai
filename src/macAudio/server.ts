@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import WebSocket from "ws";
@@ -61,12 +62,13 @@ export type MacAudioServerDependencies = {
   spawnHelper?: (args: string[]) => ChildProcessWithoutNullStreams;
   connectSocket?: (key: string) => WebSocket;
   readEnv?: () => string;
+  diagnostic?: (event: Record<string, string | number>) => void;
 };
 
 export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) {
   const children = new Set<ChildProcessWithoutNullStreams>();
   let active = false;
-  let stopActive: (() => void) | undefined;
+  let stopActive: ((reason?: string) => void) | undefined;
   const spawnHelper = deps.spawnHelper ?? ((args) => spawn(resolve(helperPath), args, {
     // The native helper needs no API credentials and opens no network port.
     env: { PATH: "/usr/bin:/bin", HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
@@ -145,6 +147,25 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     const ready = new Set<MacAudioSource>();
     const frames = new Map<MacAudioSource, { chunks: number; lastLevel: number }>();
     const audioQueues = new Map<MacAudioSource, Buffer>(sources.map(source => [source, Buffer.alloc(0)]));
+    const sessionId = randomUUID();
+    const startedAt = performance.now();
+    const diagnostic = (type: string, reason = "") => {
+      const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, sessionId, reason,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        microphoneQueueBytes: audioQueues.get("microphone")?.length ?? 0,
+        applicationQueueBytes: audioQueues.get("application")?.length ?? 0,
+        microphoneChunks: frames.get("microphone")?.chunks ?? 0,
+        applicationChunks: frames.get("application")?.chunks ?? 0 };
+      try {
+        if (deps.diagnostic) deps.diagnostic(event);
+        else {
+          const directory = resolve(".echoguide/diagnostics");
+          mkdirSync(directory, { recursive: true });
+          appendFileSync(resolve(directory, `realtime-${event.storedAt.slice(0, 10)}.jsonl`), `${JSON.stringify(event)}\n`);
+        }
+      } catch { /* Diagnostics must not interrupt live audio. */ }
+    };
+    diagnostic("mac_audio.started");
     let captureEpoch = 0;
     let audioPump: ReturnType<typeof setInterval> | undefined;
     const turns = new Map<string, number>();
@@ -153,9 +174,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     let stopped = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
-    const stop = () => {
+    const stop = (reason = "client_disconnected") => {
       if (stopped) return;
       stopped = true;
+      diagnostic("mac_audio.stopped", reason);
       clearTimeout(timeout);
       clearInterval(heartbeat);
       clearInterval(audioPump);
@@ -169,19 +191,23 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     stopActive = stop;
     const send = (event: MacAudioEvent | { type: "heartbeat" }) => {
       if (stopped || res.destroyed) return;
-      if (!res.write(`${JSON.stringify(event)}\n`)) stop();
+      if (!res.write(`${JSON.stringify(event)}\n`)) stop("browser_backpressure");
     };
-    const fail = (message: string) => { send({ type: "error", message }); stop(); };
-    res.on("close", stop);
-    timeout = setTimeout(() => fail("Mac audio startup timed out. Check capture permissions and try again."), 90_000);
-    heartbeat = setInterval(() => send({ type: "heartbeat" }), 5000);
+    const fail = (message: string, reason = "capture_error") => { send({ type: "error", message }); stop(reason); };
+    res.on("close", () => stop());
+    timeout = setTimeout(() => fail("Mac audio startup timed out. Check capture permissions and try again.", "startup_timeout"), 90_000);
+    let heartbeats = 0;
+    heartbeat = setInterval(() => {
+      send({ type: "heartbeat" });
+      if (!stopped && ++heartbeats % 2 === 0) diagnostic("mac_audio.stats");
+    }, 5000);
 
     function startCapture() {
       if (stopped || helper || ready.size !== 2) return;
       helper = child(["--capture", String(options.pid), String(options.microphone)]);
       let buffer = "";
       helper.on("error", () => fail("Could not launch EchoGuide Audio. Rebuild the helper."));
-      helper.on("close", () => { if (!stopped) fail("Mac audio capture stopped. Check permissions and restart live mode."); });
+      helper.on("close", () => { if (!stopped) fail("Mac audio capture stopped. Check permissions and restart live mode.", "native_closed"); });
       helper.stdout.on("data", (chunk) => {
         if (stopped) return;
         buffer += chunk.toString();
@@ -192,25 +218,37 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           buffer = buffer.slice(end + 1);
           try {
             const event = JSON.parse(line);
-            if (event.type === "error") { fail(String(event.message).slice(0, 300)); break; }
+            if (event.type === "error") { fail(String(event.message).slice(0, 300), "native_error"); break; }
             if (event.type === "ready") {
               if (audioPump) continue;
               clearTimeout(timeout);
               captureEpoch = Date.now();
+              const pumpStartedAt = performance.now();
+              let sentFrames = 0;
+              diagnostic("mac_audio.ready");
               // Clock both streams together, including silence when an app emits no buffers.
               // This lets VAD finish a turn even when playback stops abruptly.
               audioPump = setInterval(() => {
-                for (const source of sources) {
-                  if (stopped) return;
-                  const socket = sockets.get(source)!;
-                  if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
-                    fail("Audio delivery fell behind. Stop and restart live mode."); return;
+                // Timer callbacks can be late. Drain the elapsed audio duration rather than
+                // one fixed frame per callback, otherwise a small delay accumulates forever.
+                const dueFrames = Math.floor((performance.now() - pumpStartedAt) / 100) - sentFrames;
+                if (dueFrames > 10) {
+                  fail("Audio processing paused for too long. Restart live mode.", "audio_clock_stalled"); return;
+                }
+                for (let frame = 0; frame < dueFrames; frame++) {
+                  sentFrames += 1;
+                  for (const source of sources) {
+                    if (stopped) return;
+                    const socket = sockets.get(source)!;
+                    if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
+                      fail("Audio delivery fell behind. Stop and restart live mode.", "upstream_backpressure"); return;
+                    }
+                    const queue = audioQueues.get(source)!;
+                    const pcm = Buffer.alloc(4800);
+                    queue.copy(pcm, 0, 0, Math.min(queue.length, pcm.length));
+                    audioQueues.set(source, queue.subarray(Math.min(queue.length, pcm.length)));
+                    socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm.toString("base64") }));
                   }
-                  const queue = audioQueues.get(source)!;
-                  const pcm = Buffer.alloc(4800);
-                  queue.copy(pcm, 0, 0, Math.min(queue.length, pcm.length));
-                  audioQueues.set(source, queue.subarray(Math.min(queue.length, pcm.length)));
-                  socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm.toString("base64") }));
                 }
               }, 100);
               send({ type: "ready" }); continue;
@@ -218,7 +256,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             if (event.type !== "audio" || !isMacAudioSource(event.source) || typeof event.audio !== "string") continue;
             const socket = sockets.get(event.source)!;
             if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
-              fail("Audio delivery fell behind. Stop and restart live mode."); break;
+              fail("Audio delivery fell behind. Stop and restart live mode.", "upstream_backpressure"); break;
             }
             const pcm = Buffer.from(event.audio, "base64");
             if (pcm.length === 0 || pcm.length % 2 !== 0 || pcm.length > 192_000) throw new Error("Invalid PCM");
@@ -227,7 +265,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             stats.chunks += 1;
             frames.set(event.source, stats);
             const queued = audioQueues.get(event.source)!;
-            if (queued.length + pcm.length > 48_000) { fail("Native audio delivery fell behind. Restart live mode."); break; }
+            if (queued.length + pcm.length > 48_000) { fail("Native audio delivery fell behind. Restart live mode.", "native_queue_overflow"); break; }
             audioQueues.set(event.source, Buffer.concat([queued, pcm]));
             if (now - stats.lastLevel >= 500) {
               stats.lastLevel = now;
@@ -248,7 +286,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         const socket = connectSocket(key);
         sockets.set(source, socket);
         socket.on("error", () => fail(`Could not connect ${source} transcription to OpenAI.`));
-        socket.on("close", () => { if (!stopped) fail(`${source} transcription disconnected. Restart live mode.`); });
+        socket.on("close", () => { if (!stopped) fail(`${source} transcription disconnected. Restart live mode.`, `${source}_upstream_closed`); });
         socket.on("open", () => {
           if (stopped) return;
           socket.send(JSON.stringify({ type: "session.update", session: {
@@ -260,7 +298,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           try {
             const event = JSON.parse(String(data));
             if (event.type === "error" || event.type === "conversation.item.input_audio_transcription.failed") {
-              fail(`${source} transcription failed. Check the transcription model and API access.`); return;
+              fail(`${source} transcription failed. Check the transcription model and API access.`, `${source}_upstream_error`); return;
             }
             if (event.type === "session.updated") { ready.add(source); startCapture(); }
             const itemKey = `${source}:${event.item_id}`;
@@ -284,7 +322,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
   }
   return {
     middleware,
-    dispose() { stopActive?.(); for (const process of children) process.kill(); }
+    dispose() { stopActive?.("server_closed"); for (const process of children) process.kill(); }
   };
 }
 
