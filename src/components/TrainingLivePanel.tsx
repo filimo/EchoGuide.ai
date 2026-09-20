@@ -1,4 +1,4 @@
-import { MeetingAssistant } from "./MeetingAssistant";
+import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
@@ -516,6 +516,7 @@ export function TrainingLivePanel({
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
   const [meetingMode, setMeetingMode] = useState(false);
+  const [meetingSelection, setMeetingSelection] = useState<MeetingSelection | null>(null);
   const meetingModeRef = useRef(false);
   meetingModeRef.current = meetingMode;
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
@@ -2285,6 +2286,7 @@ export function TrainingLivePanel({
     setFastTranslations({});
     setPendingTranslationIds(new Set());
     setSelectedPhraseCardId(null);
+    setMeetingSelection(null);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
     setTranscriptEditor(null);
@@ -2323,6 +2325,7 @@ export function TrainingLivePanel({
     setFastTranslations({});
     setPendingTranslationIds(new Set());
     setSelectedPhraseCardId(lastCardId);
+    setMeetingSelection(null);
     setTranscriptSelectionMode(false);
     setSelectedTranscriptTurnIds(new Set());
     setTranscriptEditor(null);
@@ -2404,6 +2407,7 @@ export function TrainingLivePanel({
         <label className="meeting-mode-toggle"><input type="checkbox" checked={meetingMode} onChange={event => {
           meetingModeRef.current = event.target.checked;
           setMeetingMode(event.target.checked);
+          setMeetingSelection(null);
           phraseAnalysisRevisionRef.current.clear();
           setPendingAnalysisIds(new Set());
           setAnalysisStatus("idle");
@@ -2978,6 +2982,13 @@ export function TrainingLivePanel({
                       }
 
                       setFollowLiveMode(false);
+                      if (meetingMode) {
+                        setMeetingSelection(current => current?.id === turn.id ? current : {
+                          id: turn.id, text: turn.text, speaker: turn.speakerLabel,
+                          context: transcriptTurns.slice(0, transcriptTurns.findIndex(item => item.id === turn.id))
+                            .slice(-7).map(item => `${item.speakerLabel}: ${item.text.slice(0, 1800)}`)
+                        });
+                      }
                       setSelectedPhraseCardId(turn.id);
                       setSelectedReplyIndex(
                         resolveSelectedReplyIndex(turn.id, phraseCards, selectedReplies)
@@ -3045,7 +3056,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant turns={transcriptTurns} quickStart={generateQuickStart} /> : <>
+          {meetingMode ? <MeetingAssistant selection={meetingSelection} quickStart={generateQuickStart} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>

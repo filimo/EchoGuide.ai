@@ -9,6 +9,11 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Meeting help now starts only when a transcript turn is selected. New speech
+  no longer clears or regenerates the pinned answer. The opening remains in
+  place while the continuation loads below it. Repeated selection is a no-op.
+
+
 - Meeting material uploads now accept same-origin HTTP/2 requests from the
   local HTTPS app; foreign origins remain rejected.
 

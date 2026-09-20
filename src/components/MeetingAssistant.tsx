@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import type { SessionHistoryTranscriptTurn } from "../domain/sessionHistory";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { meetingRequest } from "../meeting/client";
 import { meetingFallback, type MeetingAnswer, type MeetingPackState, type MeetingDocument } from "../meeting/types";
 
+export type MeetingSelection = { id: string; text: string; speaker: string; context: string[] };
 type Props = {
-  turns: SessionHistoryTranscriptTurn[];
+  selection: MeetingSelection | null;
   quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
-export function MeetingAssistant({ turns, quickStart }: Props) {
+export function MeetingAssistant({ selection, quickStart }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
-  const [enabled, setEnabled] = useState(false);
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
   const [busy, setBusy] = useState(false);
@@ -20,7 +19,6 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
   const [answer, setAnswer] = useState<MeetingAnswer | null>(null);
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState("");
-  const [retry, setRetry] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const mounted = useRef(true);
   const request = useRef<AbortController | null>(null);
@@ -30,8 +28,7 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const quickRef = useRef(quickStart); quickRef.current = quickStart;
   const active = state.packs.find(p => p.id === state.activePackId && p.status === "ready");
-  const recentTurns = turns.slice(-8);
-  const dialogue = JSON.stringify(recentTurns.map(t => ({ id: t.id, text: t.text, speaker: t.speakerLabel })));
+  const selected = JSON.stringify(selection);
 
   useEffect(() => {
     mounted.current = true;
@@ -56,7 +53,7 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
   }, []);
 
   function stop() {
-    request.current?.abort(); generation.current++; setEnabled(false); setProgress("");
+    request.current?.abort(); generation.current++; setProgress("");
   }
   async function mutate(path: string, body: unknown) {
     stateRevision.current++; setBusy(true); setError("");
@@ -77,15 +74,13 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
   useEffect(() => {
     request.current?.abort();
     const revision = ++generation.current;
-    if (!enabled || !active) { setProgress(""); return; }
-    const history = JSON.parse(dialogue) as { id: string; text: string; speaker: string }[];
-    const last = history.at(-1);
-    if (!last?.text.trim() || last.speaker === "Me") { setProgress(""); return; }
+    if (!active || !selection) { setProgress(""); setOpening(null); setAnswer(null); setQuestion(""); return; }
+    const last = JSON.parse(selected) as MeetingSelection;
     const controller = new AbortController(); request.current = controller;
     const current = () => mounted.current && !controller.signal.aborted && generation.current === revision;
     const timer = setTimeout(() => {
       const transcript = last.text.slice(0, 4000);
-      const context = history.slice(0, -1).map(t => `${t.speaker}: ${t.text.slice(0, 1800)}`);
+      const context = last.context;
       setQuestion(transcript); setOpening(null); setAnswer(null); setProgress("Готовлю начало и ищу основания…");
       const started = performance.now();
       const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript, recentContext: context }, controller.signal)
@@ -95,8 +90,8 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
       void (async () => {
         const firstPiece = await first;
         if (!current()) return;
-        if (firstPiece?.mode === "wait") { setProgress("Пока ответ не требуется."); return; }
-        if (isQuickStart(firstPiece)) {
+        // An explicit selection always requests an answer, even without an opening.
+        if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
           setOpening(firstPiece);
           if (firstPiece.mode === "clarify") { setProgress("Уточни вопрос перед ответом."); return; }
         }
@@ -107,7 +102,7 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
         try {
           const result = await meetingRequest<MeetingAnswer>("answer", {
             packId: active.id, ticket: found.value.ticket,
-            ...(isQuickStart(firstPiece) ? { opening: firstPiece } : {})
+            ...(isQuickStart(firstPiece) && firstPiece.mode !== "wait" ? { opening: firstPiece } : {})
           }, controller.signal);
           if (!current()) return;
           setAnswer(result);
@@ -117,9 +112,9 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
           if (current()) { setAnswer({ ...meetingFallback }); setProgress("Не удалось подготовить ответ. Можно повторить."); }
         }
       })();
-    }, 700);
+    }, 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [enabled, active?.id, dialogue, retry]);
+  }, [active?.id, selected]);
 
   return <div className="meeting-assistant">
     <h2>Помощник на встрече</h2>
@@ -156,10 +151,7 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
       {active && <button type="button" disabled={busy} onClick={() => void activate(null)}>Убрать активный набор</button>}
     </details>
     {error && <p role="alert" className="error-text">{error}</p>}
-    <label className="meeting-mode-toggle"><input type="checkbox" checked={enabled} disabled={!active || busy} onChange={e => {
-      if (e.target.checked) { setEnabled(true); setError(""); } else stop();
-    }} />Вопросы ко мне</label>
-    <p className="hint">{enabled ? "Начало и поиск запускаются автоматически. Выключи, когда разговор перейдёт к другим." : "Включи, когда обращаются к тебе. Учтём и последний прозвучавший вопрос."}</p>
+    <p className="hint">Нажми нужную реплику в разговоре. Ответ останется на экране, пока ты не выберешь другую.</p>
     {question && <p className="meeting-question">{question}</p>}
     <p role="status">{progress}</p>
     {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><p lang="en">{opening.english}</p><p lang="ru">{opening.russian}</p></section>}
@@ -171,6 +163,5 @@ export function MeetingAssistant({ turns, quickStart }: Props) {
         <pre>{source.text}</pre>
       </div>)}</details>}
     </section>}
-    {enabled && question && <button type="button" onClick={() => setRetry(n => n+1)}>Повторить поиск</button>}
   </div>;
 }

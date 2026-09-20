@@ -1,3 +1,5 @@
+import { meetingRequest } from "../meeting/client";
+vi.mock("../meeting/client", () => ({ meetingRequest: vi.fn() }));
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
@@ -139,6 +141,26 @@ describe("Training Live Panel", () => {
     });
     return { say, analyzePhrase, generateQuickStart, history };
   }
+
+  it("pins meeting help to a clicked phrase while new Heard turns arrive", async () => {
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
+      activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-20", filenames: ["x.md"], sectionCount: 1 }]
+    } : path === "search" ? { ticket: "t", found: 1 } : {
+      status: "grounded", english: "Pinned response", russian: "Ответ", sources: []
+    });
+    const { say, generateQuickStart, analyzePhrase } = await setupQuickStart();
+    await userEvent.click(screen.getByLabelText("Режим встречи с материалами"));
+    await say("Why this database?");
+    expect(generateQuickStart).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Heard Why this database?" }));
+    await screen.findByText("Pinned response");
+    await say("I chose it because of our queries.");
+    await say("It supports our workload.");
+    await userEvent.click(screen.getByRole("button", { name: "Heard Why this database?" }));
+    expect(generateQuickStart).toHaveBeenCalledTimes(1);
+    expect(analyzePhrase).not.toHaveBeenCalled();
+    expect(screen.getByText("Pinned response")).toBeInTheDocument();
+  });
 
   it("shows a contextual opening before the full card, keeps it stable and saves it with the card", async () => {
     let finish: (value: BilingualPhraseAnalysis) => void = () => {};

@@ -2,11 +2,13 @@
 
 In Training Mode, enable «Режим встречи с материалами». Upload a named pack
 of 1–20 Markdown files (2 MB total, up to 160 sections). Wait for Ready and
-explicitly select the pack. Turn on «Вопросы ко мне» when questions are directed
-to you; it also processes the last utterance before activation. Turn it off
-when the discussion moves to others. No speaker recognition is assumed.
+explicitly select the pack. Click a transcript turn to request help. Its text
+and preceding context are captured at selection time. New speech and repeated
+clicks on the same turn do not regenerate the card. Selecting another turn
+cancels the old request; late results cannot replace the selected answer.
+Changing sessions or leaving meeting mode clears the selection.
 
-The opening and retrieval start concurrently after a 700 ms debounce. The
+The opening and retrieval start concurrently on selection. The
 opening stays visible; one English continuation and Russian meaning appear
 below, with expandable source sections. Missing/conflicting evidence or API
 errors produce a polite request for time to check details.
