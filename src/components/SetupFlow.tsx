@@ -29,6 +29,7 @@ export function SetupFlow(props: SetupFlowProps) {
       <section className="setup-panel">
         <p className="eyebrow">iPad companion mode</p>
         <h1>EchoGuide</h1>
+        <p><a href="/mac-audio">Попробовать на MacBook: микрофон + звук звонка</a></p>
         <p className="lead">
           Открой EchoGuide на iPad, поставь iPad рядом с MacBook и разреши microphone.
         </p>

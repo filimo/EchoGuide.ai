@@ -49,7 +49,7 @@ export default function App({ requestMicrophone = (deviceId: string) => requestM
   );
   const [sourceLabel, setSourceLabel] = useState(setupMemory.sourceLabel);
   const [mode, setMode] = useState<"setup" | "live">(
-    setupMemory.onboardingCompleted ? "live" : "setup"
+    setupMemory.onboardingCompleted || window.location.pathname === "/mac-audio" ? "live" : "setup"
   );
   const [microphoneDeviceId, setMicrophoneDeviceId] = useState(() => {
     try { return localStorage.getItem("echoguide.microphone") || "default"; }
@@ -189,6 +189,7 @@ export default function App({ requestMicrophone = (deviceId: string) => requestM
   if (mode === "live") {
     return (
       <TrainingLivePanel
+        initialAudioMode={window.location.pathname === "/mac-audio" ? "mac" : "microphone"}
         stream={microphoneStream}
         microphoneDeviceId={microphoneDeviceId}
         onMicrophoneDeviceChange={selectMicrophone}
@@ -196,7 +197,7 @@ export default function App({ requestMicrophone = (deviceId: string) => requestM
         microphoneError={errorMessage}
         notes={session.knowledge.notes}
         sourceLabel={sourceLabel}
-        autoOpenLatestSession={setupMemory.onboardingCompleted && microphoneStream == null}
+        autoOpenLatestSession={setupMemory.onboardingCompleted && microphoneStream == null && window.location.pathname !== "/mac-audio"}
         onNotesChange={handleNotesChange}
         onRequestMicrophone={handleRequestMicrophone}
         onStopMicrophone={handleStopMicrophone}

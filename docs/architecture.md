@@ -216,3 +216,11 @@ The opt-in local meeting mode uses Markdown packs and explicit retrieval.
 See [Meeting assistant](meeting-assistant.md) for the implemented request path,
 pack lifecycle, privacy boundaries and validation. The existing training flow
 remains available when meeting mode is off.
+
+## MacBook audio extension
+
+`src/macAudio/server.ts` installs a development-only, loopback-restricted capture
+bridge. The native Swift helper emits two PCM sources through a private pipe;
+Node forwards them to independent transcription WebSockets and streams labeled
+events to `TrainingLivePanel`. See [Mac audio](mac-audio.md) for lifecycle,
+security boundaries, limitations and checks.

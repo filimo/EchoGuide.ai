@@ -9,6 +9,8 @@ export type SessionHistoryTranscriptTurn = {
   text: string;
   source?: "realtime" | "manual";
   originalText?: string;
+  audioSource?: "microphone" | "application";
+  capturedAt?: number;
 };
 
 export type SessionHistoryPhraseCard = {
@@ -131,7 +133,9 @@ function isTranscriptTurn(value: unknown): value is SessionHistoryTranscriptTurn
     (candidate.source == null ||
       candidate.source === "realtime" ||
       candidate.source === "manual") &&
-    (candidate.originalText == null || isString(candidate.originalText))
+    (candidate.originalText == null || isString(candidate.originalText)) &&
+    (candidate.audioSource == null || candidate.audioSource === "microphone" || candidate.audioSource === "application") &&
+    (candidate.capturedAt == null || (typeof candidate.capturedAt === "number" && Number.isFinite(candidate.capturedAt)))
   );
 }
 

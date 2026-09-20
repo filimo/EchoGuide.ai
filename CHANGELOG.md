@@ -1,5 +1,11 @@
 # Changelog
 
+## MacBook audio prototype — 2026-09-20
+
+- Add `/mac-audio` with separate microphone and application capture on macOS 15+.
+- Keep source-based speaker roles, per-turn translations and existing reply cards.
+- Add native build/self-test, a synthetic two-session API check, and a [setup guide](docs/mac-audio.md).
+
 This file highlights notable user-facing changes to EchoGuide.
 
 EchoGuide is still an early prototype and does not publish tagged releases yet.

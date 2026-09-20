@@ -1,3 +1,6 @@
+import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
+import { connectMacAudio } from "../macAudio/client";
+import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
 import { MicrophonePicker } from "./MicrophonePicker";
 import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -121,11 +124,13 @@ const loudSpeechPeakThreshold = 0.05;
 const transcriptSpeakerLabels: SessionSpeakerLabel[] = ["Heard", "Interviewer", "Me"];
 
 type TrainingLivePanelProps = {
+  initialAudioMode?: "microphone" | "mac";
   stream: MediaStream | null;
   notes: string;
   sourceLabel?: string;
   requestClientSecret?: (mode: RealtimeLabMode) => Promise<RealtimeClientSecret>;
   connectRealtime?: typeof connectRealtimeTranscription;
+  connectMacAudioClient?: typeof connectMacAudio;
   requestTranslationClientSecret?: () => Promise<RealtimeTranslationClientSecret>;
   connectTranslation?: typeof connectRealtimeTranslation;
   createRecoveryAudioRecorder?: typeof createBrowserRecoveryAudioRecorder;
@@ -503,6 +508,8 @@ export function TrainingLivePanel({
   sourceLabel = "",
   requestClientSecret = requestDefaultClientSecret,
   connectRealtime = connectRealtimeTranscription,
+  connectMacAudioClient = connectMacAudio,
+  initialAudioMode = "microphone",
   requestTranslationClientSecret = requestDefaultTranslationClientSecret,
   connectTranslation = connectRealtimeTranslation,
   createRecoveryAudioRecorder = createBrowserRecoveryAudioRecorder,
@@ -524,6 +531,17 @@ export function TrainingLivePanel({
   onNotesChange,
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
+  const [audioMode, setAudioMode] = useState<"microphone" | "mac">(initialAudioMode);
+  const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
+  const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; chunks: number; seenAt: number }>>>({});
+  const [macClock, setMacClock] = useState(Date.now());
+  const macAbortRef = useRef<AbortController | null>(null);
+  const lastOwnSpeechAtRef = useRef(0);
+  useEffect(() => {
+    if (audioMode !== "mac") return;
+    const timer = window.setInterval(() => setMacClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [audioMode]);
   const [meetingMode, setMeetingMode] = useState(false);
   const [meetingSelection, setMeetingSelection] = useState<MeetingSelection | null>(null);
   const meetingModeRef = useRef(false);
@@ -859,6 +877,7 @@ export function TrainingLivePanel({
       phraseAnalysisRevisionRef.current.clear();
       quickStartControllersRef.current.forEach((controller) => controller.abort());
       quickStartControllersRef.current.clear();
+      macAbortRef.current?.abort();
       connectionRef.current?.disconnect();
       translationConnectionRef.current?.disconnect();
       recoveryAudioRecorderRef.current?.stop();
@@ -1225,7 +1244,9 @@ export function TrainingLivePanel({
     quickStartControllersRef.current.set(phraseId, controller);
     setQuickStarts((current) => ({ ...current, [phraseId]: { status: "loading" } }));
     const timeout = window.setTimeout(() => controller.abort(), quickStartTimeoutMs + 250);
-    const speakerLabel = transcriptTurnsRef.current.find((turn) => turn.id === phraseId)?.speakerLabel ?? "Heard";
+    const sourceTurn = transcriptTurnsRef.current.find((turn) => turn.id === phraseId);
+    const speakerLabel = sourceTurn?.speakerLabel ?? "Heard";
+    const analysisTranscript = sourceTurn?.audioSource ? `${speakerLabel}: ${transcript}` : transcript;
     let onAbort: () => void = () => {};
     let opening: QuickStart | null = null;
     try {
@@ -1250,9 +1271,9 @@ export function TrainingLivePanel({
       ...(usable ? { value: usable } : {})
     } }));
     const result = usable
-      ? await analyzePhrase(transcript, notes, recentContext, hint, usable)
-      : hint ? await analyzePhrase(transcript, notes, recentContext, hint)
-        : await analyzePhrase(transcript, notes, recentContext);
+      ? await analyzePhrase(analysisTranscript, notes, recentContext, hint, usable)
+      : hint ? await analyzePhrase(analysisTranscript, notes, recentContext, hint)
+        : await analyzePhrase(analysisTranscript, notes, recentContext);
     return { ...result, ...(usable ? { quickStart: usable } : {}) };
   }
 
@@ -1411,7 +1432,16 @@ export function TrainingLivePanel({
     );
   }
 
-  function handleRealtimeEvent(event: RealtimeServerEvent) {
+  function handleRealtimeEvent(event: RealtimeServerEvent, audioSource?: MacAudioSource, capturedAt?: number) {
+    if (audioSource === "microphone" && event.type === "input_audio_buffer.speech_started") {
+      lastOwnSpeechAtRef.current = capturedAt ?? Date.now();
+      cancelPendingAutomaticAnalysis();
+      phraseAnalysisRevisionRef.current.clear();
+      resetQuickStarts();
+      setPendingAnalysisIds(new Set());
+      setAnalysisStatus("idle");
+      if (followLiveRef.current) setSelectedPhraseCardId(null);
+    }
     recordDiagnostic("realtime.server_event", { eventType: event.type });
 
     if (event.type === "session.created" || event.type === "session.updated") {
@@ -1506,8 +1536,11 @@ export function TrainingLivePanel({
     ) {
       setRecoverySuggested(false);
       const completedTranscript = event.transcript.trim();
+      if (audioSource === "microphone") lastOwnSpeechAtRef.current = Math.max(lastOwnSpeechAtRef.current, capturedAt ?? Date.now());
       const phraseId = `training-phrase-${phraseCardSequence.current}`;
-      const shouldShowAnalysis = followLiveRef.current;
+      const shouldAnalyze = audioSource !== "microphone" &&
+        (audioSource == null || (capturedAt ?? Date.now()) > lastOwnSpeechAtRef.current);
+      const shouldShowAnalysis = followLiveRef.current && shouldAnalyze;
 
       if (isObviousTranscriptNoise(completedTranscript)) {
         setLiveTranscriptDraft("");
@@ -1518,11 +1551,14 @@ export function TrainingLivePanel({
         phraseCardSequence.current += 1;
         const nextTurn = {
           id: phraseId,
-          speakerLabel: "Heard" as const,
+          speakerLabel: audioSource ? sourceSpeaker(audioSource) : "Heard" as const,
           text: completedTranscript,
-          source: "realtime" as const
+          source: "realtime" as const,
+          ...(audioSource ? { audioSource, capturedAt: capturedAt ?? Date.now() } : {})
         };
-        const nextTranscriptTurns = [...transcriptTurnsRef.current, nextTurn].slice(-50);
+        const nextTranscriptTurns = [...transcriptTurnsRef.current, nextTurn];
+        if (audioSource) nextTranscriptTurns.sort((a, b) => (a.capturedAt ?? 0) - (b.capturedAt ?? 0));
+        if (nextTranscriptTurns.length > 50) nextTranscriptTurns.splice(0, nextTranscriptTurns.length - 50);
         transcriptTurnsRef.current = nextTranscriptTurns;
         setTranscriptTurns(nextTranscriptTurns);
         if (shouldShowAnalysis) {
@@ -1532,7 +1568,7 @@ export function TrainingLivePanel({
       setLiveTranscriptDraft("");
       if (completedTranscript.length > 0) {
         void translateCompletedTranscript(completedTranscript, phraseId);
-        scheduleAutomaticAnalysis(completedTranscript, phraseId, shouldShowAnalysis);
+        if (shouldAnalyze) scheduleAutomaticAnalysis(completedTranscript, phraseId, shouldShowAnalysis);
       }
     }
   }
@@ -1632,7 +1668,52 @@ export function TrainingLivePanel({
     releaseStreamingTranslation("disconnected");
   }
 
+  async function handleStartMacAudio() {
+    if (!macSelection || macAbortRef.current || connectionRef.current) return;
+    const controller = new AbortController();
+    macAbortRef.current = controller;
+    onStopMicrophone?.();
+    activeStreamRef.current = null;
+    lastOwnSpeechAtRef.current = 0;
+    setFollowLiveMode(true);
+    setMacLevels({});
+    setErrorMessage("");
+    realtimeStatusRef.current = "connecting";
+    setRealtimeStatus("connecting");
+    try {
+      const transport = await connectMacAudioClient({
+        ...macSelection, language: speechLanguage, signal: controller.signal,
+        onEvent: event => {
+          if (controller.signal.aborted || macAbortRef.current !== controller) return;
+          if (event.type === "realtime") handleRealtimeEvent(event.event, event.source, event.capturedAt);
+          if (event.type === "level") setMacLevels(current => ({ ...current,
+            [event.source]: { level: event.level, chunks: event.chunks, seenAt: Date.now() }
+          }));
+        },
+        onError: message => {
+          if (controller.signal.aborted || macAbortRef.current !== controller) return;
+          cancelPendingAutomaticAnalysis();
+          releaseLiveTransport("error");
+          setErrorMessage(message);
+        }
+      });
+      if (controller.signal.aborted || macAbortRef.current !== controller) { transport.disconnect(); return; }
+      connectionRef.current = transport;
+      setConnection(transport);
+      realtimeStatusRef.current = "connected";
+      setRealtimeStatus("connected");
+    } catch (error) {
+      if (controller.signal.aborted || macAbortRef.current !== controller) return;
+      macAbortRef.current = null;
+      controller.abort();
+      realtimeStatusRef.current = "error";
+      setRealtimeStatus("error");
+      setErrorMessage(toErrorMessage(error));
+    }
+  }
+
   async function handleStartLive() {
+    if (audioMode === "mac") return handleStartMacAudio();
     if (connectionRef.current != null || realtimeStatus === "connecting") {
       return;
     }
@@ -1739,6 +1820,9 @@ export function TrainingLivePanel({
   }
 
   function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
+    macAbortRef.current?.abort();
+    macAbortRef.current = null;
+    setMacLevels({});
     flushPendingAutomaticAnalysis();
     quickStartControllersRef.current.forEach((controller) => controller.abort());
     const liveConnection = connectionRef.current;
@@ -2277,6 +2361,7 @@ export function TrainingLivePanel({
   }
 
   function handleNewSession() {
+    if (macAbortRef.current) { cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected"); }
     resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     currentSessionIdRef.current = null;
@@ -2310,6 +2395,7 @@ export function TrainingLivePanel({
   }
 
   function handleOpenSavedSession(session: SessionHistoryEntry) {
+    if (macAbortRef.current) { cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected"); }
     resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     const normalizedSession = ensureUniqueSessionPhraseIds(session);
@@ -2425,7 +2511,7 @@ export function TrainingLivePanel({
         }} />Режим встречи с материалами</label>
         <header className="topbar">
           <div>
-            <p className="eyebrow">iPad companion mode</p>
+            <p className="eyebrow">{audioMode === "mac" ? "MacBook companion mode" : "iPad companion mode"}</p>
             <h1>Training Mode</h1>
           </div>
           <div className="topbar-actions">
@@ -2433,7 +2519,7 @@ export function TrainingLivePanel({
             {connection == null ? (
               <button
                 type="button"
-                disabled={microphoneRequesting || realtimeStatus === "connecting" || (stream == null && onRequestMicrophone == null)}
+                disabled={microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
                 onClick={handleStartLive}
               >
                 {realtimeStatus === "connecting" ? "Starting live..." : "Start live"}
@@ -2442,7 +2528,7 @@ export function TrainingLivePanel({
               <>
                 <button
                   type="button"
-                  disabled={recoveryButtonDisabled}
+                  disabled={audioMode === "mac" || recoveryButtonDisabled}
                   onClick={() =>
                     void (recoveryCanRecover
                       ? handleRecoverPhrases()
@@ -2456,6 +2542,8 @@ export function TrainingLivePanel({
                 </button>
               </>
             )}
+            {audioMode === "mac" && realtimeStatus === "connecting" &&
+              <button type="button" onClick={handleStopLive}>Cancel start</button>}
             <button type="button" onClick={handleNewSession}>
               New session
             </button>
@@ -2471,18 +2559,35 @@ export function TrainingLivePanel({
           </div>
         </header>
 
-        {microphoneError && <p role="alert">{microphoneError}</p>}
+        <label className="audio-source-mode">Audio source <select aria-label="Audio source"
+          value={audioMode} disabled={connection != null || realtimeStatus === "connecting"}
+          onChange={event => { setAudioMode(event.target.value as "microphone" | "mac"); setErrorMessage(""); }}>
+          <option value="microphone">Microphone / iPad</option>
+          <option value="mac">MacBook: microphone + call application</option>
+        </select></label>
+        {audioMode === "mac" && <MacAudioControls disabled={connection != null || realtimeStatus === "connecting"}
+          selection={macSelection} onChange={setMacSelection} />}
+        {audioMode !== "mac" && microphoneError && <p role="alert">{microphoneError}</p>}
         <section className="training-status-row" aria-label="Training Mode status">
-            {onMicrophoneDeviceChange && <MicrophonePicker
+            {audioMode !== "mac" && onMicrophoneDeviceChange && <MicrophonePicker
               value={microphoneDeviceId}
               onChange={onMicrophoneDeviceChange}
               disabled={microphoneRequesting || stream != null || realtimeStatus === "connecting"}
               stream={stream}
             />}
-          <span className={`status status-${stream == null ? "idle" : "active"}`}>
+          {audioMode !== "mac" && <span className={`status status-${stream == null ? "idle" : "active"}`}>
             Microphone: {stream == null ? "not connected" : stream.getAudioTracks()[0]?.label || "active"}
-          </span>
+          </span>}
           <span className={`status status-${realtimeStatus}`}>Realtime: {realtimeStatus}</span>
+          {audioMode === "mac" && (["microphone", "application"] as const).map(source => {
+            const stats = macLevels[source];
+            const fresh = stats != null && macClock - stats.seenAt < 3000;
+            const label = source === "microphone" ? "Я / microphone" : "Собеседники / application";
+            return <span className="status" key={source}>
+              {label}: {fresh ? (stats.level > 0.005 ? "звук" : "тишина") : "нет аудиоданных"}
+              <meter aria-label={label} min={0} max={1} value={fresh ? Math.min(1, stats.level * 5) : 0} />
+            </span>;
+          })}
           {recoverySuggested ? (
             <span className="status status-warning">Speech may be missing. Try recovery.</span>
           ) : null}
@@ -2498,7 +2603,7 @@ export function TrainingLivePanel({
           <span className="status">
             Notes: {notesCharacterCount > 0 ? `${notesCharacterCount} chars` : "empty"}
           </span>
-          <div
+          {audioMode !== "mac" && <div
             className="status training-audio-level"
             role="meter"
             aria-label="Microphone level"
@@ -2510,7 +2615,7 @@ export function TrainingLivePanel({
             <span className="audio-meter" aria-hidden="true">
               <span style={{ transform: `scaleX(${audioLevel})` }} />
             </span>
-          </div>
+          </div>}
         </section>
       </section>
 
@@ -2638,11 +2743,11 @@ export function TrainingLivePanel({
         </div>
       ) : null}
 
-      <TurnDetectionControls
+      {audioMode !== "mac" && <TurnDetectionControls
         settings={turnDetectionSettings}
         disabled={connection != null || realtimeStatus === "connecting"}
         onChange={handleTurnDetectionSettingsChange}
-      />
+      />}
 
       <SpeechLanguageControls
         speechLanguage={speechLanguage}
@@ -2650,7 +2755,7 @@ export function TrainingLivePanel({
         onChange={handleSpeechLanguageChange}
       />
 
-      <section
+      {audioMode !== "mac" && <section
         className="live-translation-panel"
         aria-labelledby="live-translation-title"
       >
@@ -2705,7 +2810,7 @@ export function TrainingLivePanel({
             {streamingTranslationError}
           </p>
         ) : null}
-      </section>
+      </section>}
 
       <section className="copilot-grid">
         <div ref={conversationPanelRef} className="conversation-panel">
@@ -2968,6 +3073,7 @@ export function TrainingLivePanel({
                 <article
                   className={[
                     "transcript-turn",
+                    turn.audioSource ? "transcript-turn-mac" : "",
                     turn.id === selectedPhraseCardId ? "transcript-turn-selected" : "",
                     selectedTranscriptTurnIds.has(turn.id) ? "transcript-turn-group-selected" : ""
                   ]
@@ -2982,7 +3088,9 @@ export function TrainingLivePanel({
                     title="Change speaker role"
                     onClick={() => cycleTranscriptSpeakerLabel(turn)}
                   >
-                    {getCompactSpeakerLabel(turn.speakerLabel)}
+                    {turn.audioSource && turn.speakerLabel === sourceSpeaker(turn.audioSource)
+                      ? (turn.audioSource === "microphone" ? "Я" : "Собеседники")
+                      : getCompactSpeakerLabel(turn.speakerLabel)}
                   </button>
                   <button
                     type="button"
@@ -3012,6 +3120,10 @@ export function TrainingLivePanel({
                       );
                     }}
                   >
+                    {turn.capturedAt != null && <time className="transcript-capture-time"
+                      dateTime={new Date(turn.capturedAt).toISOString()}>
+                      {new Date(turn.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </time>}
                     <p>{turn.text}</p>
                     {translationPending ? (
                       <span

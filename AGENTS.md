@@ -60,3 +60,10 @@ npm run eval:models
   Cyrillic matches as exceptions; explain retained categories in the handoff.
 - Verify the commit message is English. Report the language review alongside
   other checks. This review is mandatory even for a configuration-only commit.
+
+## Mac audio prototype
+
+- Read `docs/mac-audio.md` before changing native capture or source attribution.
+- `npm run mac-audio:build` compiles the macOS 15+ helper and runs a PCM self-test.
+- `npm run eval:mac-audio` checks two paid Realtime sessions with synthetic speech only.
+- `/mac-audio` requires loopback access; never weaken the Origin/header checks or mix the two audio sources.

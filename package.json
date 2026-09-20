@@ -13,12 +13,15 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "smoke": "npm run build",
-    "eval:meeting": "node scripts/eval-meeting.ts"
+    "eval:meeting": "node scripts/eval-meeting.ts",
+    "mac-audio:build": "bash scripts/build-mac-audio.sh",
+    "eval:mac-audio": "node scripts/eval-mac-audio.ts"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.0",
@@ -27,6 +30,7 @@
     "@types/node": "^26.1.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.0",

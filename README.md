@@ -169,7 +169,8 @@ The methodology, rubric, and current results are documented in [docs/model-evalu
 EchoGuide is an early runnable prototype:
 
 - the primary flow uses an iPad microphone and audible room audio;
-- it cannot directly capture a conversation played only through headphones;
+- the iPad microphone mode cannot capture a conversation played only through headphones;
+  the optional MacBook audio prototype captures application output directly;
 - production authentication, cloud persistence, and a standalone backend are not implemented yet;
 - the local development server must not be exposed directly to the public internet;
 - live-session cost depends on the selected OpenAI models and conversation length.
@@ -202,3 +203,10 @@ EchoGuide is available under the [MIT License](LICENSE).
 
 The local development server now supports Markdown packs and meeting assistance.
 See [Meeting assistant](docs/meeting-assistant.md) for setup, limits, and verification.
+
+## MacBook audio prototype
+
+The `/mac-audio` route captures a microphone and a selected macOS application as
+separate sources, using a local Swift helper and two transcription sessions.
+Build it with `npm run mac-audio:build`, then follow the
+[Mac audio runbook](docs/mac-audio.md). Requires macOS 15+ and localhost access.
