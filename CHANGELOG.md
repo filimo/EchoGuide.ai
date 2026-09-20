@@ -13,6 +13,12 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+### Added
+
+- Automatically save meeting openings, continuations, sources and timings locally.
+  Revisiting a phrase restores its saved answer; explicit regeneration keeps
+  previous attempts. Export the session's snapshots as JSON.
+
 - Fix Mac audio stopping after accumulated timer delays: pace both channels by elapsed time and record privacy-safe stop reasons and queue counters.
 
 ### Fixed

@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
+import { MeetingHistoryStore } from "./historyStore";
 import { MeetingService } from "./service";
 import { readEnvironmentValue, readOpenAiApiKey } from "../realtime/realtimeSession";
 import { isQuickStart } from "../realtime/quickStart";
 
-export function createMeetingMiddleware(service?: MeetingService) {
+export function createMeetingMiddleware(service?: MeetingService, history = new MeetingHistoryStore()) {
   const local = () => existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "";
   const getService = () => service ??= new MeetingService({ apiKey: () => readOpenAiApiKey(process.env, local()) ?? "",
     model: () => readEnvironmentValue(process.env, "OPENAI_BILINGUAL_MODEL", local()) ?? "" });
@@ -34,6 +35,11 @@ export function createMeetingMiddleware(service?: MeetingService) {
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (!body || typeof body !== "object") return send(400, { error: "Некорректный запрос." });
+      if (path === "/api/meeting/history/read") {
+        if (typeof body.sessionId !== "string" || !body.sessionId || body.sessionId.length > 200) return send(400, { error: "Некорректная сессия." });
+        return send(200, { snapshots: history.read(body.sessionId) });
+      }
+      if (path === "/api/meeting/history/save") { history.save(body.record); return send(200, { saved: true }); }
       if (path === "/api/meeting/packs") return send(202, api.create(body.name, body.files));
       if (path === "/api/meeting/active" && (body.packId === null || typeof body.packId === "string")) return send(200, api.activate(body.packId));
       if (typeof body.packId !== "string") return send(400, { error: "Выберите набор." });

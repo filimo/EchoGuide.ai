@@ -54,7 +54,25 @@ for cleanup. A network timeout during a creation request can leave a cloud
 resource whose ID was never received; inspect the OpenAI dashboard if needed.
 
 This is a local-dev implementation, without production authentication or
-hosted persistence. Meeting answers are not persisted into session history.
+hosted persistence. Meeting snapshots are automatically stored separately in
+ignored `.echoguide/sessions/meeting-cards.json`, including exact bilingual
+openings, continuations, sources, timings and prior attempts. No opt-in is required.
+The existing session-history format is unchanged; snapshots share its session ID.
+
+Selecting the same phrase again, including after opening its saved session,
+restores the last attempt for that phrase text, speaker, context and pack.
+Interrupted attempts restore their available opening without generating again.
+Use “Новый вариант” to explicitly generate another attempt, or
+“Экспорт ответов сессии (JSON)” to export every stage and attempt in the session.
+These controls also apply to `/mac-audio`.
+
+Read failures block automatic generation. Failed writes show a warning and stay
+in page memory for retry; use “Повторить сохранение / загрузку” before closing
+that page. Abrupt closure before a write finishes can lose pending snapshots.
+Deleting a session or material pack does not delete this independent archive.
+To erase all meeting snapshots, stop the local server and remove that file.
+Exports contain private conversation and source content; keep them out of Git.
+Historical answers generated before this feature cannot be recovered.
 Transcript translation behavior is unchanged. Explicit metadata is preserved;
 unknown business facts and statuses are never inferred during indexing.
 

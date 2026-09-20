@@ -145,7 +145,7 @@ describe("Training Live Panel", () => {
   it("pins meeting help to a clicked phrase while new Heard turns arrive", async () => {
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
       activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-20", filenames: ["x.md"], sectionCount: 1 }]
-    } : path === "search" ? { ticket: "t", found: 1 } : {
+    } : path === "history/read" ? { snapshots: [] } : path === "history/save" ? { saved: true } : path === "search" ? { ticket: "t", found: 1 } : {
       status: "grounded", english: "Pinned response", russian: "Ответ", sources: []
     });
     const { say, generateQuickStart, analyzePhrase } = await setupQuickStart();

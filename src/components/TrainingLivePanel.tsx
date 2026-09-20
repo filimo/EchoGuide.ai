@@ -610,6 +610,7 @@ export function TrainingLivePanel({
   const translationConnectionRef = useRef<RealtimeTranslationConnection | null>(null);
   const recoveryAudioRecorderRef = useRef<RecoveryAudioRecorder | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
+  if (currentSessionIdRef.current === null) currentSessionIdRef.current = createSessionId();
   const followLiveRef = useRef(true);
   const transcriptScrollBehaviorRef = useRef<ScrollBehavior>("auto");
   const trainingControlRailRef = useRef<HTMLElement | null>(null);
@@ -3185,7 +3186,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant selection={meetingSelection} quickStart={generateQuickStart} /> : <>
+          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} quickStart={generateQuickStart} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>

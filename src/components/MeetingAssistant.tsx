@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
+import { meetingHistoryClient } from "../meeting/historyClient";
+import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "../meeting/history";
 import { meetingRequest } from "../meeting/client";
 import { meetingFallback, type MeetingAnswer, type MeetingPackState, type MeetingDocument } from "../meeting/types";
 
 export type MeetingSelection = { id: string; text: string; speaker: string; context: string[] };
 type Props = {
+  sessionId: string;
   selection: MeetingSelection | null;
   quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
-export function MeetingAssistant({ selection, quickStart }: Props) {
+export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
@@ -20,6 +23,11 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
   const [timings, setTimings] = useState<{ openingMs?: number; answerMs?: number }>({});
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState("");
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const regenerate = useRef<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const mounted = useRef(true);
   const request = useRef<AbortController | null>(null);
@@ -75,52 +83,96 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
   useEffect(() => {
     request.current?.abort();
     const revision = ++generation.current;
-    if (!active || !selection) { setProgress(""); setOpening(null); setAnswer(null); setTimings({}); setQuestion(""); return; }
+    setOpening(null); setAnswer(null); setTimings({}); setQuestion(""); setProgress("");
+    setGenerating(false); setHistoryLoading(false);
+    if (!active || !selection) return;
     const last = JSON.parse(selected) as MeetingSelection;
+    const identity = { sessionId, phraseId: last.id, text: last.text.slice(0, 4000), speaker: last.speaker, context: last.context, packId: active.id };
+    const key = meetingCardKey(identity);
+    const force = regenerate.current === key; regenerate.current = null;
     const controller = new AbortController(); request.current = controller;
     const current = () => mounted.current && !controller.signal.aborted && generation.current === revision;
-    const timer = setTimeout(() => {
-      const transcript = last.text.slice(0, 4000);
-      const context = last.context;
-      setQuestion(transcript); setOpening(null); setAnswer(null); setTimings({}); setProgress("Готовлю начало и ищу основания…");
+    setQuestion(identity.text); setHistoryLoading(true); setProgress("Проверяю сохранённый ответ…");
+    void (async () => {
+      let records: MeetingCardSnapshot[];
+      try { records = await meetingHistoryClient.load(sessionId); }
+      catch {
+        if (current()) { setHistoryLoading(false); setHistoryError("Не удалось прочитать историю. Повтори загрузку; новый ответ не генерировался."); setProgress(""); }
+        return;
+      }
+      if (!current()) return;
+      setHistoryLoading(false);
+      if (!meetingHistoryClient.hasPending()) setHistoryError("");
+      const matching = records.filter(r => meetingCardKey(r.identity) === key);
+      const cached = latestMeetingCard(matching);
+      if (cached && !force) {
+        setOpening(cached.opening); setAnswer(cached.answer); setTimings(cached.timings);
+        setProgress(cached.phase === "complete" || cached.phase === "error" ? `Сохранённый ответ · ${new Date(cached.savedAt).toLocaleString("ru-RU")}` : "Сохранено начало или незавершённая попытка. Для нового ответа нажми «Новый вариант».");
+        return;
+      }
+      setGenerating(true);
       const started = performance.now();
-      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript, recentContext: context }, controller.signal)
+      let snapshot: MeetingCardSnapshot = { version: 1, identity, attemptId: crypto.randomUUID(), sequence: 0,
+        savedAt: new Date().toISOString(), packName: active.name, packCreatedAt: active.createdAt,
+        opening: null, answer: null, phase: "started", progress: "Готовлю начало и ищу основания…", timings: {} };
+      function publish(changes: Partial<MeetingCardSnapshot>) {
+        if (!current()) return;
+        snapshot = { ...snapshot, ...changes, sequence: snapshot.sequence + 1, savedAt: new Date().toISOString() };
+        setOpening(snapshot.opening); setAnswer(snapshot.answer); setTimings(snapshot.timings); setProgress(snapshot.progress);
+        // Do not abort this write on selection change: this is text already delivered to the screen.
+        void meetingHistoryClient.save(snapshot).catch(() => {
+          if (mounted.current) setHistoryError("Карточка показана, но не сохранена на диск. Нажми «Повторить сохранение» до закрытия страницы.");
+        });
+      }
+      publish({});
+      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: identity.text, recentContext: last.context }, controller.signal)
         .then(value => ({ value, error: false as const })).catch(() => ({ error: true as const }));
-      const quickSignal = AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]);
-      const first = quickRef.current(transcript, context, last.speaker, quickSignal).catch(() => null);
-      void (async () => {
-        const firstPiece = await first;
+      const firstPiece = await quickRef.current(identity.text, last.context, last.speaker,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(4000)])).catch(() => null);
+      if (!current()) return;
+      if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
+        publish({ opening: firstPiece, phase: "opening", timings: { openingMs: performance.now() - started }, progress: "Ищу подтверждённые сведения…" });
+      }
+      const found = await search;
+      if (!current()) return;
+      if (found.error) {
+        publish({ answer: { ...meetingFallback }, phase: "error", progress: "Поиск временно недоступен. Можно запросить новый вариант." }); setGenerating(false); return;
+      }
+      try {
+        const result = await meetingRequest<MeetingAnswer>("answer", { packId: active.id, ticket: found.value.ticket,
+          ...(isQuickStart(firstPiece) && ["start", "continue"].includes(firstPiece.mode) ? { opening: firstPiece } : {}) }, controller.signal);
         if (!current()) return;
-        // An explicit selection always requests an answer, even without an opening.
-        if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
-          setOpening(firstPiece);
-          setTimings({ openingMs: performance.now() - started });
-        }
-        setProgress("Ищу подтверждённые сведения…");
-        const found = await search;
-        if (!current()) return;
-        if (found.error) { setAnswer({ ...meetingFallback }); setProgress("Поиск временно недоступен. Можно повторить."); return; }
-        try {
-          const result = await meetingRequest<MeetingAnswer>("answer", {
-            packId: active.id, ticket: found.value.ticket,
-            ...(isQuickStart(firstPiece) && ["start", "continue"].includes(firstPiece.mode) ? { opening: firstPiece } : {})
-          }, controller.signal);
-          if (!current()) return;
-          if (firstPiece?.mode === "clarify") setOpening(null);
-          setAnswer(result);
-          setTimings(previous => ({ ...previous, answerMs: performance.now() - started }));
-          setProgress(result.status === "grounded" ? "Готово" :
-            result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований для ответа.");
-        } catch {
-          if (current()) { setAnswer({ ...meetingFallback }); setProgress("Не удалось подготовить ответ. Можно повторить."); }
-        }
-      })();
-    }, 0);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [active?.id, selected]);
+        publish({ opening: firstPiece?.mode === "clarify" ? null : snapshot.opening, answer: result, phase: "complete",
+          timings: { ...snapshot.timings, answerMs: performance.now() - started },
+          progress: result.status === "grounded" ? "Готово" : result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований для ответа." });
+      } catch {
+        publish({ answer: { ...meetingFallback }, phase: "error", progress: "Не удалось подготовить ответ. Можно запросить новый вариант." });
+      }
+      if (current()) setGenerating(false);
+    })();
+    return () => controller.abort();
+  }, [active?.id, sessionId, selected, requestVersion]);
+
+  async function exportHistory() {
+    try {
+      const snapshots = await meetingHistoryClient.load(sessionId);
+      const blob = new Blob([JSON.stringify({ version: 1, sessionId, exportedAt: new Date().toISOString(),
+        hasUnsavedSnapshots: meetingHistoryClient.hasPending(), snapshots }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob); const link = document.createElement("a");
+      link.href = url; link.download = `meeting-cards-${sessionId}.json`; link.click(); URL.revokeObjectURL(url);
+    } catch { setHistoryError("Не удалось экспортировать историю. Повтори попытку."); }
+  }
 
   return <div className="meeting-assistant">
     <h2>Помощник на встрече</h2>
+    <button type="button" onClick={() => void exportHistory()}>Экспорт ответов сессии (JSON)</button>
+    {historyError && <div role="alert"><p>{historyError}</p>
+      <button type="button" onClick={async () => { try { await meetingHistoryClient.retry(); setHistoryError(""); setRequestVersion(v => v + 1); } catch { setHistoryError("Не удалось сохранить историю. Не закрывай страницу и повтори попытку."); } }}>Повторить сохранение / загрузку</button>
+    </div>}
+    {active && selection && <button type="button" disabled={historyLoading || generating || !!historyError} onClick={() => {
+      regenerate.current = meetingCardKey({ sessionId, phraseId: selection.id, text: selection.text.slice(0,4000), speaker: selection.speaker, context: selection.context, packId: active.id });
+      setRequestVersion(v => v + 1);
+    }}>Новый вариант</button>}
     <details className="meeting-materials" open={!active}>
       <summary>Материалы встречи{active ? `: ${active.name}` : " — выбери или загрузи набор"}</summary>
       <p className="hint">MD-файлы загружаются в OpenAI. Поиск использует только выбранный набор.</p>
