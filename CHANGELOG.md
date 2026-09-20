@@ -32,6 +32,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Training Mode microphone selector with a saved device preference, explicit
+  system-default selection when supported, and the connected microphone name.
+  Stop live before changing inputs; unavailable saved devices remain visible.
+
 - Opt-in meeting assistant: upload Markdown packs, index them in OpenAI, select
   an active pack, and get one source-backed English answer with Russian meaning.
   Contextual openings and retrieval run in parallel. Missing or conflicting

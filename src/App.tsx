@@ -11,7 +11,7 @@ import {
 import { loadSetupMemory, saveSetupMemory } from "./domain/setupMemory";
 
 type AppProps = {
-  requestMicrophone?: () => Promise<MicrophoneResult>;
+  requestMicrophone?: (deviceId: string) => Promise<MicrophoneResult>;
 };
 
 async function loadLocalKnowledgeContext(): Promise<string> {
@@ -42,7 +42,7 @@ async function saveLocalKnowledgeContext(knowledgeContext: string): Promise<stri
   return typeof payload.knowledgeContext === "string" ? payload.knowledgeContext : "";
 }
 
-export default function App({ requestMicrophone = requestMicrophoneStream }: AppProps = {}) {
+export default function App({ requestMicrophone = (deviceId: string) => requestMicrophoneStream(undefined, undefined, deviceId) }: AppProps = {}) {
   const [setupMemory, setSetupMemory] = useState(() => loadSetupMemory(window.localStorage));
   const [session, setSession] = useState(() =>
     setKnowledgeNotes(createInitialSession(), setupMemory.legacyKnowledgeContext)
@@ -51,6 +51,14 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
   const [mode, setMode] = useState<"setup" | "live">(
     setupMemory.onboardingCompleted ? "live" : "setup"
   );
+  const [microphoneDeviceId, setMicrophoneDeviceId] = useState(() => {
+    try { return localStorage.getItem("echoguide.microphone") || "default"; }
+    catch { return "default"; }
+  });
+  function selectMicrophone(deviceId: string) {
+    setMicrophoneDeviceId(deviceId);
+    try { localStorage.setItem("echoguide.microphone", deviceId); } catch { /* Storage is optional. */ }
+  }
   const [errorMessage, setErrorMessage] = useState("");
   const [microphoneStream, setMicrophoneStream] = useState<MediaStream | null>(null);
   const notesEditedRef = useRef(false);
@@ -134,7 +142,7 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
 
   async function handleRequestMicrophone(): Promise<MediaStream | null> {
     setSession((current) => setMicrophoneStatus(current, "requesting"));
-    const result = await requestMicrophone();
+    const result = await requestMicrophone(microphoneDeviceId);
     setSession((current) => setMicrophoneStatus(current, result.status));
     setMicrophoneStream(result.stream ?? null);
     setErrorMessage(result.errorMessage ?? "");
@@ -182,6 +190,10 @@ export default function App({ requestMicrophone = requestMicrophoneStream }: App
     return (
       <TrainingLivePanel
         stream={microphoneStream}
+        microphoneDeviceId={microphoneDeviceId}
+        onMicrophoneDeviceChange={selectMicrophone}
+        microphoneRequesting={session.audio.microphone === "requesting"}
+        microphoneError={errorMessage}
         notes={session.knowledge.notes}
         sourceLabel={sourceLabel}
         autoOpenLatestSession={setupMemory.onboardingCompleted && microphoneStream == null}

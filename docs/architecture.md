@@ -40,6 +40,15 @@ flowchart LR
 
 The OpenAI API key remains on the local Node.js side. Browser code receives only an ephemeral Realtime credential.
 
+### Microphone selection
+
+Training Mode saves the selected input device ID in browser localStorage.
+The picker refreshes on device changes and after microphone permission is granted.
+Explicit selections use an exact device constraint and never silently fall back
+when unavailable. System default uses the browser's synthetic `default` device
+when exposed, or automatic audio selection on browsers without that device.
+Stop live before changing inputs. The status row displays the active track label.
+
 ### Realtime audio path
 
 `connectRealtimeTranscription()` creates a WebRTC peer connection, attaches the microphone track, and uses the Realtime data channel for session updates and transcription events.

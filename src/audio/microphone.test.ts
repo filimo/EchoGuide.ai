@@ -35,6 +35,20 @@ describe("microphone adapter", () => {
     expect(result.errorMessage).toContain("HTTPS");
   });
 
+  it("explicitly requests the browser system-default device when available", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({});
+    const enumerateDevices = vi.fn().mockResolvedValue([{ deviceId: "iphone" }, { deviceId: "default" }]);
+    await requestMicrophoneStream({ getUserMedia, enumerateDevices } as unknown as MediaDevices);
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: { deviceId: { exact: "default" } }, video: false });
+  });
+
+  it("does not silently substitute another microphone when the selected one is missing", async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException("Missing", "OverconstrainedError"));
+    const result = await requestMicrophoneStream({ getUserMedia }, {}, "macbook");
+    expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({ audio: { deviceId: { exact: "macbook" } }, video: false });
+    expect(result.status).toBe("error");
+  });
+
   it("stops all tracks", () => {
     const stop = vi.fn();
     const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream;

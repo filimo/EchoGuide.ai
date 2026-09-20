@@ -31,7 +31,8 @@ function toErrorResult(error: unknown): MicrophoneResult {
 
 export async function requestMicrophoneStream(
   mediaDevices: Pick<MediaDevices, "getUserMedia"> | undefined = navigator.mediaDevices,
-  browserContext: BrowserSecurityContext = globalThis
+  browserContext: BrowserSecurityContext = globalThis,
+  deviceId = "default"
 ): Promise<MicrophoneResult> {
   if (browserContext.isSecureContext === false || mediaDevices?.getUserMedia == null) {
     return {
@@ -42,7 +43,14 @@ export async function requestMicrophoneStream(
   }
 
   try {
-    const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+    // Some browsers omit the synthetic default device (for example on mobile).
+    const devices = deviceId === "default" && "enumerateDevices" in mediaDevices
+      ? await (mediaDevices as MediaDevices).enumerateDevices().catch(() => [])
+      : [];
+    const audio = deviceId !== "default" || devices.some(device => device.deviceId === "default")
+      ? { deviceId: { exact: deviceId } }
+      : true;
+    const stream = await mediaDevices.getUserMedia({ audio, video: false });
     return { status: "active", stream };
   } catch (error) {
     return toErrorResult(error);

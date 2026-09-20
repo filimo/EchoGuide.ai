@@ -1,3 +1,4 @@
+import { MicrophonePicker } from "./MicrophonePicker";
 import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
@@ -146,6 +147,10 @@ type TrainingLivePanelProps = {
   autoOpenLatestSession?: boolean;
   onRequestMicrophone?: () => Promise<MediaStream | null> | MediaStream | null | void;
   onStopMicrophone?: () => void;
+  microphoneDeviceId?: string;
+  onMicrophoneDeviceChange?: (deviceId: string) => void;
+  microphoneRequesting?: boolean;
+  microphoneError?: string;
   onNotesChange?: (notes: string) => void;
   submitDiagnostics?: (report: RealtimeDiagnosticReport) => Promise<string>;
 };
@@ -512,6 +517,10 @@ export function TrainingLivePanel({
   automaticAnalysisDelayMs = defaultAutomaticAnalysisDelayMs,
   onRequestMicrophone,
   onStopMicrophone,
+  microphoneDeviceId = "default",
+  onMicrophoneDeviceChange,
+  microphoneRequesting = false,
+  microphoneError = "",
   onNotesChange,
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
@@ -2420,10 +2429,11 @@ export function TrainingLivePanel({
             <h1>Training Mode</h1>
           </div>
           <div className="topbar-actions">
+
             {connection == null ? (
               <button
                 type="button"
-                disabled={realtimeStatus === "connecting" || (stream == null && onRequestMicrophone == null)}
+                disabled={microphoneRequesting || realtimeStatus === "connecting" || (stream == null && onRequestMicrophone == null)}
                 onClick={handleStartLive}
               >
                 {realtimeStatus === "connecting" ? "Starting live..." : "Start live"}
@@ -2461,9 +2471,16 @@ export function TrainingLivePanel({
           </div>
         </header>
 
+        {microphoneError && <p role="alert">{microphoneError}</p>}
         <section className="training-status-row" aria-label="Training Mode status">
+            {onMicrophoneDeviceChange && <MicrophonePicker
+              value={microphoneDeviceId}
+              onChange={onMicrophoneDeviceChange}
+              disabled={microphoneRequesting || stream != null || realtimeStatus === "connecting"}
+              stream={stream}
+            />}
           <span className={`status status-${stream == null ? "idle" : "active"}`}>
-            Microphone: {stream == null ? "not connected" : "active"}
+            Microphone: {stream == null ? "not connected" : stream.getAudioTracks()[0]?.label || "active"}
           </span>
           <span className={`status status-${realtimeStatus}`}>Realtime: {realtimeStatus}</span>
           {recoverySuggested ? (

@@ -1617,3 +1617,21 @@ textarea {
 .meeting-opening p[lang=ru], .meeting-answer p[lang=ru] { color: #475569; }
 .meeting-question { border-left: 3px solid #94a3b8; padding-left: .7rem; }
 .meeting-answer pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }
+
+.microphone-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.microphone-picker select {
+  max-width: min(280px, 75vw);
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  color: #17202f;
+}
