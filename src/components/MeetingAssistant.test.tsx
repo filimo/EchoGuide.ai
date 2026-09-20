@@ -4,7 +4,7 @@ import { MeetingAssistant } from "./MeetingAssistant";
 import { meetingRequest } from "../meeting/client";
 import { meetingFallback } from "../meeting/types";
 vi.mock("../meeting/client", () => ({ meetingRequest: vi.fn() }));
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); });
 const packs = { activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-19", filenames: ["notes.md"], sectionCount: 1 }] };
 const selection = { id: "one", text: "What is the plan?", speaker: "Heard", context: ["Heard: Let's discuss the pilot."] };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
@@ -26,13 +26,21 @@ describe("manual meeting assistance", () => {
     expect(quick).toHaveBeenCalledWith(selection.text, selection.context, "Heard", expect.any(AbortSignal));
   });
   it("starts retrieval in parallel and appends the answer without replacing the opening", async () => {
+    let now = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
     const first = deferred<any>(); const answer = deferred<any>();
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : answer.promise);
     render(<MeetingAssistant selection={selection} quickStart={() => first.promise} />);
     await waitFor(() => expect(meetingRequest).toHaveBeenCalledWith("search", expect.anything(), expect.any(AbortSignal)));
+    now = 1350;
     await act(async () => first.resolve({ mode: "start", english: "Opening", russian: "Начало" }));
+    expect(screen.getByText("Начало: 1.3 с")).toBeInTheDocument();
+    expect(screen.queryByText(/Поиск и полный ответ:/)).not.toBeInTheDocument();
     const opening = screen.getByText("Opening");
+    now = 4600;
     await act(async () => answer.resolve(meetingFallback));
+    expect(screen.getByText("Начало: 1.3 с")).toBeInTheDocument();
+    expect(screen.getByText("Поиск и полный ответ: 4.5 с")).toBeInTheDocument();
     expect(screen.getByText("Opening")).toBe(opening);
     expect(screen.getByText(meetingFallback.english)).toBeInTheDocument();
   });

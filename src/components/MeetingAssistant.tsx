@@ -17,6 +17,7 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
   const [error, setError] = useState("");
   const [opening, setOpening] = useState<QuickStart | null>(null);
   const [answer, setAnswer] = useState<MeetingAnswer | null>(null);
+  const [timings, setTimings] = useState<{ openingMs?: number; answerMs?: number }>({});
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -67,21 +68,21 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
     } finally { if (mounted.current) setBusy(false); }
   }
   async function activate(packId: string | null) {
-    stop(); setOpening(null); setAnswer(null); setQuestion("");
+    stop(); setOpening(null); setAnswer(null); setTimings({}); setQuestion("");
     await mutate("active", { packId });
   }
 
   useEffect(() => {
     request.current?.abort();
     const revision = ++generation.current;
-    if (!active || !selection) { setProgress(""); setOpening(null); setAnswer(null); setQuestion(""); return; }
+    if (!active || !selection) { setProgress(""); setOpening(null); setAnswer(null); setTimings({}); setQuestion(""); return; }
     const last = JSON.parse(selected) as MeetingSelection;
     const controller = new AbortController(); request.current = controller;
     const current = () => mounted.current && !controller.signal.aborted && generation.current === revision;
     const timer = setTimeout(() => {
       const transcript = last.text.slice(0, 4000);
       const context = last.context;
-      setQuestion(transcript); setOpening(null); setAnswer(null); setProgress("Готовлю начало и ищу основания…");
+      setQuestion(transcript); setOpening(null); setAnswer(null); setTimings({}); setProgress("Готовлю начало и ищу основания…");
       const started = performance.now();
       const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript, recentContext: context }, controller.signal)
         .then(value => ({ value, error: false as const })).catch(() => ({ error: true as const }));
@@ -93,6 +94,7 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
         // An explicit selection always requests an answer, even without an opening.
         if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
           setOpening(firstPiece);
+          setTimings({ openingMs: performance.now() - started });
         }
         setProgress("Ищу подтверждённые сведения…");
         const found = await search;
@@ -106,7 +108,8 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
           if (!current()) return;
           if (firstPiece?.mode === "clarify") setOpening(null);
           setAnswer(result);
-          setProgress(result.status === "grounded" ? `Готово · ${((performance.now() - started) / 1000).toFixed(1)} с` :
+          setTimings(previous => ({ ...previous, answerMs: performance.now() - started }));
+          setProgress(result.status === "grounded" ? "Готово" :
             result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований для ответа.");
         } catch {
           if (current()) { setAnswer({ ...meetingFallback }); setProgress("Не удалось подготовить ответ. Можно повторить."); }
@@ -145,7 +148,7 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
         <button type="button" disabled={busy || pack.status !== "ready" || pack.id === state.activePackId} onClick={() => void activate(pack.id)}>Использовать этот набор</button>
         {pack.status !== "uploading" && pack.status !== "indexing" && <button type="button" disabled={busy} onClick={() => setDeleteId(pack.id)}>Удалить набор</button>}
         {deleteId === pack.id && <div><p>Удалить файлы этого набора из OpenAI и локальный индекс? Это нельзя отменить.</p>
-          <button type="button" disabled={busy} onClick={async () => { stop(); if (await mutate("delete", { packId: pack.id })) { setDeleteId(null); setOpening(null); setAnswer(null); } }}>Подтвердить удаление</button>
+          <button type="button" disabled={busy} onClick={async () => { stop(); if (await mutate("delete", { packId: pack.id })) { setDeleteId(null); setOpening(null); setAnswer(null); setTimings({}); } }}>Подтвердить удаление</button>
           <button type="button" onClick={() => setDeleteId(null)}>Отмена</button></div>}
       </li>)}</ul>
       {active && <button type="button" disabled={busy} onClick={() => void activate(null)}>Убрать активный набор</button>}
@@ -154,6 +157,11 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
     <p className="hint">Нажми нужную реплику в разговоре. Ответ останется на экране, пока ты не выберешь другую.</p>
     {question && <p className="meeting-question">{question}</p>}
     <p role="status">{progress}</p>
+    {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">
+      {timings.openingMs !== undefined && <span>Начало: {(timings.openingMs / 1000).toFixed(1)} с</span>}
+      {timings.openingMs !== undefined && timings.answerMs !== undefined && " · "}
+      {timings.answerMs !== undefined && <span>Поиск и полный ответ: {(timings.answerMs / 1000).toFixed(1)} с</span>}
+    </p>}
     {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><p lang="en">{opening.english}</p><p lang="ru">{opening.russian}</p></section>}
     {answer && <section className="meeting-answer"><h3>{answer.status === "grounded" ? (opening ? "Продолжи" : "Ответ") : "Возьми время на проверку"}</h3>
       <p lang="en">{answer.english}</p><p lang="ru">{answer.russian}</p>

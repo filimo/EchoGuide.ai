@@ -32,6 +32,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Meeting cards show time to the opening and total time for retrieval and the
+  full answer, measured from request start.
+
 - Training Mode microphone selector with a saved device preference, explicit
   system-default selection when supported, and the connected microphone name.
   Stop live before changing inputs; unavailable saved devices remain visible.
