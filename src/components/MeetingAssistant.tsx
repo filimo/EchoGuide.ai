@@ -93,7 +93,6 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
         // An explicit selection always requests an answer, even without an opening.
         if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
           setOpening(firstPiece);
-          if (firstPiece.mode === "clarify") { setProgress("Уточни вопрос перед ответом."); return; }
         }
         setProgress("Ищу подтверждённые сведения…");
         const found = await search;
@@ -102,9 +101,10 @@ export function MeetingAssistant({ selection, quickStart }: Props) {
         try {
           const result = await meetingRequest<MeetingAnswer>("answer", {
             packId: active.id, ticket: found.value.ticket,
-            ...(isQuickStart(firstPiece) && firstPiece.mode !== "wait" ? { opening: firstPiece } : {})
+            ...(isQuickStart(firstPiece) && ["start", "continue"].includes(firstPiece.mode) ? { opening: firstPiece } : {})
           }, controller.signal);
           if (!current()) return;
+          if (firstPiece?.mode === "clarify") setOpening(null);
           setAnswer(result);
           setProgress(result.status === "grounded" ? `Готово · ${((performance.now() - started) / 1000).toFixed(1)} с` :
             result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований для ответа.");

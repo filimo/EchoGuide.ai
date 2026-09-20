@@ -9,6 +9,13 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- A fast clarification no longer prevents meeting materials from answering
+  the selected question. The evidence-backed result replaces that clarification.
+
+- Meeting continuations use shorter spoken sentences and explicitly avoid
+  restating the opening in either language. A conservative bilingual guard
+  removes repeated opening prefixes; quick openings now request one short sentence.
+
 - Meeting help now starts only when a transcript turn is selected. New speech
   no longer clears or regenerates the pinned answer. The opening remains in
   place while the continuation loads below it. Repeated selection is a no-op.

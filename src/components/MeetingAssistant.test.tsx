@@ -36,6 +36,15 @@ describe("manual meeting assistance", () => {
     expect(screen.getByText("Opening")).toBe(opening);
     expect(screen.getByText(meetingFallback.english)).toBeInTheDocument();
   });
+  it("lets evidence answer when the fast opening asks for clarification", async () => {
+    const grounded = { status: "grounded", english: "I test ideas on real tasks.", russian: "Я проверяю идеи на реальных задачах.", sources: [] };
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : grounded);
+    render(<MeetingAssistant selection={selection} quickStart={async () => ({ mode: "clarify", english: "Which role?", russian: "Какая роль?" })} />);
+    await screen.findByText(grounded.english);
+    expect(screen.queryByText("Which role?")).not.toBeInTheDocument();
+    expect(screen.getByText("Ответ")).toBeInTheDocument();
+    expect(meetingRequest).toHaveBeenCalledWith("answer", { packId: "a", ticket: "t" }, expect.any(AbortSignal));
+  });
   it("honors explicit selection even when the opening model chooses wait", async () => {
     mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "wait", english: "", russian: "" });
     render(<MeetingAssistant selection={{ ...selection, speaker: "Me" }} quickStart={quick} />);

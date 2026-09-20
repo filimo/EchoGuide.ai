@@ -10,7 +10,13 @@ Changing sessions or leaving meeting mode clears the selection.
 
 The opening and retrieval start concurrently on selection. The
 opening stays visible; one English continuation and Russian meaning appear
-below, with expandable source sections. Missing/conflicting evidence or API
+below, with expandable source sections. The continuation requests only new
+ideas in 1–3 short A2/B1 sentences (up to 45 English words). A conservative
+guard removes a repeated opening prefix only when both languages match and
+both retain a nonempty continuation; it does not guess semantic equivalence.
+If a repeat remains in one language, one additional model request rewrites
+both languages together. This can add latency. Other paraphrased repetition
+is handled by the prompt and requires live evaluation. Missing/conflicting evidence or API
 errors produce a polite request for time to check details.
 
 ## Data flow and lifecycle
@@ -24,7 +30,9 @@ Responses API, preserving qualifiers omitted by a search chunk.
 
 The server issues short-lived search tickets rather than trusting client
 evidence. Source IDs are validated. Switching packs invalidates tickets;
-the UI aborts and ignores stale requests. Generated openings are not evidence.
+the UI aborts and ignores stale requests. Generated openings are not evidence. A quick clarification does not cancel
+retrieval: the final result replaces it, and the clarification is not supplied
+as a spoken opening to continue.
 The existing bilingual model setting is reused.
 
 Local `.echoguide/meeting/packs.json` contains private sections, cloud IDs and
