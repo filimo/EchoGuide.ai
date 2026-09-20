@@ -1036,6 +1036,7 @@ export function TrainingLivePanel({
   function setFollowLiveMode(nextFollowLive: boolean) {
     followLiveRef.current = nextFollowLive;
     setFollowLive(nextFollowLive);
+    setTranscriptFollowsLatest(nextFollowLive);
   }
 
   function beginPhraseAnalysis(phraseId: string): number {
@@ -1180,7 +1181,7 @@ export function TrainingLivePanel({
       transcriptDialogue.scrollTop -
       transcriptDialogue.clientHeight;
 
-    setTranscriptFollowsLatest(distanceFromLatest <= 48);
+    if (distanceFromLatest > 48) setFollowLiveMode(false);
   }
 
   useLayoutEffect(() => {
@@ -2484,6 +2485,18 @@ export function TrainingLivePanel({
     }
   }
 
+  useEffect(() => {
+    if (!meetingMode || !followLive) return;
+    const latestTurn = transcriptTurns.at(-1);
+    if (!latestTurn) return;
+    setSelectedPhraseCardId(latestTurn.id);
+    setMeetingSelection(current => current?.id === latestTurn.id && current.text === latestTurn.text ? current : {
+      id: latestTurn.id, text: latestTurn.text, speaker: latestTurn.speakerLabel,
+      context: transcriptTurns.slice(0, -1).slice(-7)
+        .map(item => `${item.speakerLabel}: ${item.text.slice(0, 1800)}`)
+    });
+  }, [meetingMode, followLive, transcriptTurns]);
+
   function handlePauseFollowLive() {
     setFollowLiveMode(false);
   }
@@ -2493,14 +2506,17 @@ export function TrainingLivePanel({
     const conversationPanel = conversationPanelRef.current;
     const transcriptDialogue = transcriptDialogueRef.current;
 
+    transcriptScrollBehaviorRef.current = "auto";
+    handleFollowLive();
+
     if (transcriptDialogue == null) {
       return;
     }
 
     if (transcriptFollowsLatest) {
-      scrollTranscriptToLatest("smooth");
+      scrollTranscriptToLatest("auto");
     } else {
-      transcriptScrollBehaviorRef.current = "smooth";
+      transcriptScrollBehaviorRef.current = "auto";
       setTranscriptFollowsLatest(true);
     }
 
@@ -2510,7 +2526,7 @@ export function TrainingLivePanel({
     if (conversationPanelTop != null) {
       window.scrollTo({
         top: Math.max(0, window.scrollY + conversationPanelTop - stickyRailHeight - 12),
-        behavior: "smooth"
+        behavior: "auto"
       });
     }
   }
@@ -2931,8 +2947,9 @@ export function TrainingLivePanel({
             <button
               type="button"
               className="jump-latest-button transcript-action-icon"
-              aria-label="Jump to latest message"
-              title="Latest message"
+              aria-label="К последней записи"
+              aria-pressed={followLive}
+              title={followLive ? "Автопереход включён. К последней записи" : "К последней записи и включить автопереход"}
               onClick={handleJumpToLatestMessage}
               disabled={transcriptTurns.length === 0 && liveTranscriptDraft.trim().length === 0}
             >

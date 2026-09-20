@@ -1733,3 +1733,5 @@ textarea {
 .meeting-answer-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 12px; margin: 6px 0; color: #526176; font-size: 12px; line-height: 1.4; }
 .meeting-answer-meta:empty { display: none; }
 .meeting-answer-meta > p { margin: 0; }
+
+.jump-latest-button[aria-pressed="true"] { background: #e8f0ff; border-color: #86aaff; color: #2459c4; }

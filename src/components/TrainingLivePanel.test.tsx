@@ -158,6 +158,7 @@ describe("Training Live Panel", () => {
   });
 
   it("pins meeting help to a clicked phrase while new Heard turns arrive", async () => {
+    const pageScrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
       activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-20", filenames: ["x.md"], sectionCount: 1 }]
     } : path === "history/read" ? { snapshots: [] } : path === "history/save" ? { saved: true } : path === "search" ? { ticket: "t", found: 1 } : {
@@ -166,7 +167,7 @@ describe("Training Live Panel", () => {
     const { say, generateQuickStart, analyzePhrase } = await setupQuickStart();
     await userEvent.click(screen.getByLabelText("Режим встречи с материалами"));
     await say("Why this database?");
-    expect(generateQuickStart).not.toHaveBeenCalled();
+    expect(generateQuickStart).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByRole("button", { name: "Heard Why this database?" }));
     await screen.findByText("Pinned response");
     await say("I chose it because of our queries.");
@@ -175,6 +176,15 @@ describe("Training Live Panel", () => {
     expect(generateQuickStart).toHaveBeenCalledTimes(1);
     expect(analyzePhrase).not.toHaveBeenCalled();
     expect(screen.getByText("Pinned response")).toBeInTheDocument();
+    const latestButton = screen.getByRole("button", { name: "К последней записи" });
+    expect(latestButton).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(latestButton);
+    expect(latestButton).toHaveAttribute("aria-pressed", "true");
+    expect(generateQuickStart).toHaveBeenLastCalledWith("It supports our workload.", expect.any(Array), "Heard", expect.any(AbortSignal));
+    await say("What is next?");
+    expect(generateQuickStart).toHaveBeenLastCalledWith("What is next?", expect.any(Array), "Heard", expect.any(AbortSignal));
+    pageScrollTo.mockRestore();
+
   });
 
   it("shows a contextual opening before the full card, keeps it stable and saves it with the card", async () => {
@@ -2113,7 +2123,7 @@ describe("Training Live Panel", () => {
     expect(within(selectionActions).getByRole("button", { name: "Generate card" }).textContent).toBe("");
     expect(within(selectionActions).getByRole("button", { name: "Clear selection" }).textContent).toBe("");
     expect(within(selectionActions).getByRole("button", { name: "Delete selected" }).textContent).toBe("");
-    expect(screen.getByRole("button", { name: "Jump to latest message" }).textContent).toBe("");
+    expect(screen.getByRole("button", { name: "К последней записи" }).textContent).toBe("");
     expect(screen.getByRole("button", { name: "Cancel select" }).textContent).toBe("");
   });
 
@@ -2365,7 +2375,7 @@ describe("Training Live Panel", () => {
     expect(within(suggestionsPanel).getByText("Второй смысл.")).toBeInTheDocument();
   });
 
-  it("keeps transcript scrolling independent from the selected phrase card", async () => {
+  it("resumes following with the latest button and pauses on manual selection", async () => {
     const user = userEvent.setup();
     let emitEvent: (event: RealtimeServerEvent) => void = () => {};
     let keepLatestAnalysisPending: (() => void) | null = null;
@@ -2421,7 +2431,7 @@ describe("Training Live Panel", () => {
     Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 640 });
     Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 200 });
 
-    const jumpToLatestButton = screen.getByRole("button", { name: "Jump to latest message" });
+    const jumpToLatestButton = screen.getByRole("button", { name: "К последней записи" });
 
     expect(jumpToLatestButton).toBeDisabled();
 
@@ -2453,19 +2463,25 @@ describe("Training Live Panel", () => {
 
     await user.click(jumpToLatestButton);
 
-    expect(pageScrollTo).toHaveBeenCalledWith({ behavior: "smooth", top: 368 });
-    expect(scrollTo).toHaveBeenLastCalledWith({ behavior: "smooth", top: 640 });
+    expect(pageScrollTo).toHaveBeenCalledWith({ behavior: "auto", top: 368 });
+    expect(scrollTo).toHaveBeenLastCalledWith({ behavior: "auto", top: 640 });
+    expect(jumpToLatestButton).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByRole("button", { name: "Heard First phrase." }).closest("article")
+      screen.getByRole("button", { name: "Heard Latest phrase." }).closest("article")
     ).toHaveClass("transcript-turn-selected");
-    expect(
-      within(screen.getByLabelText("Current phrase suggestions")).getByText("Первый смысл.")
-    ).toBeInTheDocument();
-    expect(screen.getByText("Paused on selected phrase")).toBeInTheDocument();
 
     await act(async () => {
       keepLatestAnalysisPending?.();
     });
+    await user.click(screen.getByRole("button", { name: "Heard First phrase." }));
+    expect(jumpToLatestButton).toHaveAttribute("aria-pressed", "false");
+    scrollTo.mockClear();
+    await act(async () => {
+      emitEvent({ type: "conversation.item.input_audio_transcription.completed", transcript: "Another phrase." });
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Heard First phrase." }).closest("article"))
+      .toHaveClass("transcript-turn-selected");
     pageScrollTo.mockRestore();
   });
 

@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Make the latest transcript button resume automatic scrolling and phrase selection, including meeting mode; selecting a transcript entry pauses following.
+
 - Hide the redundant completed status once a grounded meeting answer is displayed and place saved-answer metadata and generation timings on a compact shared row.
 
 - Move Mac microphone and call application selection into a dismissible audio settings popover; keep selected sources in the toolbar.
