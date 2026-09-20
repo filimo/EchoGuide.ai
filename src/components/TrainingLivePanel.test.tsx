@@ -142,6 +142,21 @@ describe("Training Live Panel", () => {
     return { say, analyzePhrase, generateQuickStart, history };
   }
 
+  it("restores meeting mode after remount and remembers disabling it", async () => {
+    vi.mocked(meetingRequest).mockResolvedValue({ activePackId: null, packs: [] });
+    const props = { stream: null, notes: "", sessionHistoryClient: createInMemorySessionHistoryClient() };
+    const first = render(<TrainingLivePanel {...props} />);
+    expect(screen.getByLabelText("Режим встречи с материалами")).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText("Режим встречи с материалами"));
+    first.unmount();
+    const second = render(<TrainingLivePanel {...props} />);
+    expect(screen.getByLabelText("Режим встречи с материалами")).toBeChecked();
+    await userEvent.click(screen.getByLabelText("Режим встречи с материалами"));
+    second.unmount();
+    render(<TrainingLivePanel {...props} />);
+    expect(screen.getByLabelText("Режим встречи с материалами")).not.toBeChecked();
+  });
+
   it("pins meeting help to a clicked phrase while new Heard turns arrive", async () => {
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
       activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-20", filenames: ["x.md"], sectionCount: 1 }]

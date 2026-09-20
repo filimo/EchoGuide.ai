@@ -1,3 +1,5 @@
+import { loadMeetingMode, saveMeetingMode } from "../meeting/preferences";
+import { loadAudioMode, saveAudioMode } from "../macAudio/preferences";
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
@@ -534,7 +536,7 @@ export function TrainingLivePanel({
   onNotesChange,
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
-  const [audioMode, setAudioMode] = useState<"microphone" | "mac">(initialAudioMode);
+  const [audioMode, setAudioMode] = useState(() => loadAudioMode(initialAudioMode));
   const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
   const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; chunks: number; seenAt: number }>>>({});
   const [macClock, setMacClock] = useState(Date.now());
@@ -559,7 +561,7 @@ export function TrainingLivePanel({
   }
 
   const [meetingExportError, setMeetingExportError] = useState("");
-  const [meetingMode, setMeetingMode] = useState(false);
+  const [meetingMode, setMeetingMode] = useState(loadMeetingMode);
   const [meetingSelection, setMeetingSelection] = useState<MeetingSelection | null>(null);
   const meetingModeRef = useRef(false);
   meetingModeRef.current = meetingMode;
@@ -2523,6 +2525,7 @@ export function TrainingLivePanel({
         <label className="meeting-mode-toggle"><input type="checkbox" checked={meetingMode} onChange={event => {
           meetingModeRef.current = event.target.checked;
           setMeetingMode(event.target.checked);
+          saveMeetingMode(event.target.checked);
           setMeetingSelection(null);
           phraseAnalysisRevisionRef.current.clear();
           setPendingAnalysisIds(new Set());
@@ -2584,7 +2587,7 @@ export function TrainingLivePanel({
 
         <label className="audio-source-mode">Audio source <select aria-label="Audio source"
           value={audioMode} disabled={connection != null || realtimeStatus === "connecting"}
-          onChange={event => { setAudioMode(event.target.value as "microphone" | "mac"); setErrorMessage(""); }}>
+          onChange={event => { setAudioMode(event.target.value as "microphone" | "mac"); saveAudioMode(event.target.value as "microphone" | "mac"); setMacSelection(null); setErrorMessage(""); }}>
           <option value="microphone">Microphone / iPad</option>
           <option value="mac">MacBook: microphone + call application</option>
         </select></label>

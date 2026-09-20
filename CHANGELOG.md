@@ -15,6 +15,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Remember the meeting-with-materials mode toggle across page and browser restarts.
+
+- Remember Audio source, Call application and Mac microphone in this browser. Restore applications by bundle ID using their current process ID; keep unavailable preferences for a later refresh.
+
 - Move session answer export to the top action bar beside Copy transcript.
 
 - Automatically save meeting openings, continuations, sources and timings locally.

@@ -31,7 +31,6 @@ async function setup(pending = false) {
       return transport;
     }} />);
   fireEvent.change(screen.getByLabelText("Audio source"), { target: { value: "mac" } });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
   fireEvent.click(screen.getByRole("button", { name: "Start live" }));

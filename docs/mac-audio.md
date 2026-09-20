@@ -104,3 +104,16 @@ bounded buffering, failure cleanup, source roles and cancellation of pending sta
 API references: [Apple ScreenCaptureKit](https://developer.apple.com/videos/play/wwdc2024/10088/),
 [OpenAI transcription](https://developers.openai.com/api/docs/guides/realtime-transcription),
 [OpenAI WebSockets](https://developers.openai.com/api/docs/guides/voice-websockets).
+
+## Remembered audio sources
+
+Audio source, Call application and Mac microphone are saved automatically in this
+browser for the current site address. Opening Mac audio refreshes the source list
+and resolves the saved application bundle ID to its current PID. Process IDs are
+not saved. Capture still starts only with Start live.
+
+If the application is closed, open it and click Refresh Mac sources. Missing
+applications and microphones keep their saved preferences; capture stays disabled
+until both sources are available or replacements are selected. Multiple running
+instances with the same bundle ID require an explicit selection. Applications
+without a bundle ID can be selected for this session but cannot be restored.
