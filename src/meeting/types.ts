@@ -19,7 +19,7 @@ export type MeetingAnswer = {
 };
 export const meetingFallback: MeetingAnswer = {
   status: "no_answer",
-  english: "I need to check the details. Please carry on while I look into it. If I need more time, I'll follow up after the meeting.",
-  russian: "Мне нужно проверить детали. Пока продолжайте обсуждение, а я посмотрю. Если потребуется больше времени, вернусь с ответом после встречи.",
+  english: "I need to check that before giving a firm answer.",
+  russian: "Мне нужно это проверить, прежде чем отвечать уверенно.",
   sources: []
 };

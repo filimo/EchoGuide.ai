@@ -9,6 +9,12 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Meeting answers can resolve likely spoken product-name substitutions from
+  unambiguous retrieved evidence, while preserving explicit competing topics.
+
+- Spoken meeting help avoids describing document search and uses a short
+  fallback without promising a follow-up after the meeting.
+
 - A fast clarification no longer prevents meeting materials from answering
   the selected question. The evidence-backed result replaces that clarification.
 

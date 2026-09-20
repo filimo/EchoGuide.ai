@@ -25,8 +25,8 @@ function setup() {
     return new Response(JSON.stringify(value), { status: 200 });
   }) as unknown as typeof fetch;
   const service = new MeetingService({ directory, apiKey: () => "test-only", fetchImpl });
-  const ready = async (name = "Pack") => {
-    const snapshot = service.create(name, [{ name: "status.md", text: "# Status\nПилот пока не выбран." }]);
+  const ready = async (name = "Pack", text = "# Status\nПилот пока не выбран.") => {
+    const snapshot = service.create(name, [{ name: "status.md", text }]);
     const id = snapshot.packs[0].id;
     await vi.waitFor(() => expect(service.snapshot().packs.find(p => p.id === id)?.status).toBe("indexing"));
     await service.refresh(); return id;
@@ -85,6 +85,27 @@ describe("meeting pack lifecycle and grounding", () => {
     expect(answer.english).toBe("We need to agree on scope.");
     expect(answer.russian).toBe("Нужно согласовать объём.");
     expect(vi.mocked(fetchImpl).mock.calls.filter(c => String(c[0]).endsWith("/responses"))).toHaveLength(2);
+  });
+  it("keeps the original question and makes product interpretation conditional in both languages", async () => {
+    const { service, ready, fetchImpl } = setup();
+    const id = await ready("Sample", "# Status\nMaria tried Codex. The pilot is still a proposal."); service.activate(id);
+    const question = "What has Maria confirmed about codecs usage?";
+    const found = await service.search(id, question, []);
+    const answer = await service.answer(id, found.ticket);
+    expect(answer.english).toMatch(/^If you mean Codex:/);
+    expect(answer.russian).toMatch(/^Если ты имеешь в виду Codex:/);
+    const call = vi.mocked(fetchImpl).mock.calls.find(c => String(c[0]).endsWith("/responses"))!;
+    const input = JSON.parse(JSON.parse(call[1]!.body as string).input);
+    expect(input.originalTranscript).toBe(question);
+    expect(input.transcript).toBe("What has Maria confirmed about Codex usage?");
+    expect(input.interpretation).toContain("Unconfirmed");
+  });
+  it("does not turn an unsupported interpreted answer into a grounded answer", async () => {
+    const { service, ready, state } = setup();
+    const id = await ready("Sample", "# Status\nMaria tried Codex."); service.activate(id);
+    state.responseStatus = "no_answer";
+    const found = await service.search(id, "What has an unknown person confirmed about codecs usage?", []);
+    expect(await service.answer(id, found.ticket)).toEqual(meetingFallback);
   });
   it("returns a safe fallback on no evidence without asking a model", async () => {
     const { service, ready, state, fetchImpl } = setup(); const id = await ready(); service.activate(id); state.empty = true;

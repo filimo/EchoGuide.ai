@@ -17,7 +17,9 @@ both retain a nonempty continuation; it does not guess semantic equivalence.
 If a repeat remains in one language, one additional model request rewrites
 both languages together. This can add latency. Other paraphrased repetition
 is handled by the prompt and requires live evaluation. Missing/conflicting evidence or API
-errors produce a polite request for time to check details.
+errors produce a short request for time to check details, without promising
+a later follow-up. Openings and answers discuss the meeting topic instead
+of narrating document search or the assistant workflow.
 
 ## Data flow and lifecycle
 
@@ -33,6 +35,13 @@ evidence. Source IDs are validated. Switching packs invalidates tickets;
 the UI aborts and ignores stale requests. Generated openings are not evidence. A quick clarification does not cancel
 retrieval: the final result replaces it, and the clarification is not supplied
 as a spoken opening to continue.
+A narrow observed speech confusion, `codecs` → `Codex`, is proposed only when
+retrieved evidence names Codex and contains no competing codec topic.
+Explicit audio/video/compression terms prevent the interpretation. The original
+transcript is unchanged and remains in model input alongside the proposed
+question. A grounded result must start with “If you mean Codex” in both
+languages; the interpretation never supplies facts about a person. Unsupported
+answers still use the fallback. This is not general transcript autocorrection.
 The existing bilingual model setting is reused.
 
 Local `.echoguide/meeting/packs.json` contains private sections, cloud IDs and

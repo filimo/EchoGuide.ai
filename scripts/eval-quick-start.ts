@@ -7,6 +7,7 @@ const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
 
 const cases = [
+  { id: "meeting-confirmation", transcript: "What exactly has Maria confirmed about Codex usage, and what would be going too far beyond that?", speakerLabel: "Interviewer", mode: "start", recentContext: [], knowledgeContext: "" },
   { id: "database-choice", transcript: "Why didn't you use PostgreSQL?", speakerLabel: "Interviewer", mode: "start",
     recentContext: ["Interviewer: Let's discuss the analytics database.", "Me: The workload involved scanning many rows."],
     knowledgeContext: "Synthetic example: I evaluated query plans. Wide scans dominated the workload. No measured performance gain is recorded." },
@@ -30,9 +31,11 @@ for (const fixture of cases) {
     durations.push(durationMs);
     const unsupportedClaim = fixture.mode === "start" && /\b(?:I|we)\s+(?:chose|considered|helped|tested|built|wanted|needed|decided|worked|was responsible|focused)\b/i.test(opening.english);
     const repeatedDraft = fixture.id === "stuck" && /^I added/i.test(opening.english);
-    const passed = opening.mode === fixture.mode && !unsupportedClaim && !repeatedDraft;
+    const processNarration = /\b(?:documents?|files?|evidence|RAG|prompts?|insufficient|substantiate)\b/i.test(opening.english);
+    const followUpPromise = /follow up|after the meeting/i.test(opening.english);
+    const passed = !processNarration && !followUpPromise && opening.mode === fixture.mode && !unsupportedClaim && !repeatedDraft;
     if (!passed) failures++;
-    console.log(JSON.stringify({ id: fixture.id, durationMs, passed, unsupportedClaim, repeatedDraft, expectedMode: fixture.mode, ...opening }));
+    console.log(JSON.stringify({ id: fixture.id, durationMs, passed, processNarration, followUpPromise, unsupportedClaim, repeatedDraft, expectedMode: fixture.mode, ...opening }));
     if (fixture.id === "database-choice" && opening.mode !== "wait") {
       const answerStarted = performance.now();
       const card = await analyzeBilingualPhrase({ apiKey, transcript: fixture.transcript,
