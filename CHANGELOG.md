@@ -25,6 +25,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Make meeting openings more concrete and spoken continuations more focused.
+  Keep hypothetical first steps distinct from personal facts, avoid repeating
+  cautious conclusions, and preserve evidence requirements for recommendations.
+
 - Exclude complete known transcription-prompt echoes from generation while retaining
   raw transcript history. Explicit next-question handoffs now focus the opening
   and retrieval on the same utterance. New meeting snapshots record the prepared

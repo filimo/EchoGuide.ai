@@ -116,3 +116,49 @@ and compare raw `identity` against `generationInput`. A prompt-only selected tur
 shows a service-text notice without generating. An old saved answer remains
 unchanged until explicit regeneration. Tests use synthetic inputs and mocked
 model responses; they do not establish live model answer quality.
+
+
+## Spoken answer quality
+
+A hypothetical question can receive a concrete conditional first step without
+inventing past actions or approved decisions. The continuation adds a supported
+measurement, check or condition missing from that opening. Rewording the same
+cautious conclusion still counts as repetition. Similar tasks must not become
+identical tasks, and recording differences must not imply removing their effect.
+
+Prefer simple words when the meaning is unchanged: compare, time saved, quality
+requirements. This is not a global ban on technical vocabulary. Russian retains
+the same conditions and uncertainty. Recommendations still require evidence:
+“I would” does not make an invented method grounded. No approved quality
+trade-off, grouping method or sample size may be inferred from a proposal.
+
+Run `npm run eval:meeting -- --spoken-quality` for seven synthetic scenarios:
+one result, extra rework with distracting earlier dialogue, comparable work,
+complexity, few differing tasks, quality versus speed, and an unapproved policy.
+The runner generates real openings before retrieval and continuations, reuses
+configured model settings and writes answers/checks to ignored eval results.
+It creates and removes only its synthetic cloud pack. Mechanical checks flag
+known failures; review the actual English/Russian sequence and source status too.
+Old saved cards remain unchanged; use “Новый вариант” to test current wording.
+
+
+### Synthetic check recorded on 2026-09-20
+
+The seven-case live run passed the mechanical checks after prompt revisions;
+the standard quick-start evaluation also passed all seven mode/factual-boundary
+cases. Review found a remaining small-sample phrasing problem, so that scenario
+was checked again after clarifying that few observations limit confidence, not
+necessarily the range of complexity. Its opening then said: “With few tasks,
+conclusions about the complexity difference will remain uncertain.”
+The initial checker incorrectly treated “both groups” (the two approaches) as
+an invented grouping method; the corrected check distinguishes that wording
+from instructions to group tasks by complexity. Original eval outputs remain
+unchanged in the ignored results directory. Use `--case=remaining-differences`
+with the spoken-quality command to reproduce that targeted check.
+
+An actual rework opening was “I would first count the extra rework time against
+the time saved.” Its continuation kept human review and final quality, then
+compared total time with the usual process. The unsupported-policy case returned
+`no_answer`. These synthetic examples are observations, not fixed templates or
+a guarantee of future wording. No private pack or export was sent in these runs;
+the runner removed its synthetic cloud resources.
