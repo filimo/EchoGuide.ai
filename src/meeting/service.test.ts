@@ -1,3 +1,4 @@
+import { englishRealtimeTranscriptionPrompt } from "../realtime/realtimeSession";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -132,4 +133,19 @@ describe("meeting pack lifecycle and grounding", () => {
     expect(service.snapshot().activePackId).toBeNull(); expect(service.snapshot().packs[0].id).toBe(other);
     expect(vi.mocked(fetchImpl).mock.calls.filter(c => c[1]?.method === "DELETE")).toHaveLength(2);
   });
+});
+
+it("uses the focused question and clean dialogue in retrieval and continuation", async () => {
+  const { service, ready, fetchImpl } = setup(); const id = await ready(); service.activate(id);
+  const found = await service.search(id, "Old feedback. Next question: How do we measure total effort?", [`Me: ${englishRealtimeTranscriptionPrompt}`, "Me: Include review time."]);
+  await service.answer(id, found.ticket);
+  const calls = vi.mocked(fetchImpl).mock.calls;
+  const query = JSON.parse(calls.find(c => String(c[0]).endsWith("/search"))![1]!.body as string).query;
+  expect(query).toContain("How do we measure total effort?");
+  expect(query).not.toContain("Old feedback");
+  expect(query).not.toContain(englishRealtimeTranscriptionPrompt);
+  const request = JSON.parse(calls.find(c => String(c[0]).endsWith("/responses"))![1]!.body as string);
+  expect(JSON.parse(request.input).transcript).toBe("How do we measure total effort?");
+  expect(JSON.parse(request.input).recentContext).toEqual(["Me: Include review time."]);
+  await expect(service.search(id, englishRealtimeTranscriptionPrompt, [])).rejects.toThrow("No spoken input");
 });

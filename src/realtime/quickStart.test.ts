@@ -1,3 +1,4 @@
+import { englishRealtimeTranscriptionPrompt } from "./realtimeSession";
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { buildQuickStartRequest, generateQuickStart, isQuickStart } from "./quickStart";
@@ -49,4 +50,13 @@ describe("contextual quick start", () => {
     expect(JSON.stringify(request.input.at(-1))).toContain("not evidence");
     expect(JSON.stringify(request.input.slice(0, -1))).not.toContain("The workload matters here.");
   });
+});
+
+it("filters prompt echoes and focuses explicit handoffs in the actual quick request", async () => {
+  const input = JSON.parse(buildQuickStartRequest("Good explanation. Next question: And if it costs more", [`Me: ${englishRealtimeTranscriptionPrompt}`, "Me: Review has a cost."]).input);
+  expect(input.transcript).toBe("And if it costs more");
+  expect(input.recentContext).toEqual(["Me: Review has a cost."]);
+  const fetchImpl = vi.fn();
+  expect(await generateQuickStart({ apiKey: "fake", transcript: englishRealtimeTranscriptionPrompt, fetchImpl })).toEqual({ mode: "wait", english: "", russian: "" });
+  expect(fetchImpl).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import type { GenerationInput } from "../realtime/generationInput";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import type { MeetingAnswer } from "./types";
 
@@ -7,6 +8,7 @@ export type MeetingCardIdentity = {
 };
 export type MeetingCardSnapshot = {
   version: 1; identity: MeetingCardIdentity; attemptId: string; sequence: number;
+  generationInput?: GenerationInput;
   savedAt: string; packName: string; packCreatedAt: string;
   opening: QuickStart | null; answer: MeetingAnswer | null;
   phase: "started" | "opening" | "complete" | "error";
@@ -27,6 +29,9 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
     !["started", "opening", "complete", "error"].includes(r.phase) || !string(r.progress, 500) ||
     (r.opening !== null && !isQuickStart(r.opening)) || !r.timings ||
     Object.values(r.timings).some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0)) return false;
+  if (r.generationInput !== undefined && (!r.generationInput || r.generationInput.version !== 1 ||
+    !string(r.generationInput.transcript, 4000) || !Array.isArray(r.generationInput.recentContext) ||
+    r.generationInput.recentContext.length > 8 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;
   const a = r.answer;
   if (a !== null && (!a || !["grounded", "no_answer", "conflict"].includes(a.status) || !string(a.english, 2000) || !string(a.russian, 3000) ||
     !Array.isArray(a.sources) || a.sources.length > 160 || a.sources.some(s => !s || !string(s.id, 200) || !string(s.filename, 300) ||

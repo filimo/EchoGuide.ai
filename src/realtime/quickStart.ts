@@ -1,3 +1,4 @@
+import { prepareGenerationInput } from "./generationInput.ts";
 import { normalizeRecentContext, OPENAI_RESPONSES_URL } from "./bilingualAnalysis.ts";
 
 export type QuickStart = {
@@ -25,6 +26,8 @@ export function buildQuickStartRequest(
   transcript: string, recentContext: string[] = [], speakerLabel = "Heard",
   model = defaultQuickStartModel, reasoningEffort = defaultQuickStartReasoningEffort
 ) {
+  const prepared = prepareGenerationInput(transcript, recentContext);
+  transcript = prepared.transcript; recentContext = prepared.recentContext;
   return {
     model,
     reasoning: { effort: reasoningEffort },
@@ -33,6 +36,7 @@ export function buildQuickStartRequest(
     instructions: [
       "Help a Russian-speaking user participate in a live conversation in simple A2/B1 English.",
       "Return ONE contextual first piece of an answer, one short sentence, at most 16 English words, plus its natural Russian translation.",
+      "Prioritize the active utterance over older topics. Feedback about a previous answer is not the current question. Use earlier dialogue only to resolve missing referents, including short follow-ups without question marks.",
       "Use the active utterance and recent dialogue to resolve the topic and short follow-ups. Me is the user, Interviewer is the other speaker, Heard is unconfirmed; do not assume Heard is always a question.",
       "Choose mode start when the other speaker has finished asking and the user has not answered; give a relevant opening thought, not generic praise or filler such as Good question or Let me think.",
       "Choose continue only when the user's words clearly show an unfinished thought or explicit difficulty; continue that thought without restarting or repeating it.",
@@ -72,6 +76,7 @@ export async function generateQuickStart({ apiKey, transcript, recentContext = [
   apiKey: string; transcript: string; recentContext?: string[]; speakerLabel?: string;
   model?: string; reasoningEffort?: string; fetchImpl?: typeof fetch; signal?: AbortSignal;
 }): Promise<QuickStart> {
+  if (!prepareGenerationInput(transcript).transcript) return { mode: "wait", english: "", russian: "" };
   const response = await fetchImpl(OPENAI_RESPONSES_URL, {
     method: "POST", signal,
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json",

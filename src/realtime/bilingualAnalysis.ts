@@ -1,3 +1,4 @@
+import { prepareGenerationInput, withoutTranscriptionPrompt } from "./generationInput.ts";
 import type { QuickStart } from "./quickStart";
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -104,7 +105,7 @@ export function normalizeRecentContext(value: string[] | undefined): string[] {
   }
 
   const normalizedTurns = value
-    .map((turn) => turn.trim())
+    .map(withoutTranscriptionPrompt)
     .filter((turn) => turn.length > 0)
     .slice(-maxRecentContextTurns);
 
@@ -329,6 +330,8 @@ export function buildBilingualPhraseAnalysisRequest(
   recentContext?: string[],
   modelOptions: BilingualModelOptions = {}
 ) {
+  const prepared = prepareGenerationInput(transcript, recentContext);
+  transcript = prepared.transcript; recentContext = prepared.recentContext;
   const reasoningEffort =
     modelOptions.reasoningEffort?.trim() || defaultBilingualReasoningEffort;
   const normalizedKnowledgeContext = normalizeKnowledgeContext(knowledgeContext);

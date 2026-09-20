@@ -1,3 +1,4 @@
+import { englishRealtimeTranscriptionPrompt } from "../realtime/realtimeSession";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MeetingAssistant } from "./MeetingAssistant";
@@ -134,4 +135,43 @@ it("does not generate when history cannot be read", async () => {
   render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
   await screen.findByText(/Не удалось прочитать историю/);
   expect(quick).not.toHaveBeenCalled();
+});
+
+it("sends the same focused question to opening and retrieval, retaining raw input in the archive", async () => {
+  mockRoutes(); const quick = vi.fn().mockResolvedValue(null);
+  const text = "Хорошо объяснил прежнюю тему. А теперь следующий вопрос: How would you measure total effort?";
+  const raw = { ...selection, text, context: [`Me: ${englishRealtimeTranscriptionPrompt}`, "Me: We discussed review time."] };
+  render(<MeetingAssistant sessionId="session-one" selection={raw} quickStart={quick} />);
+  await screen.findByText(meetingFallback.english);
+  expect(quick).toHaveBeenCalledWith("How would you measure total effort?", ["Me: We discussed review time."], "Heard", expect.any(AbortSignal));
+  expect(meetingRequest).toHaveBeenCalledWith("search", { packId: "a", transcript: "How would you measure total effort?", recentContext: ["Me: We discussed review time."] }, expect.any(AbortSignal));
+  expect(snapshots.at(-1)!.identity.text).toBe(text);
+  expect(snapshots.at(-1)!.identity.context).toEqual(raw.context);
+  expect(snapshots.at(-1)!.generationInput).toEqual({ version: 1, transcript: "How would you measure total effort?", recentContext: ["Me: We discussed review time."] });
+});
+it("does not send a prompt-only selected turn to either generator", async () => {
+  mockRoutes(); const quick = vi.fn();
+  render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, text: englishRealtimeTranscriptionPrompt }} quickStart={quick} />);
+  await screen.findByText(/Это служебный текст распознавания/);
+  expect(quick).not.toHaveBeenCalled();
+  expect(vi.mocked(meetingRequest).mock.calls.some(c => c[0] === "search")).toBe(false);
+  expect(snapshots).toEqual([]);
+});
+it("restores legacy snapshots unchanged until explicit regeneration", async () => {
+  mockRoutes(); const quick = vi.fn().mockResolvedValue(null);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  await screen.findByText(meetingFallback.english);
+  view.unmount();
+  snapshots = snapshots.map(({ generationInput: _ignored, ...legacy }) => legacy);
+  const old = structuredClone(snapshots);
+  quick.mockClear();
+  render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  await screen.findByText(/До фильтрации входа/);
+  expect(quick).not.toHaveBeenCalled();
+  expect(snapshots).toEqual(old);
+  fireEvent.click(screen.getByRole("button", { name: "Новый вариант" }));
+  await waitFor(() => expect(quick).toHaveBeenCalledTimes(1));
+  await screen.findByText(meetingFallback.english);
+  expect(snapshots.slice(0, old.length)).toEqual(old);
+  expect(snapshots.at(-1)!.generationInput?.version).toBe(1);
 });

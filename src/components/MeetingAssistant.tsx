@@ -1,3 +1,4 @@
+import { prepareGenerationInput } from "../realtime/generationInput";
 import { useEffect, useRef, useState } from "react";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { meetingHistoryClient } from "../meeting/historyClient";
@@ -107,13 +108,20 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
       const cached = latestMeetingCard(matching);
       if (cached && !force) {
         setOpening(cached.opening); setAnswer(cached.answer); setTimings(cached.timings);
-        setProgress(cached.phase === "complete" || cached.phase === "error" ? `Сохранённый ответ · ${new Date(cached.savedAt).toLocaleString("ru-RU")}` : "Сохранено начало или незавершённая попытка. Для нового ответа нажми «Новый вариант».");
+        setQuestion(cached.generationInput?.transcript ?? identity.text);
+        setProgress(cached.phase === "complete" || cached.phase === "error" ? `Сохранённый ответ · ${new Date(cached.savedAt).toLocaleString("ru-RU")}${cached.generationInput ? "" : " · До фильтрации входа; для обновления нажми «Новый вариант»."}` : "Сохранено начало или незавершённая попытка. Для нового ответа нажми «Новый вариант».");
         return;
       }
+      const generationInput = prepareGenerationInput(identity.text, identity.context);
+      if (!generationInput.transcript) {
+        setProgress("Это служебный текст распознавания. Выбери реплику разговора.");
+        return;
+      }
+      setQuestion(generationInput.transcript);
       setGenerating(true);
       const started = performance.now();
       let snapshot: MeetingCardSnapshot = { version: 1, identity, attemptId: crypto.randomUUID(), sequence: 0,
-        savedAt: new Date().toISOString(), packName: active.name, packCreatedAt: active.createdAt,
+        generationInput, savedAt: new Date().toISOString(), packName: active.name, packCreatedAt: active.createdAt,
         opening: null, answer: null, phase: "started", progress: "Готовлю начало и ищу основания…", timings: {} };
       function publish(changes: Partial<MeetingCardSnapshot>) {
         if (!current()) return;
@@ -125,9 +133,9 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
         });
       }
       publish({});
-      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: identity.text, recentContext: last.context }, controller.signal)
+      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: generationInput.transcript, recentContext: generationInput.recentContext }, controller.signal)
         .then(value => ({ value, error: false as const })).catch(() => ({ error: true as const }));
-      const firstPiece = await quickRef.current(identity.text, last.context, last.speaker,
+      const firstPiece = await quickRef.current(generationInput.transcript, generationInput.recentContext, last.speaker,
         AbortSignal.any([controller.signal, AbortSignal.timeout(4000)])).catch(() => null);
       if (!current()) return;
       if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {

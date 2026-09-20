@@ -25,6 +25,11 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Exclude complete known transcription-prompt echoes from generation while retaining
+  raw transcript history. Explicit next-question handoffs now focus the opening
+  and retrieval on the same utterance. New meeting snapshots record the prepared
+  input; legacy answers remain unchanged until explicit regeneration.
+
 - Meeting answers can resolve likely spoken product-name substitutions from
   unambiguous retrieved evidence, while preserving explicit competing topics.
 

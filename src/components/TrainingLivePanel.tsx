@@ -1,3 +1,4 @@
+import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
 import { connectMacAudio } from "../macAudio/client";
@@ -439,9 +440,10 @@ function buildRecentAnalysisContext(turns: TranscriptTurn[], activePhraseId: str
   const activeTurnIndex = turns.findIndex((turn) => turn.id === activePhraseId);
   const availableTurns = activeTurnIndex >= 0 ? turns.slice(0, activeTurnIndex + 1) : turns;
   const recentTurns = availableTurns.slice(-maxFreshThoughtTurns).map((turn) => {
-    const text = turn.text.trim();
+    const text = withoutTranscriptionPrompt(turn.text);
+    if (!text) return "";
     return turn.speakerLabel === "Heard" ? text : `${turn.speakerLabel}: ${text}`;
-  });
+  }).filter(Boolean);
 
   while (
     recentTurns.length > 1 &&
@@ -1256,6 +1258,9 @@ export function TrainingLivePanel({
     transcript: string, recentContext: string[], phraseId: string,
     revision: number, hint = ""
   ): Promise<BilingualPhraseAnalysis> {
+    const prepared = prepareGenerationInput(transcript, recentContext);
+    transcript = prepared.transcript; recentContext = prepared.recentContext;
+    if (!transcript) throw new Error("No spoken input");
     const controller = new AbortController();
     quickStartControllersRef.current.set(phraseId, controller);
     setQuickStarts((current) => ({ ...current, [phraseId]: { status: "loading" } }));
@@ -1582,7 +1587,7 @@ export function TrainingLivePanel({
         }
       }
       setLiveTranscriptDraft("");
-      if (completedTranscript.length > 0) {
+      if (completedTranscript.length > 0 && withoutTranscriptionPrompt(completedTranscript)) {
         void translateCompletedTranscript(completedTranscript, phraseId);
         if (shouldAnalyze) scheduleAutomaticAnalysis(completedTranscript, phraseId, shouldShowAnalysis);
       }
@@ -2130,7 +2135,7 @@ export function TrainingLivePanel({
     contextTurns: TranscriptTurn[],
     requestedAnswerHint = ""
   ) {
-    const transcript = turn.text.trim();
+    const transcript = withoutTranscriptionPrompt(turn.text);
     const normalizedAnswerHint = requestedAnswerHint
       .trim()
       .slice(0, maxAnswerHintCharacters);

@@ -85,3 +85,34 @@ Inspect answer wording as well as status/source checks. The first attempt hit ne
 retrieval 1.7–1.9 s, complete answer 3.6–5.0 s. This small synthetic sample
 is not a latency guarantee or an evaluation of personal work materials.
 All known synthetic cloud resources were deleted.
+
+
+## Generation input boundaries
+
+Raw transcript turns and existing meeting snapshots are never rewritten by input
+preparation. A generation-only filter excludes a turn when its entire text
+matches one of the three configured Realtime transcription prompts, allowing
+whitespace/case differences and a known speaker prefix. Partial echoes, quoted
+examples with surrounding speech, and arbitrary instructions are not classified
+as prompt echoes. This is a narrow defense, not a general transcription fix.
+
+Explicit sentence-boundary handoffs such as “Next question:” or
+“А теперь следующий вопрос:” select the complete following utterance. The
+matching also supports “А следующая фраза такая:”. It does not split on a language
+change or select the last question mark. Without a supported handoff the whole
+utterance is retained, including follow-ups without punctuation. Recent dialogue
+still resolves referents; it must not replace the active topic.
+
+Quick openings and retrieval receive the same prepared input. Retrieval tickets
+carry that input into the continuation request. New snapshots retain the raw
+identity plus `generationInput` (version, transcript, recentContext). Cache keys
+continue to identify the raw selection, so legacy snapshots restore as originally
+shown, with a legacy-input notice. Use “Новый вариант” to apply current rules;
+this appends an attempt and does not rewrite historical answers or sources.
+
+To check locally: select a synthetic coach-feedback turn with an explicit
+next-question handoff, verify the focused question above the reply, then export
+and compare raw `identity` against `generationInput`. A prompt-only selected turn
+shows a service-text notice without generating. An old saved answer remains
+unchanged until explicit regeneration. Tests use synthetic inputs and mocked
+model responses; they do not establish live model answer quality.
