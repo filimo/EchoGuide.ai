@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Hide the redundant completed status once a grounded meeting answer is displayed and place saved-answer metadata and generation timings on a compact shared row.
+
 - Move Mac microphone and call application selection into a dismissible audio settings popover; keep selected sources in the toolbar.
 
 - Use a compact desktop workspace with full-height conversation and answer panels, smaller bridge phrases, collapsible turn detection settings, and an accessible regenerate icon in the meeting card header.

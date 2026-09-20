@@ -208,12 +208,14 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
     {error && <p role="alert" className="error-text">{error}</p>}
     {!question && <p className="hint">Выбери реплику в разговоре, чтобы подготовить ответ.</p>}
     {question && <p className="meeting-question">{question}</p>}
-    <p role="status">{progress}</p>
+    <div className="meeting-answer-meta">
+    {progress && progress !== "Готово" && <p role="status">{progress}</p>}
     {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">
       {timings.openingMs !== undefined && <span>Начало: {(timings.openingMs / 1000).toFixed(1)} с</span>}
       {timings.openingMs !== undefined && timings.answerMs !== undefined && " · "}
       {timings.answerMs !== undefined && <span>Поиск и полный ответ: {(timings.answerMs / 1000).toFixed(1)} с</span>}
     </p>}
+    </div>
     {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><p lang="en">{opening.english}</p><p lang="ru">{opening.russian}</p></section>}
     {answer && <section className="meeting-answer"><h3>{answer.status === "grounded" ? (opening ? "Продолжи" : "Ответ") : "Возьми время на проверку"}</h3>
       <p lang="en">{answer.english}</p><p lang="ru">{answer.russian}</p>
