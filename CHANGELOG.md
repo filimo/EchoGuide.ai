@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Support Shift-click transcript ranges and copying selected entries with their available Russian meanings with a single copy button in the compact, single-row transcript toolbar.
+
 - Make the latest transcript button resume automatic scrolling and phrase selection, including meeting mode; selecting a transcript entry pauses following.
 
 - Hide the redundant completed status once a grounded meeting answer is displayed and place saved-answer metadata and generation timings on a compact shared row.

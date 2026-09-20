@@ -8,7 +8,7 @@ import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
 import { MicrophonePicker } from "./MicrophonePicker";
 import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownToLine, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, Copy, Check, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
   createBrowserRecoveryAudioRecorder,
   type RecoveryAudioCaptureState,
@@ -2022,6 +2022,24 @@ export function TrainingLivePanel({
     });
   }
 
+  const transcriptSelectionAnchor = useRef<string | null>(null);
+  const [transcriptCopyResult, setTranscriptCopyResult] = useState("");
+
+  async function copySelectedTranscript() {
+    const turns = transcriptSelectionMode ? selectedTranscriptTurns : selectedTranscriptTurn ? [selectedTranscriptTurn] : [];
+    const text = turns.map(turn => {
+      const meaning = fastTranslations[turn.id]?.trim() ?? phraseCards.find(card => card.id === turn.id)?.analysis.russianMeaning.trim() ?? "";
+      return `${turn.speakerLabel}: ${turn.text}${meaning && meaning !== turn.text.trim() ? `\nРусский смысл: ${meaning}` : ""}`;
+    }).join("\n\n");
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setTranscriptCopyResult("Скопировано");
+    } catch {
+      setTranscriptCopyResult("Не удалось скопировать. Попробуйте ещё раз.");
+    }
+  }
+
   function toggleTranscriptTurnSelection(turnId: string) {
     setSelectedTranscriptTurnIds((current) => {
       const next = new Set(current);
@@ -2946,6 +2964,16 @@ export function TrainingLivePanel({
             </div>
             <button
               type="button"
+              className="transcript-copy-button transcript-action-icon"
+              onClick={() => void copySelectedTranscript()}
+              disabled={transcriptSelectionMode ? selectedTranscriptTurns.length === 0 : selectedTranscriptTurn == null}
+              aria-label={transcriptCopyResult || (transcriptSelectionMode ? `Скопировать выбранные (${selectedTranscriptTurns.length})` : "Скопировать запись")}
+              title={transcriptCopyResult || (transcriptSelectionMode ? `Скопировать выбранные (${selectedTranscriptTurns.length})` : "Скопировать запись: оригинал и русский смысл")}
+            >
+              {transcriptCopyResult === "Скопировано" ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}
+            </button>
+            <button
+              type="button"
               className="jump-latest-button transcript-action-icon"
               aria-label="К последней записи"
               aria-pressed={followLive}
@@ -3145,7 +3173,19 @@ export function TrainingLivePanel({
                     aria-pressed={
                       transcriptSelectionMode ? selectedTranscriptTurnIds.has(turn.id) : undefined
                     }
-                    onClick={() => {
+                    onClick={(event) => {
+                      setFollowLiveMode(false);
+                      setTranscriptCopyResult("");
+                      const anchorIndex = transcriptTurns.findIndex(item => item.id === transcriptSelectionAnchor.current);
+                      if (event.shiftKey && anchorIndex >= 0) {
+                        const endIndex = transcriptTurns.findIndex(item => item.id === turn.id);
+                        setTranscriptSelectionMode(true);
+                        setSelectedTranscriptTurnIds(new Set(transcriptTurns
+                          .slice(Math.min(anchorIndex, endIndex), Math.max(anchorIndex, endIndex) + 1)
+                          .map(item => item.id)));
+                        return;
+                      }
+                      transcriptSelectionAnchor.current = turn.id;
                       if (transcriptSelectionMode) {
                         toggleTranscriptTurnSelection(turn.id);
                         return;

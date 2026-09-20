@@ -157,6 +157,28 @@ describe("Training Live Panel", () => {
     expect(screen.getByLabelText("Режим встречи с материалами")).not.toBeChecked();
   });
 
+  it("copies a Shift-click range in transcript order with Russian meanings", async () => {
+    const user = userEvent.setup();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const { say } = await setupQuickStart();
+    await say("First question?");
+    await say("Second question?");
+    await say("Third question?");
+    await user.click(screen.getByRole("button", { name: "Interviewer Third question?" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("button", { name: "Interviewer First question?" }));
+    await user.keyboard("{/Shift}");
+    expect(screen.getByRole("button", { name: "К последней записи" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("3 selected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Скопировать выбранные (3)" }));
+    const copied = clipboard.mock.calls.at(-1)?.[0] ?? "";
+    expect(copied.indexOf("First question?")).toBeLessThan(copied.indexOf("Second question?"));
+    expect(copied.indexOf("Second question?")).toBeLessThan(copied.indexOf("Third question?"));
+    expect(copied).toContain("Русский смысл:");
+    expect(screen.getByRole("button", { name: "Скопировано" })).toBeInTheDocument();
+    clipboard.mockRestore();
+  });
+
   it("pins meeting help to a clicked phrase while new Heard turns arrive", async () => {
     const pageScrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
