@@ -132,7 +132,7 @@ the same conditions and uncertainty. Recommendations still require evidence:
 “I would” does not make an invented method grounded. No approved quality
 trade-off, grouping method or sample size may be inferred from a proposal.
 
-Run `npm run eval:meeting -- --spoken-quality` for seven synthetic scenarios:
+Run `npm run eval:meeting -- --spoken-quality` for synthetic scenarios:
 one result, extra rework with distracting earlier dialogue, comparable work,
 complexity, few differing tasks, quality versus speed, and an unapproved policy.
 The runner generates real openings before retrieval and continuations, reuses
@@ -162,3 +162,10 @@ compared total time with the usual process. The unsupported-policy case returned
 `no_answer`. These synthetic examples are observations, not fixed templates or
 a guarantee of future wording. No private pack or export was sent in these runs;
 the runner removed its synthetic cloud resources.
+
+Spoken comparison prompts now compare total time for both approaches, counting review
+and rework once. Required quality is a separate check; better quality need not reduce
+effort to be necessary. Diplomatic wording should be directly speakable. Baseline
+selection and quality checks already in the opening should not be repeated. The
+spoken-quality suite also covers baseline follow-ups, slower higher-quality work
+and diplomatic wording. These changes do not alter generation triggers.

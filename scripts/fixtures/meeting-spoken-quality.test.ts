@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { checkSpokenQuality } from "./meeting-spoken-quality";
 const answer = (english: string) => ({ english, russian: "Синтетический перевод.", status: "grounded" });
 describe("spoken comparison evaluation", () => {
+  it("rejects mismatched time comparisons and an invented efficiency-only quality rule", () => {
+    expect(checkSpokenQuality("higher-quality-slower", { english: "" },
+      answer("Compare the time saved with total effort.")).comparableTotals).toBe(false);
+    expect(checkSpokenQuality("higher-quality-slower", { english: "" },
+      answer("Better quality is worthwhile only if it reduces total effort.")).noEfficiencyOnlyQualityRule).toBe(false);
+    expect(checkSpokenQuality("higher-quality-slower", { english: "" },
+      answer("Compare total time for both options and check required quality.")).comparableTotals).toBe(true);
+  });
+  it("flags repeated baseline selection and indirect diplomatic wording", () => {
+    expect(checkSpokenQuality("baseline-followup", { english: "I would use the usual process as baseline." },
+      answer("I would use the usual process on a similar task.")).noRepeatedBaseline).toBe(false);
+    expect(checkSpokenQuality("diplomatic-wording", { english: "I would frame it as balancing the options." },
+      answer("Let us compare them.")).directWording).toBe(false);
+    expect(checkSpokenQuality("diplomatic-wording", { english: "Let us compare both options." },
+      answer("We can check total time and required quality together.")).directWording).toBe(true);
+  });
   it("catches topic drift and repeated caution in complete generated sequences", () => {
     expect(checkSpokenQuality("extra-rework", { english: "I would count rework in the total time." },
       answer("One result is only an early signal, not a conclusion.")).currentTopic).toBe(false);

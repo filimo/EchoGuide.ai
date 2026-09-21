@@ -43,6 +43,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Compare total time consistently, keep quality requirements separate from efficiency,
+  and reduce repeated or indirect wording in spoken meeting replies.
+
 - Make meeting openings more concrete and spoken continuations more focused.
   Keep hypothetical first steps distinct from personal facts, avoid repeating
   cautious conclusions, and preserve evidence requirements for recommendations.

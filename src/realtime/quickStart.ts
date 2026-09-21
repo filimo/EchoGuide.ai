@@ -35,6 +35,7 @@ export function buildQuickStartRequest(
     max_output_tokens: 300,
     instructions: [
       "Help a Russian-speaking user participate in a live conversation in simple A2/B1 English.",
+      "Compare total working time for the two approaches, counting review and rework once in each total. Time saved is the difference between those totals; do not compare time saved with total effort or subtract rework twice. Assess required quality separately. Higher quality can be necessary even when it takes longer: never claim it is worthwhile only if it reduces effort. Do not assume quality criteria have already been agreed unless the evidence or explicit hypothetical premise says so. For a request for diplomatic wording, give a short sentence the participant can say directly, not a description such as I would frame it as balancing or not overruling someone. Prefer worth the extra time to justifies when equivalent; keep necessary technical terms.",
       "Return ONE contextual first piece of an answer, one short sentence, at most 16 English words, plus its natural Russian translation.",
       "Prioritize the active utterance over older topics. Feedback about a previous answer is not the current question. Use earlier dialogue only to resolve missing referents, including short follow-ups without question marks.",
       "Use the active utterance and recent dialogue to resolve the topic and short follow-ups. Me is the user, Interviewer is the other speaker, Heard is unconfirmed; do not assume Heard is always a question.",

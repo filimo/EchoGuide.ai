@@ -15,6 +15,9 @@ A single positive result is only an early signal. Check a few more similar tasks
 `
 };
 export const spokenQualityCases = [
+  { name: "baseline-followup", question: "Which baseline would you choose to compare the two approaches?", context: [], expected: "grounded", source: "comparison.md" },
+  { name: "higher-quality-slower", question: "How would you explain a usual process that takes longer but produces higher quality?", context: [], expected: "grounded", source: "comparison.md" },
+  { name: "diplomatic-wording", question: "What short sentence could you say to invite a colleague to compare the options together?", context: [], expected: "grounded", source: "comparison.md" },
   { name: "one-result", question: "What would you say if one task looked faster, but there was no other evidence yet?", context: [], expected: "grounded", source: "comparison.md" },
   { name: "extra-rework", question: "What would you do if AI saved time on a task, but the result needed more rework?", context: ["Interviewer: What does one positive result prove?", "Me: It is an early signal, not a conclusion."], expected: "grounded", source: "comparison.md" },
   { name: "comparable-work", question: "How would you make sure the AI-assisted work and the usual work are comparable?", context: [], expected: "grounded", source: "comparison.md" },
@@ -30,6 +33,10 @@ export function checkSpokenQuality(name: string, opening: { english: string }, a
   const combined = `${opening.english} ${answer.english}`;
   const sentenceLengths = answer.english.split(/[.!?]+/).filter(s => s.trim()).map(s => s.trim().split(/\s+/).length);
   return {
+    comparableTotals: !/compare (?:the )?time saved (?:with|against|to) (?:the )?total (?:effort|time)/i.test(combined),
+    noEfficiencyOnlyQualityRule: !/quality.{0,100}only if it (?:reduces|lowers|saves)/i.test(combined),
+    directWording: name !== "diplomatic-wording" || !/frame it|overrul|balancing/i.test(combined),
+    noRepeatedBaseline: name !== "baseline-followup" || !(/I would use the usual process/i.test(opening.english) && /I would use the usual process/i.test(answer.english)),
     shortContinuation: answer.english.trim().split(/\s+/).length <= 45 && sentenceLengths.every(n => n <= 24),
     concreteLanguage: !/\b(?:balance (?:the )?impact|measure (?:the )?trade-off|consider their complexity)\b/i.test(combined),
     openingOnTopic: name !== "extra-rework" || /rework|extra (?:work|time)|total (?:time|effort)/i.test(opening.english),
