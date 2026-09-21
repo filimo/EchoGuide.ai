@@ -72,7 +72,6 @@ type SaveSessionHistoryOptions = {
 };
 
 export const sessionHistoryStorageKey = "echoguide.session-history.v1";
-const maxStoredSessions = 20;
 
 function createEmptySessionHistory(): SessionHistoryState {
   return {
@@ -387,7 +386,7 @@ export function upsertSessionHistoryEntry(
 
   const nextHistory = {
     version: 1 as const,
-    sessions: sessions.slice(0, maxStoredSessions)
+    sessions
   };
 
   return { history: nextHistory, entry };
@@ -433,7 +432,6 @@ export function normalizeSessionHistoryState(value: unknown): SessionHistoryStat
     sessions: candidate.sessions
       .map(normalizeSessionHistoryEntry)
       .filter((session): session is SessionHistoryEntry => session != null)
-      .slice(0, maxStoredSessions)
   };
 }
 

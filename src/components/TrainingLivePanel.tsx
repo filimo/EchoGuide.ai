@@ -1,5 +1,8 @@
 import { loadMeetingMode, saveMeetingMode } from "../meeting/preferences";
 import { loadAudioMode, saveAudioMode } from "../macAudio/preferences";
+import { startBrowserRecording, recordingPath, type BrowserRecording, type RecordingStatus } from "../recordings/client";
+import { recordingHeaders, type Recording } from "../recordings/types";
+import { SessionAudio } from "./SessionAudio";
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
@@ -541,6 +544,12 @@ export function TrainingLivePanel({
   const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; chunks: number; seenAt: number }>>>({});
   const [macClock, setMacClock] = useState(Date.now());
   const macAbortRef = useRef<AbortController | null>(null);
+  const macRecordingIdRef = useRef<string | null>(null);
+  const liveStartRef = useRef(0);
+  const recordingRunRef = useRef(0);
+  const browserRecordingRef = useRef<BrowserRecording | null>(null);
+  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>("idle");
+  const [recordingError, setRecordingError] = useState("");
   const lastOwnSpeechAtRef = useRef(0);
   useEffect(() => {
     if (audioMode !== "mac") return;
@@ -898,6 +907,9 @@ export function TrainingLivePanel({
       quickStartControllersRef.current.forEach((controller) => controller.abort());
       quickStartControllersRef.current.clear();
       macAbortRef.current?.abort();
+      liveStartRef.current++;
+      recordingRunRef.current++;
+      void browserRecordingRef.current?.stop();
       connectionRef.current?.disconnect();
       translationConnectionRef.current?.disconnect();
       recoveryAudioRecorderRef.current?.stop();
@@ -924,6 +936,7 @@ export function TrainingLivePanel({
 
           if (
             autoOpenLatestSession &&
+            realtimeStatusRef.current === "disconnected" &&
             !autoOpenedLatestSessionRef.current &&
             latestSession != null
           ) {
@@ -1024,7 +1037,7 @@ export function TrainingLivePanel({
       const existingIndex = current.findIndex((session) => session.id === savedEntry.id);
 
       if (existingIndex < 0) {
-        return [savedEntry, ...current].slice(0, 20);
+        return [savedEntry, ...current];
       }
 
       const nextSessions = [...current];
@@ -1704,12 +1717,33 @@ export function TrainingLivePanel({
     setErrorMessage("");
     realtimeStatusRef.current = "connecting";
     setRealtimeStatus("connecting");
+    setRecordingError("");
+    setRecordingStatus("starting");
+    recordingRunRef.current++;
+    macRecordingIdRef.current = null;
     try {
+      const sessionId = currentSessionIdRef.current!;
+      let recordingSessionId: string | undefined;
+      try {
+        rememberSavedSession(await sessionHistoryClient.saveCurrentSession(sessionId, buildSessionDraft()));
+        recordingSessionId = sessionId;
+      } catch {
+        if (controller.signal.aborted || macAbortRef.current !== controller) return;
+        setRecordingStatus("error");
+        setRecordingError("Запись недоступна: не удалось сохранить сессию на диск.");
+      }
+      if (controller.signal.aborted || macAbortRef.current !== controller) return;
       const transport = await connectMacAudioClient({
-        ...macSelection, language: speechLanguage, signal: controller.signal,
+        ...macSelection, sessionId: recordingSessionId, language: speechLanguage, signal: controller.signal,
         onEvent: event => {
           if (controller.signal.aborted || macAbortRef.current !== controller) return;
           if (event.type === "realtime") handleRealtimeEvent(event.event, event.source, event.capturedAt);
+          if (event.type === "recording") {
+            if (event.id) macRecordingIdRef.current = event.id;
+            setRecordingStatus(event.status);
+            setRecordingError(event.message ?? "");
+          }
+          if (event.type === "transcription-error") setErrorMessage(event.message);
           if (event.type === "level") setMacLevels(current => ({ ...current,
             [event.source]: { level: event.level, chunks: event.chunks, seenAt: Date.now() }
           }));
@@ -1733,24 +1767,43 @@ export function TrainingLivePanel({
       realtimeStatusRef.current = "error";
       setRealtimeStatus("error");
       setErrorMessage(toErrorMessage(error));
+      setRecordingStatus("error");
+      setRecordingError("Запись не началась: не удалось запустить live-сессию.");
     }
   }
 
   async function handleStartLive() {
     if (audioMode === "mac") return handleStartMacAudio();
-    if (connectionRef.current != null || realtimeStatus === "connecting") {
+    if (connectionRef.current != null || realtimeStatusRef.current === "connecting") {
       return;
     }
+
+    const attempt = ++liveStartRef.current;
+    const recordingRun = ++recordingRunRef.current;
+    realtimeStatusRef.current = "connecting";
+    setRealtimeStatus("connecting");
+    const sessionId = currentSessionIdRef.current!;
 
     let liveStream = stream;
 
     if (liveStream == null) {
-      const requestedStream = await onRequestMicrophone?.();
-      liveStream = requestedStream ?? null;
+      try { liveStream = await onRequestMicrophone?.() ?? null; }
+      catch (error) {
+        if (liveStartRef.current === attempt) {
+          realtimeStatusRef.current = "error"; setRealtimeStatus("error"); setErrorMessage(toErrorMessage(error));
+        }
+        return;
+      }
+    }
+    if (liveStartRef.current !== attempt) {
+      if (stream == null) liveStream?.getTracks().forEach(track => track.stop());
+      return;
     }
 
     if (liveStream == null) {
       setErrorMessage("Could not start microphone for live mode.");
+      realtimeStatusRef.current = "error";
+      setRealtimeStatus("error");
       return;
     }
 
@@ -1760,6 +1813,7 @@ export function TrainingLivePanel({
     setRecoveryNotice("");
     realtimeStatusRef.current = "connecting";
     setRealtimeStatus("connecting");
+    setRecordingError("");
 
     let recoveryAudioRecorder: RecoveryAudioRecorder | null = null;
 
@@ -1781,7 +1835,21 @@ export function TrainingLivePanel({
     }
 
     try {
+      rememberSavedSession(await sessionHistoryClient.saveCurrentSession(sessionId, buildSessionDraft()));
+      if (liveStartRef.current !== attempt) return;
+      browserRecordingRef.current = startBrowserRecording(liveStream, sessionId, (status, error) => {
+        if (currentSessionIdRef.current !== sessionId || recordingRunRef.current !== recordingRun) return;
+        setRecordingStatus(status); setRecordingError(error ?? "");
+      });
+    } catch (error) {
+      if (liveStartRef.current !== attempt) return;
+      setRecordingStatus("error"); setRecordingError(toErrorMessage(error));
+    }
+    if (liveStartRef.current !== attempt) return;
+
+    try {
       const clientSecret = await requestClientSecret("realtime-vad");
+      if (liveStartRef.current !== attempt) return;
       activeStreamRef.current = liveStream;
       clientSecretMetadataRef.current = {
         expiresAt: clientSecret.expiresAt,
@@ -1823,6 +1891,7 @@ export function TrainingLivePanel({
         }
       });
 
+      if (liveStartRef.current !== attempt) { realtimeConnection.disconnect(); return; }
       connectionRef.current = realtimeConnection;
       setConnection(realtimeConnection);
       realtimeStatusRef.current = "connected";
@@ -1830,6 +1899,9 @@ export function TrainingLivePanel({
       recordDiagnostic("training_live.connected");
       void flushDiagnostics();
     } catch (error) {
+      if (liveStartRef.current !== attempt) return;
+      void browserRecordingRef.current?.stop();
+      browserRecordingRef.current = null;
       recoveryAudioRecorder?.stop();
       recoveryAudioRecorderRef.current = null;
       recordDiagnostic("training_live.start_error");
@@ -1844,6 +1916,19 @@ export function TrainingLivePanel({
   }
 
   function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
+    const wasMac = macAbortRef.current != null;
+    const recorder = browserRecordingRef.current;
+    browserRecordingRef.current = null;
+    if (recorder) setRecordingStatus(current => current === "error" ? current : "saving");
+    void recorder?.stop();
+    if (wasMac && macRecordingIdRef.current) {
+      const sessionId = currentSessionIdRef.current!;
+      const run = recordingRunRef.current;
+      setRecordingStatus(current => current === "error" ? current : "saving");
+      void finishMacRecordingStatus(sessionId, macRecordingIdRef.current, run);
+    } else if (wasMac) setRecordingStatus(current => current === "error" ? current : "idle");
+    macRecordingIdRef.current = null;
+    liveStartRef.current++;
     macAbortRef.current?.abort();
     macAbortRef.current = null;
     setMacLevels({});
@@ -1857,6 +1942,7 @@ export function TrainingLivePanel({
     realtimeStatusRef.current = nextStatus;
     setRealtimeStatus(nextStatus);
     liveConnection?.disconnect();
+    recoveryAudioRecorderRef.current?.stop();
     recoveryAudioRecorderRef.current = null;
     setAudioStats(null);
     setRecoverySuggested(false);
@@ -1869,6 +1955,31 @@ export function TrainingLivePanel({
     if (unacknowledgedSpeechTimerRef.current != null) {
       window.clearTimeout(unacknowledgedSpeechTimerRef.current);
       unacknowledgedSpeechTimerRef.current = null;
+    }
+  }
+
+  async function finishMacRecordingStatus(sessionId: string, recordingId: string, run: number) {
+    try {
+      for (let retry = 0; retry < 10; retry++) {
+        await new Promise(resolve => window.setTimeout(resolve, 300));
+        if (recordingRunRef.current !== run) return;
+        const response = await fetch(recordingPath(sessionId), { headers: recordingHeaders, signal: AbortSignal.timeout(5000) });
+        if (!response.ok) throw new Error();
+        const records = await response.json() as Recording[];
+        const latest = records.find(record => record.id === recordingId);
+        if (!latest) throw new Error();
+        if (latest?.status === "recording") continue;
+        if (recordingRunRef.current !== run) return;
+        setRecordingStatus(latest == null ? "idle" : latest.status === "saved" ? "saved" : "error");
+        if (latest.status === "saved") setRecordingError("");
+        if (latest && latest.status !== "saved") setRecordingError("Запись прервана. Сохранённую часть можно открыть в Sessions.");
+        return;
+      }
+      throw new Error();
+    } catch {
+      if (recordingRunRef.current === run) {
+        setRecordingStatus("error"); setRecordingError("Не удалось подтвердить сохранение аудио. Проверь Sessions.");
+      }
     }
   }
 
@@ -2385,7 +2496,7 @@ export function TrainingLivePanel({
   }
 
   async function handleDeleteSavedSession(session: SessionHistoryEntry) {
-    if (!window.confirm("Delete this saved session?")) {
+    if (!window.confirm("Delete this saved session and its audio recordings?")) {
       return;
     }
 
@@ -2403,7 +2514,9 @@ export function TrainingLivePanel({
   }
 
   function handleNewSession() {
-    if (macAbortRef.current) { cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected"); }
+    cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected");
+    recordingRunRef.current++;
+    setRecordingStatus("idle"); setRecordingError("");
     resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     currentSessionIdRef.current = null;
@@ -2437,7 +2550,9 @@ export function TrainingLivePanel({
   }
 
   function handleOpenSavedSession(session: SessionHistoryEntry) {
-    if (macAbortRef.current) { cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected"); }
+    cancelPendingAutomaticAnalysis(); releaseLiveTransport("disconnected");
+    recordingRunRef.current++;
+    setRecordingStatus("idle"); setRecordingError("");
     resetQuickStarts();
     cancelPendingAutomaticAnalysis();
     const normalizedSession = ensureUniqueSessionPhraseIds(session);
@@ -2588,7 +2703,7 @@ export function TrainingLivePanel({
             {connection == null ? (
               <button
                 type="button"
-                disabled={microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
+                disabled={recordingStatus === "saving" || microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
                 onClick={handleStartLive}
               >
                 {realtimeStatus === "connecting" ? "Starting live..." : "Start live"}
@@ -2611,7 +2726,7 @@ export function TrainingLivePanel({
                 </button>
               </>
             )}
-            {audioMode === "mac" && realtimeStatus === "connecting" &&
+            {realtimeStatus === "connecting" &&
               <button type="button" onClick={handleStopLive}>Cancel start</button>}
             <button type="button" onClick={handleNewSession}>
               New session
@@ -2628,6 +2743,14 @@ export function TrainingLivePanel({
             <button type="button" onClick={() => void exportHistory()}>Экспорт ответов сессии (JSON)</button>
           </div>
         </header>
+        <div className="recording-status" role="status">
+          {recordingStatus === "idle" ? "Start live также записывает аудио локально на этом компьютере." :
+            recordingStatus === "starting" ? "Подготовка аудиозаписи…" :
+            recordingStatus === "recording" ? "● Аудио записывается на этот компьютер" :
+            recordingStatus === "saving" ? "Сохранение аудиозаписи…" :
+            recordingStatus === "saved" ? "Аудиозапись — в Sessions" : "Ошибка аудиозаписи"}
+          {recordingError && <span role="alert"> · {recordingError}</span>}
+        </div>
         {meetingExportError && <p role="alert">{meetingExportError}</p>}
 
         <div className="audio-status-toolbar">
@@ -2780,12 +2903,15 @@ export function TrainingLivePanel({
                     <button
                       type="button"
                       className="session-history-delete"
+                      disabled={session.id === currentSessionIdRef.current &&
+                        (realtimeStatus === "connected" || realtimeStatus === "connecting" || recordingStatus === "saving")}
                       aria-label="Delete session"
                       title="Delete session"
                       onClick={() => void handleDeleteSavedSession(session)}
                     >
                       <Trash2 aria-hidden="true" size={16} strokeWidth={1.8} />
                     </button>
+                    <SessionAudio sessionId={session.id} refresh={recordingStatus} />
                   </div>
                 ))}
               </div>

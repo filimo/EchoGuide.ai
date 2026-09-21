@@ -181,7 +181,14 @@ without forcing either representation to replace the other.
 
 ### Local persistence
 
-Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Transcript turns record whether they came from Realtime or manual input; corrected Realtime turns retain the original recognized text so it can be restored. Raw audio is not stored.
+Setup preferences use browser `localStorage`, but `Pasted notes` do not. The local development API loads and replaces them through `GET /api/knowledge/local` and `PUT /api/knowledge/local`, backed by the ignored `.echoguide/knowledge.local.md` file. Training sessions are written separately to `.echoguide/sessions/history.json`. Transcript turns record whether they came from Realtime or manual input; corrected Realtime turns retain the original recognized text so it can be restored.
+
+`src/recordings/` stores live audio under `.echoguide/sessions/audio/`. Browser
+MediaRecorder uploads bounded sequential chunks; the Mac server checkpoints a
+mixed stereo WAV beside independent transcription streams. A separate same-origin
+API lists recordings and serves byte ranges for playback. Session deletion removes
+its audio, and history no longer evicts old sessions automatically. See
+[session recording](session-recording.md) for lifecycle, limits and failure behavior.
 
 When a card is regenerated from `My point`, the normalized hint is stored only
 with that phrase card so reopening the local session restores the same grounding.

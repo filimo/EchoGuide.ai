@@ -12,6 +12,7 @@ export async function listMacAudioSources(signal?: AbortSignal): Promise<MacAudi
 }
 
 export type MacAudioOptions = {
+  sessionId?: string;
   pid: number;
   microphone: string;
   language: RealtimeSpeechLanguage;
@@ -21,7 +22,7 @@ export type MacAudioOptions = {
   fetchImpl?: typeof fetch;
 };
 
-export async function connectMacAudio({ pid, microphone, language, signal, onEvent, onError,
+export async function connectMacAudio({ pid, microphone, language, sessionId, signal, onEvent, onError,
   fetchImpl = fetch }: MacAudioOptions): Promise<RealtimeTranscriptionConnection> {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -40,7 +41,7 @@ export async function connectMacAudio({ pid, microphone, language, signal, onEve
   void (async () => {
     try {
       const response = await fetchImpl("/api/mac-audio/session", {
-        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ pid, microphone, language }), signal: controller.signal
+        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ pid, microphone, language, sessionId }), signal: controller.signal
       });
       if (!response.ok) {
         const payload = await response.json();

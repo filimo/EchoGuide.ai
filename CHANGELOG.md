@@ -33,6 +33,12 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Record audio automatically with Start live and finalize it with Stop live.
+  Play recordings from session history and delete them with their session.
+  Mac audio mixes both voices into both stereo channels; browser microphones
+  upload bounded MediaRecorder chunks. Show recording errors independently,
+  preserve partial audio, and retain sessions beyond the former twenty-entry limit.
+
 - Remember the meeting-with-materials mode toggle across page and browser restarts.
 
 - Remember Audio source, Call application and Mac microphone in this browser. Restore applications by bundle ID using their current process ID; keep unavailable preferences for a later refresh.

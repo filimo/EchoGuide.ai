@@ -4,6 +4,8 @@ export type MacAudioSources = {
   microphones: { id: string; name: string }[];
 };
 export type MacAudioEvent =
+  | { type: "recording"; status: "recording" | "saved" | "error"; id?: string; message?: string }
+  | { type: "transcription-error"; message: string }
   | { type: "ready" }
   | { type: "error"; message: string }
   | { type: "level"; source: MacAudioSource; level: number; chunks: number }

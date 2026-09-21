@@ -4,11 +4,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { createDevHttpsConfig } from "./src/config/devHttps";
 import { createRealtimeDevServerPlugin } from "./src/realtime/realtimeDevServer";
 import { createMacAudioPlugin } from "./src/macAudio/server";
+import { createRecordingPlugin } from "./src/recordings/server";
 
 const additionalAllowedHost = process.env.ECHOGUIDE_DEV_HOST?.trim();
 
 export default defineConfig({
-  plugins: [react(), createMacAudioPlugin(), createRealtimeDevServerPlugin()],
+  plugins: [react(), createRecordingPlugin(), createMacAudioPlugin(), createRealtimeDevServerPlugin()],
   server: {
     allowedHosts: additionalAllowedHost ? [additionalAllowedHost] : [],
     https: createDevHttpsConfig({ existsSync, readFileSync })

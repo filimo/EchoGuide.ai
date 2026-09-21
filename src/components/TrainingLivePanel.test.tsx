@@ -3357,7 +3357,7 @@ describe("Training Live Panel", () => {
 
     await user.click(deleteButtons[0]!);
 
-    expect(confirmDelete).toHaveBeenCalledWith("Delete this saved session?");
+    expect(confirmDelete).toHaveBeenCalledWith("Delete this saved session and its audio recordings?");
     expect(deleteSession).toHaveBeenCalledWith("session-1");
     expect(screen.queryByRole("button", { name: /Delete this saved message/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Keep this saved message/ })).toBeInTheDocument();

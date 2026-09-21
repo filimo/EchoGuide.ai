@@ -26,10 +26,11 @@ It does not start capture automatically. The normal setup screen also links here
 2. Click **Refresh Mac sources**. Grant the macOS capture permission if requested.
 3. Select **Call application** and **Mac microphone**. For Meet, select the browser.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
-5. Click **Start live**. Allow microphone access if macOS requests it.
+5. Click **Start live** to start capture, transcription and local audio recording. Allow microphone access if macOS requests it.
 6. Check both source meters. Completed turns appear with their source labels;
    per-turn Russian translations and existing phrase cards remain available.
-7. Click **Stop live** to stop native capture and both paid transcription sessions.
+7. Click **Stop live** to stop native capture, both paid transcription sessions and
+   finalize the recording. Play it from **Sessions → Аудиозаписи**.
 
 If permission is denied, open macOS **System Settings → Privacy & Security** and
 allow **Screen & System Audio Recording** and **Microphone** for **EchoGuide Audio**
@@ -62,7 +63,9 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 - Existing meeting-material mode remains opt-in and uses explicitly selected turns.
 - Disconnecting the browser request, cancelling startup, stopping live mode, opening
   a different saved session, or leaving the screen closes both upstream sessions and
-  terminates the helper. A helper/upstream error also closes the whole capture session.
+  terminates the helper. A helper error also closes the whole capture session.
+  After capture starts, an upstream error disables that transcription channel
+  while local capture and recording continue until Stop live.
 - Only a loopback client at `localhost`, `127.0.0.1`, or `[::1]`, with a matching Origin
   and the custom request header, can start capture. LAN/iPad requests are rejected.
   One capture session owns the helper at a time. The API key remains in Node.
@@ -72,6 +75,8 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   errors/disconnects, native exit, browser backpressure and client/server shutdown.
 - Raw audio and transcripts are not written to diagnostic logs. Existing local session
   history still saves text, roles and optional source/timestamp metadata under `.echoguide/`.
+- The Node server also saves a mixed stereo WAV: both voices in both channels.
+  Recording errors do not stop transcription. See [session recording](session-recording.md).
 
 ## Prototype limits
 

@@ -5,6 +5,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { Plugin } from "vite";
+import { recordingStore, type RecordingStore } from "../recordings/store";
+import type { Recording } from "../recordings/types";
 import {
   buildRealtimeTranscriptionSessionUpdate, defaultRealtimeTranscriptionModel,
   defaultRealtimeTurnDetectionSettings, readEnvironmentValue, readOpenAiApiKey
@@ -57,6 +59,7 @@ function publicRealtimeEvent(event: Record<string, unknown>) {
 }
 
 export type MacAudioServerDependencies = {
+  recordings?: RecordingStore;
   platform?: string;
   helperExists?: () => boolean;
   spawnHelper?: (args: string[]) => ChildProcessWithoutNullStreams;
@@ -145,9 +148,12 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     res.flushHeaders();
     const sockets = new Map<MacAudioSource, WebSocket>();
     const ready = new Set<MacAudioSource>();
+    const unavailable = new Set<MacAudioSource>();
     const frames = new Map<MacAudioSource, { chunks: number; lastLevel: number }>();
     const audioQueues = new Map<MacAudioSource, Buffer>(sources.map(source => [source, Buffer.alloc(0)]));
     const sessionId = randomUUID();
+    const recordings = deps.recordings ?? recordingStore;
+    let recording: Recording | undefined;
     const startedAt = performance.now();
     const diagnostic = (type: string, reason = "") => {
       const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, sessionId, reason,
@@ -181,6 +187,17 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       clearTimeout(timeout);
       clearInterval(heartbeat);
       clearInterval(audioPump);
+      if (recording) {
+        try {
+          const mic = audioQueues.get("microphone") ?? Buffer.alloc(0);
+          const app = audioQueues.get("application") ?? Buffer.alloc(0);
+          if (mic.length || app.length) recording = recordings.append(recording.sessionId, recording.id,
+            recording.sequence, mixStereo(mic, app));
+          recordings.finish(recording.sessionId, recording.id, reason === "client_disconnected" ? "saved" : "interrupted");
+        }
+        catch { /* A previous checkpoint remains on disk; do not block capture cleanup. */ }
+        recording = undefined;
+      }
       audioQueues.clear();
       helper?.kill();
       for (const socket of sockets.values()) socket.terminate();
@@ -194,6 +211,14 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       if (!res.write(`${JSON.stringify(event)}\n`)) stop("browser_backpressure");
     };
     const fail = (message: string, reason = "capture_error") => { send({ type: "error", message }); stop(reason); };
+    const transcriptionFailed = (source: MacAudioSource, message: string, reason: string) => {
+      if (stopped || unavailable.has(source)) return;
+      if (!captureEpoch) { fail(message, reason); return; }
+      unavailable.add(source);
+      sockets.get(source)?.terminate();
+      diagnostic("mac_audio.transcription_error", reason);
+      send({ type: "transcription-error", message: `${message} Audio capture continues; use Stop live to finish.` });
+    };
     res.on("close", () => stop());
     timeout = setTimeout(() => fail("Mac audio startup timed out. Check capture permissions and try again.", "startup_timeout"), 90_000);
     let heartbeats = 0;
@@ -223,6 +248,12 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
               if (audioPump) continue;
               clearTimeout(timeout);
               captureEpoch = Date.now();
+              if (typeof options.sessionId === "string") {
+                try {
+                  recording = recordings.start(options.sessionId, "wav");
+                  send({ type: "recording", status: "recording", id: recording.id });
+                } catch { send({ type: "recording", status: "error", message: "Audio recording could not start. Check local storage." }); }
+              }
               const pumpStartedAt = performance.now();
               let sentFrames = 0;
               diagnostic("mac_audio.ready");
@@ -237,27 +268,38 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                 }
                 for (let frame = 0; frame < dueFrames; frame++) {
                   sentFrames += 1;
+                  const recordingChannels: Buffer[] = [];
                   for (const source of sources) {
                     if (stopped) return;
                     const socket = sockets.get(source)!;
-                    if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
-                      fail("Audio delivery fell behind. Stop and restart live mode.", "upstream_backpressure"); return;
-                    }
                     const queue = audioQueues.get(source)!;
                     const pcm = Buffer.alloc(4800);
                     queue.copy(pcm, 0, 0, Math.min(queue.length, pcm.length));
                     audioQueues.set(source, queue.subarray(Math.min(queue.length, pcm.length)));
-                    socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm.toString("base64") }));
+                    recordingChannels.push(pcm);
+                    if (!unavailable.has(source)) {
+                      if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
+                        transcriptionFailed(source, "Audio delivery fell behind.", "upstream_backpressure");
+                      } else {
+                        try { socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm.toString("base64") })); }
+                        catch { transcriptionFailed(source, "Audio delivery failed.", "upstream_send_failed"); }
+                      }
+                    }
+                  }
+                  if (recording && recordingChannels.length === 2) {
+                    try {
+                      recording = recordings.append(recording.sessionId, recording.id, recording.sequence,
+                        mixStereo(recordingChannels[0], recordingChannels[1]));
+                    } catch {
+                      recording = undefined;
+                      send({ type: "recording", status: "error", message: "Audio recording stopped: storage error or 1 GB / 4 hour limit. Earlier audio is kept." });
+                    }
                   }
                 }
               }, 100);
               send({ type: "ready" }); continue;
             }
             if (event.type !== "audio" || !isMacAudioSource(event.source) || typeof event.audio !== "string") continue;
-            const socket = sockets.get(event.source)!;
-            if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
-              fail("Audio delivery fell behind. Stop and restart live mode.", "upstream_backpressure"); break;
-            }
             const pcm = Buffer.from(event.audio, "base64");
             if (pcm.length === 0 || pcm.length % 2 !== 0 || pcm.length > 192_000) throw new Error("Invalid PCM");
             const now = Date.now();
@@ -285,8 +327,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       for (const source of sources) {
         const socket = connectSocket(key);
         sockets.set(source, socket);
-        socket.on("error", () => fail(`Could not connect ${source} transcription to OpenAI.`));
-        socket.on("close", () => { if (!stopped) fail(`${source} transcription disconnected. Restart live mode.`, `${source}_upstream_closed`); });
+        socket.on("error", () => transcriptionFailed(source, `Could not connect ${source} transcription to OpenAI.`, `${source}_upstream_error`));
+        socket.on("close", () => { if (!stopped) transcriptionFailed(source, `${source} transcription disconnected.`, `${source}_upstream_closed`); });
         socket.on("open", () => {
           if (stopped) return;
           socket.send(JSON.stringify({ type: "session.update", session: {
@@ -298,7 +340,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           try {
             const event = JSON.parse(String(data));
             if (event.type === "error" || event.type === "conversation.item.input_audio_transcription.failed") {
-              fail(`${source} transcription failed. Check the transcription model and API access.`, `${source}_upstream_error`); return;
+              transcriptionFailed(source, `${source} transcription failed. Check the transcription model and API access.`, `${source}_upstream_error`); return;
             }
             if (event.type === "session.updated") { ready.add(source); startCapture(); }
             const itemKey = `${source}:${event.item_id}`;
@@ -324,6 +366,19 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     middleware,
     dispose() { stopActive?.("server_closed"); for (const process of children) process.kill(); }
   };
+}
+
+// Both voices are centered: the same mixed sample goes to both headphones.
+export function mixStereo(microphone: Buffer, application: Buffer) {
+  const stereo = Buffer.alloc(Math.max(microphone.length, application.length) * 2);
+  for (let offset = 0; offset < stereo.length / 2; offset += 2) {
+    const mic = offset < microphone.length ? microphone.readInt16LE(offset) : 0;
+    const app = offset < application.length ? application.readInt16LE(offset) : 0;
+    const sample = Math.max(-32768, Math.min(32767, mic + app));
+    stereo.writeInt16LE(sample, offset * 2);
+    stereo.writeInt16LE(sample, offset * 2 + 2);
+  }
+  return stereo;
 }
 
 export function createMacAudioPlugin(): Plugin {

@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { RecordingStore } from "../recordings/store";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
@@ -963,12 +964,17 @@ describe("Training session disk history middleware", () => {
     }
 
     const deleteResponse = createResponse();
+    const recordings = new RecordingStore(join(sessionHistoryFilePath, "..", "audio"));
+    const recording = recordings.start("session-one", "wav");
+    recordings.append("session-one", recording.id, 0, Buffer.alloc(8));
+    recordings.finish("session-one", recording.id);
 
     await middleware(
       { method: "DELETE", url: "/api/sessions/session-one" },
       deleteResponse,
       vi.fn()
     );
+    expect(existsSync(recordings.file(recording))).toBe(false);
 
     expect(deleteResponse.statusCode).toBe(200);
     expect(JSON.parse(deleteResponse.body).sessions.map((session: { id: string }) => session.id)).toEqual([

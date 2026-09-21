@@ -6,6 +6,10 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import WebSocket from "ws";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createMacAudioMiddleware, isLocalMacAudioRequest } from "./server";
+import { RecordingStore } from "../recordings/store";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 class Socket extends EventEmitter {
   readyState = WebSocket.OPEN;
@@ -38,12 +42,12 @@ function response() {
 }
 const cleanups: (() => void)[] = [];
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
-function setup() {
+function setup(recordings?: RecordingStore) {
   const sockets: Socket[] = [];
   const helper = new Helper();
   const spawnHelper = vi.fn(() => helper as unknown as ChildProcessWithoutNullStreams);
   const diagnostic = vi.fn();
-  const bridge = createMacAudioMiddleware({ diagnostic, platform: "darwin", helperExists: () => true, spawnHelper,
+  const bridge = createMacAudioMiddleware({ recordings, diagnostic, platform: "darwin", helperExists: () => true, spawnHelper,
     connectSocket: () => { const socket = new Socket(); sockets.push(socket); return socket as unknown as WebSocket; },
     readEnv: () => "OPENAI_API_KEY=test-only" });
   cleanups.push(bridge.dispose);
@@ -57,6 +61,40 @@ function setup() {
 }
 
 describe("Mac audio local bridge", () => {
+  it("records both voices in both channels, keeps recording after transcription failure and flushes the tail on stop", async () => {
+    const root = mkdtempSync(join(tmpdir(), "echoguide-mac-recording-"));
+    const recordings = new RecordingStore(root);
+    const test = setup(recordings);
+    const res = await test.run(request("session", { pid: 123, microphone: "default", language: "english", sessionId: "saved-session" }));
+    test.ready(); test.helper.line({ type: "ready" });
+    const mic = Buffer.alloc(4800); const app = Buffer.alloc(4800);
+    for (let i = 0; i < 4800; i += 2) { mic.writeInt16LE(1000, i); app.writeInt16LE(500, i); }
+    test.helper.line({ type: "audio", source: "microphone", audio: mic.toString("base64") });
+    test.helper.line({ type: "audio", source: "application", audio: app.toString("base64") });
+    test.sockets[0].message({ type: "error" });
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    expect(res.body).toContain("transcription-error");
+    await vi.waitFor(() => expect(test.sockets[1].send.mock.calls.some(([value]) => JSON.parse(value).type === "input_audio_buffer.append")).toBe(true));
+    test.helper.line({ type: "audio", source: "application", audio: app.subarray(0, 20).toString("base64") });
+    res.emit("close");
+    const record = recordings.list("saved-session")[0];
+    expect(record.status).toBe("saved");
+    const wav = readFileSync(recordings.file(record));
+    expect(wav.readInt16LE(44)).toBe(1500); expect(wav.readInt16LE(46)).toBe(1500);
+    expect(wav.readInt16LE(wav.length - 2)).toBe(500);
+    expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
+    rmSync(root, { recursive: true, force: true });
+  });
+  it("keeps transcription running when recording storage fails", async () => {
+    const recordings = { start() { throw new Error("Disk full"); } } as unknown as RecordingStore;
+    const test = setup(recordings);
+    const res = await test.run(request("session", { pid: 123, microphone: "default", language: "english", sessionId: "session" }));
+    test.ready(); test.helper.line({ type: "ready" });
+    expect(res.body).toContain('"status":"error"');
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    test.sockets[1].message({ type: "conversation.item.input_audio_transcription.completed", item_id: "synthetic", transcript: "Still transcribing" });
+    expect(res.body).toContain("Still transcribing");
+  });
   it("rejects remote clients, foreign origins, missing headers and rebinding hosts", () => {
     const req = request();
     expect(isLocalMacAudioRequest(req)).toBe(true);
@@ -82,8 +120,8 @@ describe("Mac audio local bridge", () => {
     test.helper.line({ type: "ready" });
     const pcm = Buffer.alloc(480, 1).toString("base64");
     test.helper.line({ type: "audio", source: "application", audio: pcm });
-    await new Promise(resolve => setTimeout(resolve, 120));
-    const sentAudio = JSON.parse(test.sockets[1].send.mock.calls.at(-1)![0]);
+    await vi.waitFor(() => expect(test.sockets[1].send.mock.calls.some(([value]) => JSON.parse(value).type === "input_audio_buffer.append")).toBe(true));
+    const sentAudio = JSON.parse(test.sockets[1].send.mock.calls.find(([value]) => JSON.parse(value).type === "input_audio_buffer.append")![0]);
     expect(sentAudio.type).toBe("input_audio_buffer.append");
     expect(Buffer.from(sentAudio.audio, "base64").subarray(0, 480)).toEqual(Buffer.alloc(480, 1));
     const micAudio = JSON.parse(test.sockets[0].send.mock.calls.at(-1)![0]);
@@ -119,8 +157,7 @@ describe("Mac audio local bridge", () => {
   });
   it("stops instead of building an unbounded audio queue", async () => {
     const test = setup(); const res = await test.run(); test.ready();
-    test.sockets[0].bufferedAmount = 300_000;
-    test.helper.line({ type: "audio", source: "microphone", audio: "AAAAAA==" });
+    test.helper.line({ type: "audio", source: "microphone", audio: Buffer.alloc(48_002).toString("base64") });
     expect(res.body).toContain("fell behind");
     expect(test.helper.kill).toHaveBeenCalled();
   });

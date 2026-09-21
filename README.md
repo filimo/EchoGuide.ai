@@ -45,8 +45,8 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
   user's intended facts or direction;
 - manual card generation from a selected group of transcript turns;
 - manual transcript messages and in-place corrections with speaker selection;
-- selectable in-memory recovery of recent phrases without storing raw call audio;
-- local session history without raw audio storage;
+- selectable in-memory recovery of recent phrases, separate from session recording;
+- local session history with audio recording, playback and deletion;
 - privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
 - a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
 
@@ -210,3 +210,9 @@ The `/mac-audio` route captures a microphone and a selected macOS application as
 separate sources, using a local Swift helper and two transcription sessions.
 Build it with `npm run mac-audio:build`, then follow the
 [Mac audio runbook](docs/mac-audio.md). Requires macOS 15+ and localhost access.
+
+## Session recording
+
+`Start live` also records audio locally; `Stop live` finishes the file. Play it
+from **Sessions → Аудиозаписи**. Both voices in Mac mode play in both headphones.
+See [session recording](docs/session-recording.md) for formats, limits and recovery.

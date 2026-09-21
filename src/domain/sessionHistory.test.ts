@@ -68,6 +68,14 @@ afterEach(() => {
 });
 
 describe("session history storage", () => {
+  it("keeps older sessions reachable after more than twenty recordings", () => {
+    for (let index = 0; index < 25; index++) {
+      saveSessionHistoryEntry(window.localStorage, draftEntry, { sessionId: `session-${index}` });
+    }
+    const sessions = loadSessionHistory(window.localStorage).sessions;
+    expect(sessions).toHaveLength(25);
+    expect(sessions.at(-1)?.id).toBe("session-0");
+  });
   it("saves local Training Mode sessions with transcript, analysis, replies, bridge phrases, source, and knowledge context", () => {
     const saved = saveSessionHistoryEntry(window.localStorage, draftEntry, {
       now: () => new Date("2026-07-08T10:00:00.000Z"),

@@ -34,7 +34,8 @@ The product is not intended to automate the conversation. It keeps the user in c
 - a 60-second in-memory microphone buffer with a selectable list of phrases
   recovered from the latest 30 seconds when Realtime misses speech;
 - manual card generation from selected transcript turns;
-- local session history without raw audio;
+- local session history with audio recording, playback and deletion through the
+  same Start live / Stop live controls;
 - privacy-safe Realtime diagnostics.
 
 ## Interaction principles

@@ -1,5 +1,6 @@
 import { createMeetingMiddleware } from "../meeting/middleware";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { RecordingStore, recordingStore, RecordingError } from "../recordings/store";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Plugin } from "vite";
 import {
@@ -341,6 +342,8 @@ export function createRealtimeClientSecretMiddleware({
   realtimeDiagnosticsDirectoryPath = defaultRealtimeDiagnosticsDirectoryPath,
   now
 }: RealtimeClientSecretMiddlewareOptions = {}) {
+  const recordings = sessionHistoryFilePath === defaultSessionHistoryFilePath
+    ? recordingStore : new RecordingStore(join(dirname(sessionHistoryFilePath), "audio"));
   return async (req: BasicRequest, res: BasicResponse, next: MiddlewareNext): Promise<void> => {
     const handlesClientSecret = matchesRealtimeClientSecretRoute(req);
     const handlesTranslationClientSecret = matchesRealtimeTranslationClientSecretRoute(req);
@@ -426,6 +429,12 @@ export function createRealtimeClientSecretMiddleware({
     }
 
     if (deleteSessionId != null) {
+      try { recordings.deleteSession(deleteSessionId); }
+      catch (error) {
+        sendJson(res, error instanceof RecordingError ? error.status : 500,
+          { error: error instanceof RecordingError ? error.message : "Could not delete session audio." });
+        return;
+      }
       const nextHistory = deleteSessionHistoryStateEntry(
         readSessionHistoryFromDisk(sessionHistoryFilePath),
         deleteSessionId
