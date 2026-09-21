@@ -15,6 +15,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Show the selected phrase's Russian meaning as the meeting card prompt, with the spoken English available under a collapsed `English original` disclosure.
+
+- Use the compact `Они` label for call audio transcript turns and give the recovered width back to the spoken text.
+
 - Support Shift-click transcript ranges and copying selected entries with their available Russian meanings with a single copy button in the compact, single-row transcript toolbar.
 
 - Make the latest transcript button resume automatic scrolling and phrase selection, including meeting mode; selecting a transcript entry pauses following.

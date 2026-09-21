@@ -22,6 +22,22 @@ function mockRoutes() {
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
 }
 describe("manual meeting assistance", () => {
+  it("shows the Russian meaning first and keeps the spoken English in a disclosure", async () => {
+    mockRoutes();
+    render(<MeetingAssistant
+      sessionId="session-one"
+      selection={selection}
+      russianMeaning="Каков план?"
+      quickStart={async () => null}
+    />);
+    await screen.findByText(meetingFallback.english);
+    const question = screen.getByText("Каков план?").closest(".meeting-question");
+    expect(question).toHaveTextContent("Каков план?");
+    expect(question).toHaveTextContent("English original");
+    expect(question).toHaveTextContent(selection.text);
+    expect(question?.querySelector("details")).not.toHaveAttribute("open");
+  });
+
   it("waits for selection and does not regenerate the same selected phrase", async () => {
     mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "start", english: "Opening", russian: "Начало" });
     const { rerender } = render(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);

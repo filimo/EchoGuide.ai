@@ -11,10 +11,11 @@ export type MeetingSelection = { id: string; text: string; speaker: string; cont
 type Props = {
   sessionId: string;
   selection: MeetingSelection | null;
+  russianMeaning?: string;
   quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
-export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
+export function MeetingAssistant({ sessionId, selection, russianMeaning = "", quickStart }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
@@ -207,7 +208,13 @@ export function MeetingAssistant({ sessionId, selection, quickStart }: Props) {
     </details>
     {error && <p role="alert" className="error-text">{error}</p>}
     {!question && <p className="hint">Выбери реплику в разговоре, чтобы подготовить ответ.</p>}
-    {question && <p className="meeting-question">{question}</p>}
+    {question && <div className="meeting-question">
+      <p lang="ru">{russianMeaning.trim() || "Готовим русский смысл…"}</p>
+      <details>
+        <summary>English original</summary>
+        <p lang="en">{question}</p>
+      </details>
+    </div>}
     <div className="meeting-answer-meta">
     {progress && progress !== "Готово" && <p role="status">{progress}</p>}
     {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">

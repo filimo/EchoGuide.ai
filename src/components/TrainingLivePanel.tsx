@@ -2507,6 +2507,12 @@ export function TrainingLivePanel({
     if (!meetingMode || !followLive) return;
     const latestTurn = transcriptTurns.at(-1);
     if (!latestTurn) return;
+    const latestRussianMeaning = fastTranslations[latestTurn.id]?.trim()
+      || phraseCards.find(card => card.id === latestTurn.id)?.analysis.russianMeaning.trim()
+      || "";
+    if (!latestRussianMeaning && !pendingTranslationIds.has(latestTurn.id)) {
+      void translateCompletedTranscript(latestTurn.text, latestTurn.id);
+    }
     setSelectedPhraseCardId(latestTurn.id);
     setMeetingSelection(current => current?.id === latestTurn.id && current.text === latestTurn.text ? current : {
       id: latestTurn.id, text: latestTurn.text, speaker: latestTurn.speakerLabel,
@@ -2548,6 +2554,12 @@ export function TrainingLivePanel({
       });
     }
   }
+
+  const meetingRussianMeaning = meetingSelection == null
+    ? ""
+    : fastTranslations[meetingSelection.id]?.trim()
+      || phraseCards.find(card => card.id === meetingSelection.id)?.analysis.russianMeaning.trim()
+      || "";
 
   return (
     <main className="copilot-shell desktop-workspace">
@@ -3162,7 +3174,7 @@ export function TrainingLivePanel({
                     onClick={() => cycleTranscriptSpeakerLabel(turn)}
                   >
                     {turn.audioSource && turn.speakerLabel === sourceSpeaker(turn.audioSource)
-                      ? (turn.audioSource === "microphone" ? "Я" : "Собеседники")
+                      ? (turn.audioSource === "microphone" ? "Я" : "Они")
                       : getCompactSpeakerLabel(turn.speakerLabel)}
                   </button>
                   <button
@@ -3193,6 +3205,9 @@ export function TrainingLivePanel({
 
                       setFollowLiveMode(false);
                       if (meetingMode) {
+                        if (!russianMeaning && !pendingTranslationIds.has(turn.id)) {
+                          void translateCompletedTranscript(turn.text, turn.id);
+                        }
                         setMeetingSelection(current => current?.id === turn.id ? current : {
                           id: turn.id, text: turn.text, speaker: turn.speakerLabel,
                           context: transcriptTurns.slice(0, transcriptTurns.findIndex(item => item.id === turn.id))
@@ -3270,7 +3285,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} quickStart={generateQuickStart} /> : <>
+          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} quickStart={generateQuickStart} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>

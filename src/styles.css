@@ -1616,6 +1616,10 @@ textarea {
 .meeting-opening p[lang=en], .meeting-answer p[lang=en] { font-size: 1.15rem; line-height: 1.55; }
 .meeting-opening p[lang=ru], .meeting-answer p[lang=ru] { color: #475569; }
 .meeting-question { border-left: 3px solid #94a3b8; padding-left: .7rem; }
+.meeting-question > p { margin: 0; }
+.meeting-question details { margin-top: .35rem; color: #475569; }
+.meeting-question summary { cursor: pointer; font-size: .85em; font-weight: 650; }
+.meeting-question details p { margin: .35rem 0 0; }
 .meeting-answer pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }
 
 .microphone-picker {
@@ -1645,7 +1649,7 @@ textarea {
 .training-status-row meter { width: 5rem; margin-left: 0.5rem; }
 .transcript-capture-time { font-size: 0.75rem; opacity: 0.65; }
 
-.transcript-turn-mac { grid-template-columns: 80px minmax(0, 1fr); }
+.transcript-turn-mac { grid-template-columns: 30px minmax(0, 1fr); }
 
 /* Desktop workspace: keep the conversation and answer within the available window. */
 .desktop-workspace { padding: 10px; }
