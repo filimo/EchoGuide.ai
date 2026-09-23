@@ -7,7 +7,7 @@ import { MeetingService } from "./service";
 import { meetingFallback } from "./types";
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(path => rmSync(path, { recursive: true, force: true })));
-function setup() {
+function setup(reasoningEffort?: () => string) {
   const directory = mkdtempSync(join(tmpdir(), "meeting-test-")); directories.push(directory);
   let counter = 0;
   const files: Record<string, string[]> = {};
@@ -25,7 +25,7 @@ function setup() {
     else if (path === "/responses") value = { output_text: JSON.stringify({ status: state.responseStatus, english: state.english, russian: state.russian, sourceIds: state.sourceIds }) };
     return new Response(JSON.stringify(value), { status: 200 });
   }) as unknown as typeof fetch;
-  const service = new MeetingService({ directory, apiKey: () => "test-only", fetchImpl });
+  const service = new MeetingService({ directory, apiKey: () => "test-only", reasoningEffort, fetchImpl });
   const ready = async (name = "Pack", text = "# Status\nПилот пока не выбран.") => {
     const snapshot = service.create(name, [{ name: "status.md", text }]);
     const id = snapshot.packs[0].id;
@@ -35,6 +35,27 @@ function setup() {
   return { service, state, ready, fetchImpl, directory };
 }
 describe("meeting pack lifecycle and grounding", () => {
+  it("keeps the live reasoning effort at none and allows an eval override", async () => {
+    let effort = "low";
+    const { service, ready, fetchImpl } = setup(() => effort);
+    const id = await ready(); service.activate(id);
+    let found = await service.search(id, "What is the pilot status?", []);
+    await service.answer(id, found.ticket);
+    effort = "medium";
+    found = await service.search(id, "What is the pilot status?", []);
+    await service.answer(id, found.ticket);
+    const requests = vi.mocked(fetchImpl).mock.calls
+      .filter(call => String(call[0]).endsWith("/responses"))
+      .map(call => JSON.parse(call[1]!.body as string));
+    expect(requests.map(request => request.reasoning.effort)).toEqual(["low", "medium"]);
+    const defaultSession = setup();
+    const defaultId = await defaultSession.ready(); defaultSession.service.activate(defaultId);
+    found = await defaultSession.service.search(defaultId, "What is the pilot status?", []);
+    await defaultSession.service.answer(defaultId, found.ticket);
+    const defaultRequest = vi.mocked(defaultSession.fetchImpl).mock.calls
+      .find(call => String(call[0]).endsWith("/responses"))!;
+    expect(JSON.parse(defaultRequest[1]!.body as string).reasoning.effort).toBe("none");
+  });
   it("does not activate uploads and preserves active pack when indexing fails", async () => {
     const { service, ready, state } = setup();
     const old = await ready(); service.activate(old);

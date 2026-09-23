@@ -41,11 +41,11 @@ export function checkSpokenQuality(name: string, opening: { english: string }, a
     concreteLanguage: !/\b(?:balance (?:the )?impact|measure (?:the )?trade-off|consider their complexity)\b/i.test(combined),
     openingOnTopic: name !== "extra-rework" || /rework|extra (?:work|time)|total (?:time|effort)/i.test(opening.english),
     currentTopic: name !== "extra-rework" || (!/early signal|not a conclusion|few (?:similar )?tasks|sample size/i.test(answer.english) && /review|rework/i.test(combined) && /quality/i.test(combined) && /total|overall/i.test(combined)),
-    noIdenticalTasks: name !== "comparable-work" || !/(?:same|identical) (?:tasks?|inputs?)/i.test(combined),
+    noIdenticalTasks: name !== "comparable-work" || !/(?:same|identical) (?:tasks?|inputs?)\b(?!\s+(?:requirements|criteria|quality))/i.test(combined),
     noUnaskedDesign: !/time limit/i.test(combined) && (name !== "complexity" || !/separate complex|group|sort|stratif/i.test(opening.english)),
     noInventedRange: name !== "remaining-differences" || !/limited range|narrow range/i.test(opening.english),
     boundedSmallSample: name !== "remaining-differences" || (/estimate|limit|uncertain|firm|conclusion|cannot|can't/i.test(combined) && !/put .* into groups|split .* into groups|group (?:the )?tasks|within similar groups|stratif/i.test(combined)),
-    qualityFirst: name !== "quality-versus-speed" || /quality requirements|quality criteria|quality checks|required quality/i.test(combined),
+    qualityFirst: name !== "quality-versus-speed" || /quality requirements|quality criteria|quality checks|required quality|required standard|required check/i.test(combined),
     noRepeatedCaution: name !== "one-result" || !(/not enough|not a conclusion|early signal|firm conclusion|drawing conclusions/i.test(opening.english) && /early signal|not a conclusion/i.test(answer.english))
   };
 }

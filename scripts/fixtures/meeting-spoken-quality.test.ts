@@ -27,6 +27,8 @@ describe("spoken comparison evaluation", () => {
   it("rejects identical-task promises and unsupported grouping for a small sample", () => {
     expect(checkSpokenQuality("comparable-work", { english: "I would use the same tasks and inputs." },
       answer("Then compare similar tasks.")).noIdenticalTasks).toBe(false);
+    expect(checkSpokenQuality("comparable-work", { english: "I would compare similar work." },
+      answer("Check final quality against the same task requirements.")).noIdenticalTasks).toBe(true);
     expect(checkSpokenQuality("remaining-differences", { english: "Few tasks imply a limited range of complexity." },
       answer("Report an estimate with limits.")).noInventedRange).toBe(false);
     expect(checkSpokenQuality("remaining-differences", { english: "I would record the differences." },
@@ -38,6 +40,8 @@ describe("spoken comparison evaluation", () => {
     expect(Object.values(checks).every(Boolean)).toBe(true);
     expect(checkSpokenQuality("technical-question", { english: "The latency threshold matters." },
       answer("Compare the required threshold with the measured latency.")).concreteLanguage).toBe(true);
+    expect(checkSpokenQuality("quality-versus-speed", { english: "First check the required standard." },
+      answer("If it passes, compare total time.")).qualityFirst).toBe(true);
     expect(checkSpokenQuality("remaining-differences", { english: "With few tasks, conclusions remain uncertain." },
       answer("Apply the same quality checks to both groups.")).boundedSmallSample).toBe(true);
     expect(checkSpokenQuality("unapproved-policy", { english: "" }, { ...answer(""), status: "no_answer" }).noInventedPolicy).toBe(true);

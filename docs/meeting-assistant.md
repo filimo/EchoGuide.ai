@@ -132,7 +132,7 @@ the same conditions and uncertainty. Recommendations still require evidence:
 “I would” does not make an invented method grounded. No approved quality
 trade-off, grouping method or sample size may be inferred from a proposal.
 
-Run `npm run eval:meeting -- --spoken-quality` for synthetic scenarios:
+Run `npm run eval:meeting -- --spoken-quality` for ten synthetic scenarios:
 one result, extra rework with distracting earlier dialogue, comparable work,
 complexity, few differing tasks, quality versus speed, and an unapproved policy.
 The runner generates real openings before retrieval and continuations, reuses
@@ -140,6 +140,21 @@ configured model settings and writes answers/checks to ignored eval results.
 It creates and removes only its synthetic cloud pack. Mechanical checks flag
 known failures; review the actual English/Russian sequence and source status too.
 Old saved cards remain unchanged; use “Новый вариант” to test current wording.
+
+To compare the current meeting model's reasoning effort without changing the
+live default, run `npm run eval:meeting -- --spoken-quality --efforts=none,low,medium`.
+The runner reuses one generated opening per question, rotates effort order, and
+records the number of search hits alongside the answer and timing. The live
+meeting service still uses `none` unless explicitly overridden by the runner.
+
+On September 23, 2026, `gpt-5.6-luna` passed 8/10, 9/10, and 9/10 checks for
+`none`, `low`, and `medium`, respectively. Mean search plus answer time was
+3.88s, 6.24s, and 6.39s. In a two-repeat targeted check of diplomatic wording,
+`none` passed 0/2, `low` 1/2, and `medium` 2/2; all six searches found four
+fragments. The sample favors a separate `medium` meeting canary, but is too
+small to change the live default. Results are saved under ignored
+`.echoguide/evals/meeting-*/results.json` directories; synthetic cloud
+resources were removed.
 
 
 ### Synthetic check recorded on 2026-09-20

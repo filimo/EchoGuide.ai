@@ -20,7 +20,7 @@ export class MeetingService {
   private uploading = false;
   private refreshPromise?: Promise<MeetingPackState>;
   private statePath: string;
-  constructor(private options: { directory?: string; apiKey: () => string; model?: () => string; fetchImpl?: typeof fetch }) {
+  constructor(private options: { directory?: string; apiKey: () => string; model?: () => string; reasoningEffort?: () => string; fetchImpl?: typeof fetch }) {
     this.statePath = join(options.directory ?? ".echoguide/meeting", "packs.json");
     this.state = existsSync(this.statePath) ? JSON.parse(readFileSync(this.statePath, "utf8")) : { packs: [], activePackId: null };
     // A process interrupted during uploads cannot safely resume unknown cloud writes.
@@ -151,7 +151,7 @@ export class MeetingService {
     const answerInput = { transcript: interpretedQuestion ?? ticket.transcript, recentContext: ticket.recentContext, opening, evidence: ticket.evidence,
       ...(interpretedQuestion ? { originalTranscript: ticket.transcript, interpretation: "Unconfirmed: codecs may mean Codex. Answer conditionally, never claim the user said Codex." } : {}) };
     const requestBody = {
-      model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: "none" }, store: false, max_output_tokens: 700,
+      model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: this.options.reasoningEffort?.() || "none" }, store: false, max_output_tokens: 700,
       instructions: [
         "Compare total working time for the two approaches, counting review and rework once in each total. Time saved is the difference between those totals; do not compare time saved with total effort or subtract rework twice. Assess required quality separately. Higher quality can be necessary even when it takes longer: never claim it is worthwhile only if it reduces effort. Do not assume quality criteria have already been agreed unless the evidence or explicit hypothetical premise says so. For a request for diplomatic wording, give a short sentence the participant can say directly, not a description such as I would frame it as balancing or not overruling someone. Prefer worth the extra time to justifies when equivalent; keep necessary technical terms.",
         "Help a Russian-speaking participant answer a work meeting question in simple spoken English. Return ONE concise answer in simple A2/B1 English and its natural Russian meaning. Use 1-3 short sentences, at most 45 English words, one idea per sentence. Prefer everyday verbs over abstract nouns and long lists. Preserve negation and uncertainty; simplify wording, never facts.",
