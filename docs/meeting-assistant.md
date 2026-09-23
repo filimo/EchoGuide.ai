@@ -184,3 +184,8 @@ effort to be necessary. Diplomatic wording should be directly speakable. Baselin
 selection and quality checks already in the opening should not be repeated. The
 spoken-quality suite also covers baseline follow-ups, slower higher-quality work
 and diplomatic wording. These changes do not alter generation triggers.
+
+For limited-evidence decisions, the opening can call the decision provisional or
+the conclusion uncertain. It should not call the decision itself unreliable.
+The continuation should add a supported check or risk without repeating the opening.
+The spoken-quality suite includes this question and checks the combined EN answer.

@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { checkSpokenQuality } from "./meeting-spoken-quality";
 const answer = (english: string) => ({ english, russian: "Синтетический перевод.", status: "grounded" });
 describe("spoken comparison evaluation", () => {
+  it("keeps provisional decisions distinct from unreliable conclusions", () => {
+    expect(checkSpokenQuality("limited-evidence-decision", {
+      english: "With limited evidence, I would describe the decision as provisional and potentially unreliable."
+    }, answer("I would compare it with the usual process.")).provisionalDecisionWording).toBe(false);
+    expect(checkSpokenQuality("limited-evidence-decision", {
+      english: "I would describe the decision as provisional because limited evidence makes the conclusion uncertain."
+    }, answer("I would check a similar task.")).oneCautionInOpening).toBe(false);
+    expect(checkSpokenQuality("limited-evidence-decision", {
+      english: "With limited evidence, I would treat the decision as provisional."
+    }, answer("I would check the result against the usual process before making a firm decision.")).provisionalDecisionWording).toBe(true);
+  });
   it("rejects mismatched time comparisons and an invented efficiency-only quality rule", () => {
     expect(checkSpokenQuality("higher-quality-slower", { english: "" },
       answer("Compare the time saved with total effort.")).comparableTotals).toBe(false);

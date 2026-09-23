@@ -15,6 +15,7 @@ A single positive result is only an early signal. Check a few more similar tasks
 `
 };
 export const spokenQualityCases = [
+  { name: "limited-evidence-decision", question: "How would you explain the risks of making a decision with limited evidence?", context: [], expected: "grounded", source: "comparison.md" },
   { name: "baseline-followup", question: "Which baseline would you choose to compare the two approaches?", context: [], expected: "grounded", source: "comparison.md" },
   { name: "higher-quality-slower", question: "How would you explain a usual process that takes longer but produces higher quality?", context: [], expected: "grounded", source: "comparison.md" },
   { name: "diplomatic-wording", question: "What short sentence could you say to invite a colleague to compare the options together?", context: [], expected: "grounded", source: "comparison.md" },
@@ -33,6 +34,8 @@ export function checkSpokenQuality(name: string, opening: { english: string }, a
   const combined = `${opening.english} ${answer.english}`;
   const sentenceLengths = answer.english.split(/[.!?]+/).filter(s => s.trim()).map(s => s.trim().split(/\s+/).length);
   return {
+    provisionalDecisionWording: name !== "limited-evidence-decision" || !/\b(?:decision|choice)\b[^.!?]{0,70}\bunreliable\b/i.test(combined),
+    oneCautionInOpening: name !== "limited-evidence-decision" || !(/\bprovisional\b/i.test(opening.english) && /\b(?:conclusion|evidence)\b[^.!?]{0,40}\buncertain\b/i.test(opening.english)),
     comparableTotals: !/compare (?:the )?time saved (?:with|against|to) (?:the )?total (?:effort|time)/i.test(combined),
     noEfficiencyOnlyQualityRule: !/quality.{0,100}only if it (?:reduces|lowers|saves)/i.test(combined),
     directWording: name !== "diplomatic-wording" || !/frame it|overrul|balancing/i.test(combined),

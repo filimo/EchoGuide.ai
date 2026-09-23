@@ -55,6 +55,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Phrase decisions made with limited evidence as provisional, while keeping uncertainty
+  about the evidence or conclusion distinct in spoken meeting cards.
+
 - Compare total time consistently, keep quality requirements separate from efficiency,
   and reduce repeated or indirect wording in spoken meeting replies.
 
