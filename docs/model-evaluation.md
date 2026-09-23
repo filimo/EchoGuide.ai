@@ -68,6 +68,8 @@ The scores come from one synthetic run, not real interview audio. GPT-6 Luna los
 
 The separate seven-case quick-start check gave GPT-6 Luna two 3.5-second timeouts on the first run and none on the repeat; GPT-5.6 Luna passed all seven in its run. Keep quick start on the current default until its timeout behavior is measured in live use. The meeting assistant reads `OPENAI_BILINGUAL_MODEL`, so changing that setting also changes meeting answers; validate that path before switching the shared default.
 
+A second paired nine-case phrase-card run favored GPT-6 Luna again: 95.1 versus 92.9, with seven wins versus two and 2.87 versus 3.67 seconds mean latency. A standard ten-case meeting check passed for both models. In a harder ten-case spoken-answer check, GPT-5.6 Luna passed all ten; GPT-6 Luna passed six on its first run and nine on a repeat. The first GPT-6 run included an unsupported no-answer result, one timeout, and two replies over the sentence-length limit. The repeat's sole mechanical failure was a wording-sensitive `quality` check: the answer did check the required standard in substance. This sample supports a phrase-card canary, but not changing the shared default yet. Isolate the phrase-card model setting first; retain the current meeting and quick-start models pending broader spoken-answer and live-audio checks.
+
 The detailed phrase-card run is in the ignored local file `.echoguide/evals/model-comparison-2026-09-23T05-40-51-321Z.json`.
 
 ### Earlier comparison
