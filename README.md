@@ -144,7 +144,7 @@ defaults to `gpt-5-nano` with `OPENAI_TRANSLATION_REASONING_EFFORT=minimal`. The
 translation request starts as soon as Realtime completes a transcript turn and
 does not wait for the fuller phrase-card analysis.
 
-An independent experimental subtitle block can be started after `Start live`.
+An independent experimental subtitle block can be started after choosing live assistance from the meeting start menu.
 It reuses the microphone stream through a second WebRTC peer connection to the
 dedicated Realtime translation endpoint. Its defaults are
 `OPENAI_REALTIME_TRANSLATION_MODEL=gpt-realtime-translate` and
@@ -213,6 +213,7 @@ Build it with `npm run mac-audio:build`, then follow the
 
 ## Session recording
 
-`Start live` also records audio locally; `Stop live` finishes the file. Play it
-from **Sessions → Аудиозаписи**. Both voices in Mac mode play in both headphones.
+**Начать встречу** offers live assistance with local recording or audio-only
+recording without transcription. Stop the active run to finish the file, then
+play it from **Sessions → Аудиозаписи**. Both voices in Mac mode play in both headphones.
 See [session recording](docs/session-recording.md) for formats, limits and recovery.

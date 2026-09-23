@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Replace Start live with one meeting-start menu for live assistance or local audio-only recording. Audio-only mode avoids Realtime transcription and suggestions, shows an elapsed timer, and saves a labeled session in history.
+
 - Show the selected phrase's Russian meaning as the meeting card prompt, with the spoken English available under a collapsed `English original` disclosure.
 
 - Use the compact `Они` label for call audio transcript turns and give the recovered width back to the spoken text.

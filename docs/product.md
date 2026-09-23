@@ -35,7 +35,7 @@ The product is not intended to automate the conversation. It keeps the user in c
   recovered from the latest 30 seconds when Realtime misses speech;
 - manual card generation from selected transcript turns;
 - local session history with audio recording, playback and deletion through the
-  same Start live / Stop live controls;
+  same meeting start menu and contextual stop control;
 - privacy-safe Realtime diagnostics.
 
 ## Interaction principles

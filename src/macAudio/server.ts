@@ -137,12 +137,15 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
 
     if (!Number.isInteger(options.pid) || Number(options.pid) <= 0 ||
         typeof options.microphone !== "string" || options.microphone.length > 512 ||
-        !["english", "russian", "english-russian"].includes(String(options.language))) {
+        !["english", "russian", "english-russian"].includes(String(options.language)) ||
+        (options.recordingOnly !== undefined && typeof options.recordingOnly !== "boolean") ||
+        (options.recordingOnly === true && (typeof options.sessionId !== "string" || !options.sessionId))) {
       return json(res, 400, { error: "Select an application, microphone and speech language." });
     }
-    const localEnv = deps.readEnv?.() ?? (existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "");
-    const key = readOpenAiApiKey(process.env, localEnv);
-    if (!key) return json(res, 503, { error: "The local server has no OpenAI API key." });
+    const recordingOnly = options.recordingOnly === true;
+    const localEnv = recordingOnly ? "" : deps.readEnv?.() ?? (existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "");
+    const key = recordingOnly ? "" : readOpenAiApiKey(process.env, localEnv);
+    if (!recordingOnly && !key) return json(res, 503, { error: "The local server has no OpenAI API key." });
     active = true;
     res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
     res.flushHeaders();
@@ -228,7 +231,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     }, 5000);
 
     function startCapture() {
-      if (stopped || helper || ready.size !== 2) return;
+      if (stopped || helper || (!recordingOnly && ready.size !== 2)) return;
       helper = child(["--capture", String(options.pid), String(options.microphone)]);
       let buffer = "";
       helper.on("error", () => fail("Could not launch EchoGuide Audio. Rebuild the helper."));
@@ -252,7 +255,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                 try {
                   recording = recordings.start(options.sessionId, "wav");
                   send({ type: "recording", status: "recording", id: recording.id });
-                } catch { send({ type: "recording", status: "error", message: "Audio recording could not start. Check local storage." }); }
+                } catch {
+                  if (recordingOnly) { fail("Audio recording could not start. Check local storage.", "recording_error"); break; }
+                  send({ type: "recording", status: "error", message: "Audio recording could not start. Check local storage." });
+                }
               }
               const pumpStartedAt = performance.now();
               let sentFrames = 0;
@@ -271,13 +277,13 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                   const recordingChannels: Buffer[] = [];
                   for (const source of sources) {
                     if (stopped) return;
-                    const socket = sockets.get(source)!;
                     const queue = audioQueues.get(source)!;
                     const pcm = Buffer.alloc(4800);
                     queue.copy(pcm, 0, 0, Math.min(queue.length, pcm.length));
                     audioQueues.set(source, queue.subarray(Math.min(queue.length, pcm.length)));
                     recordingChannels.push(pcm);
-                    if (!unavailable.has(source)) {
+                    if (!recordingOnly && !unavailable.has(source)) {
+                      const socket = sockets.get(source)!;
                       if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 256_000) {
                         transcriptionFailed(source, "Audio delivery fell behind.", "upstream_backpressure");
                       } else {
@@ -321,11 +327,12 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     }
 
     try {
+      if (recordingOnly) { startCapture(); return; }
       const language = options.language as "english" | "russian" | "english-russian";
       const model = readEnvironmentValue(process.env, "OPENAI_REALTIME_TRANSCRIPTION_MODEL", localEnv) ?? defaultRealtimeTranscriptionModel;
       const session = buildRealtimeTranscriptionSessionUpdate(defaultRealtimeTurnDetectionSettings, language, model);
       for (const source of sources) {
-        const socket = connectSocket(key);
+        const socket = connectSocket(key!);
         sockets.set(source, socket);
         socket.on("error", () => transcriptionFailed(source, `Could not connect ${source} transcription to OpenAI.`, `${source}_upstream_error`));
         socket.on("close", () => { if (!stopped) transcriptionFailed(source, `${source} transcription disconnected.`, `${source}_upstream_closed`); });

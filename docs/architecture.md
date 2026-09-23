@@ -47,7 +47,7 @@ The picker refreshes on device changes and after microphone permission is grante
 Explicit selections use an exact device constraint and never silently fall back
 when unavailable. System default uses the browser's synthetic `default` device
 when exposed, or automatic audio selection on browsers without that device.
-Stop live before changing inputs. The status row displays the active track label.
+Stop the meeting before changing inputs. The status row displays the active track label.
 
 ### Realtime audio path
 
@@ -62,7 +62,7 @@ list without exposing the server API key. Selecting a candidate opens the existi
 message editor; the list remains available after save or cancel, and
 `Refresh phrases` replaces it with one new bounded transcription result.
 
-The recovery recorder is activated from the `Start live` user gesture before the
+The recovery recorder is activated when starting a meeting with transcription, before the
 client-secret request and WebRTC signaling. This keeps local PCM capture independent
 from Realtime connection latency and satisfies iPad Web Audio activation rules. If
 WebKit still reports a suspended or interrupted context, the UI keeps the
@@ -81,7 +81,7 @@ rolling text in an overlay drawer, so continuous translation does not take heigh
 from the transcript and reply card. The browser does not attach the remote
 translated audio track to a player.
 Stopping the sidecar leaves the primary transcription connection active, while
-`Stop live` closes both connections. The separate start action makes the extra
+Stopping the meeting closes both connections. The separate start action makes the extra
 Realtime session and its cost visible to the user.
 
 The transcription prompt is topic-neutral: it accepts everyday conversation,

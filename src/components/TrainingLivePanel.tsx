@@ -550,6 +550,16 @@ export function TrainingLivePanel({
   const browserRecordingRef = useRef<BrowserRecording | null>(null);
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>("idle");
   const [recordingError, setRecordingError] = useState("");
+  const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const [recordingOnlyActive, setRecordingOnlyActive] = useState(false);
+  const [recordingOnlyStarting, setRecordingOnlyStarting] = useState(false);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingClock, setRecordingClock] = useState(Date.now());
+  useEffect(() => {
+    if (recordingStartedAt == null) return;
+    const timer = window.setInterval(() => setRecordingClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [recordingStartedAt]);
   const lastOwnSpeechAtRef = useRef(0);
   useEffect(() => {
     if (audioMode !== "mac") return;
@@ -1030,6 +1040,26 @@ export function TrainingLivePanel({
       selectedReplies,
       usedBridgePhrases
     };
+  }
+
+  function prepareAudioOnlySession(): { sessionId: string; draft: SessionHistoryEntryDraft } {
+    cancelPendingAutomaticAnalysis();
+    resetQuickStarts();
+    const sessionId = createSessionId();
+    currentSessionIdRef.current = sessionId;
+    transcriptTurnsRef.current = [];
+    setTranscriptTurns([]);
+    setLiveTranscriptDraft("");
+    setPhraseCards([]);
+    setSelectedReplies([]);
+    setUsedBridgePhrases([]);
+    setSelectedPhraseCardId(null);
+    setMeetingSelection(null);
+    setAnalysisStatus("idle");
+    return { sessionId, draft: {
+      sourceLabel: "Только аудио", knowledgeContext: "", transcriptTurns: [], phraseCards: [],
+      selectedReplies: [], usedBridgePhrases: []
+    } };
   }
 
   function rememberSavedSession(savedEntry: SessionHistoryEntry) {
@@ -1649,6 +1679,7 @@ export function TrainingLivePanel({
   }
 
   async function handleStartStreamingTranslation() {
+    if (recordingOnlyActive) return;
     if (
       translationConnectionRef.current != null ||
       streamingTranslationStatus === "connecting"
@@ -1659,7 +1690,7 @@ export function TrainingLivePanel({
     const liveStream = activeStreamRef.current;
 
     if (connectionRef.current == null || liveStream == null) {
-      setStreamingTranslationError("Start live mode before streaming translation.");
+      setStreamingTranslationError("Start a meeting with transcription before streaming translation.");
       return;
     }
 
@@ -1705,7 +1736,7 @@ export function TrainingLivePanel({
     releaseStreamingTranslation("disconnected");
   }
 
-  async function handleStartMacAudio() {
+  async function handleStartMacAudio(recordingOnly = false) {
     if (!macSelection || macAbortRef.current || connectionRef.current) return;
     const controller = new AbortController();
     macAbortRef.current = controller;
@@ -1719,22 +1750,25 @@ export function TrainingLivePanel({
     setRealtimeStatus("connecting");
     setRecordingError("");
     setRecordingStatus("starting");
+    setRecordingOnlyStarting(recordingOnly);
     recordingRunRef.current++;
     macRecordingIdRef.current = null;
     try {
-      const sessionId = currentSessionIdRef.current!;
+      const prepared = recordingOnly ? prepareAudioOnlySession() : null;
+      const sessionId = prepared?.sessionId ?? currentSessionIdRef.current!;
       let recordingSessionId: string | undefined;
       try {
-        rememberSavedSession(await sessionHistoryClient.saveCurrentSession(sessionId, buildSessionDraft()));
+        rememberSavedSession(await sessionHistoryClient.saveCurrentSession(sessionId, prepared?.draft ?? buildSessionDraft()));
         recordingSessionId = sessionId;
       } catch {
         if (controller.signal.aborted || macAbortRef.current !== controller) return;
         setRecordingStatus("error");
         setRecordingError("Запись недоступна: не удалось сохранить сессию на диск.");
+        if (recordingOnly) throw new Error("Не удалось создать локальную сессию для записи.");
       }
       if (controller.signal.aborted || macAbortRef.current !== controller) return;
       const transport = await connectMacAudioClient({
-        ...macSelection, sessionId: recordingSessionId, language: speechLanguage, signal: controller.signal,
+        ...macSelection, sessionId: recordingSessionId, recordingOnly, language: speechLanguage, signal: controller.signal,
         onEvent: event => {
           if (controller.signal.aborted || macAbortRef.current !== controller) return;
           if (event.type === "realtime") handleRealtimeEvent(event.event, event.source, event.capturedAt);
@@ -1742,6 +1776,7 @@ export function TrainingLivePanel({
             if (event.id) macRecordingIdRef.current = event.id;
             setRecordingStatus(event.status);
             setRecordingError(event.message ?? "");
+            if (event.status === "recording") { setRecordingStartedAt(Date.now()); setRecordingClock(Date.now()); }
           }
           if (event.type === "transcription-error") setErrorMessage(event.message);
           if (event.type === "level") setMacLevels(current => ({ ...current,
@@ -1760,6 +1795,8 @@ export function TrainingLivePanel({
       setConnection(transport);
       realtimeStatusRef.current = "connected";
       setRealtimeStatus("connected");
+      setRecordingOnlyStarting(false);
+      setRecordingOnlyActive(recordingOnly);
     } catch (error) {
       if (controller.signal.aborted || macAbortRef.current !== controller) return;
       macAbortRef.current = null;
@@ -1769,10 +1806,57 @@ export function TrainingLivePanel({
       setErrorMessage(toErrorMessage(error));
       setRecordingStatus("error");
       setRecordingError("Запись не началась: не удалось запустить live-сессию.");
+      setRecordingOnlyStarting(false);
+    }
+  }
+
+  async function handleStartRecordingOnly() {
+    setStartMenuOpen(false);
+    if (audioMode === "mac") return handleStartMacAudio(true);
+    if (connectionRef.current || realtimeStatusRef.current === "connecting") return;
+    const attempt = ++liveStartRef.current;
+    const recordingRun = ++recordingRunRef.current;
+    const { sessionId, draft } = prepareAudioOnlySession();
+    realtimeStatusRef.current = "connecting";
+    setRealtimeStatus("connecting");
+    setRecordingOnlyStarting(true);
+    setRecordingStatus("starting");
+    setRecordingError("");
+    setErrorMessage("");
+    let liveStream = stream;
+    try {
+      if (!liveStream) liveStream = await onRequestMicrophone?.() ?? null;
+      if (liveStartRef.current !== attempt) {
+        if (!stream) liveStream?.getTracks().forEach(track => track.stop());
+        return;
+      }
+      if (!liveStream) throw new Error("Could not start microphone recording.");
+      rememberSavedSession(await sessionHistoryClient.saveCurrentSession(sessionId, draft));
+      if (liveStartRef.current !== attempt) return;
+      activeStreamRef.current = liveStream;
+      browserRecordingRef.current = startBrowserRecording(liveStream, sessionId, (status, error) => {
+        if (currentSessionIdRef.current !== sessionId || recordingRunRef.current !== recordingRun) return;
+        setRecordingStatus(status);
+        setRecordingError(error ?? "");
+        if (status === "recording") { setRecordingStartedAt(Date.now()); setRecordingClock(Date.now()); }
+      });
+      realtimeStatusRef.current = "connected";
+      setRealtimeStatus("connected");
+      setRecordingOnlyActive(true);
+    } catch (error) {
+      if (liveStartRef.current !== attempt) return;
+      realtimeStatusRef.current = "error";
+      setRealtimeStatus("error");
+      setRecordingStatus("error");
+      setRecordingError(toErrorMessage(error));
+      onStopMicrophone?.();
+    } finally {
+      if (liveStartRef.current === attempt) setRecordingOnlyStarting(false);
     }
   }
 
   async function handleStartLive() {
+    setStartMenuOpen(false);
     if (audioMode === "mac") return handleStartMacAudio();
     if (connectionRef.current != null || realtimeStatusRef.current === "connecting") {
       return;
@@ -1840,6 +1924,7 @@ export function TrainingLivePanel({
       browserRecordingRef.current = startBrowserRecording(liveStream, sessionId, (status, error) => {
         if (currentSessionIdRef.current !== sessionId || recordingRunRef.current !== recordingRun) return;
         setRecordingStatus(status); setRecordingError(error ?? "");
+        if (status === "recording") { setRecordingStartedAt(Date.now()); setRecordingClock(Date.now()); }
       });
     } catch (error) {
       if (liveStartRef.current !== attempt) return;
@@ -1916,6 +2001,9 @@ export function TrainingLivePanel({
   }
 
   function releaseLiveTransport(nextStatus: Extract<RealtimeStatus, "disconnected" | "error">) {
+    setRecordingOnlyActive(false);
+    setRecordingOnlyStarting(false);
+    setRecordingStartedAt(null);
     const wasMac = macAbortRef.current != null;
     const recorder = browserRecordingRef.current;
     browserRecordingRef.current = null;
@@ -2677,7 +2765,7 @@ export function TrainingLivePanel({
       || "";
 
   return (
-    <main className="copilot-shell desktop-workspace">
+    <main className={`copilot-shell desktop-workspace${recordingOnlyActive ? " audio-only-active" : ""}`}>
       <section
         ref={trainingControlRailRef}
         className="training-control-rail"
@@ -2700,17 +2788,21 @@ export function TrainingLivePanel({
           </div>
           <div className="topbar-actions">
 
-            {connection == null ? (
-              <button
-                type="button"
-                disabled={recordingStatus === "saving" || microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
-                onClick={handleStartLive}
-              >
-                {realtimeStatus === "connecting" ? "Starting live..." : "Start live"}
-              </button>
+            {connection == null && !recordingOnlyActive ? (
+              <div className="start-meeting-menu">
+                <button type="button" aria-expanded={startMenuOpen} aria-controls="start-meeting-options"
+                  disabled={recordingStatus === "saving" || microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
+                  onClick={() => setStartMenuOpen(open => !open)}>
+                  {recordingOnlyStarting ? "Подготовка записи…" : "Начать встречу ▾"}
+                </button>
+                {startMenuOpen && <div id="start-meeting-options" className="start-meeting-options">
+                  <button type="button" onClick={handleStartLive}>С подсказками и расшифровкой</button>
+                  <button type="button" onClick={() => void handleStartRecordingOnly()}>Только записать аудио</button>
+                </div>}
+              </div>
             ) : (
               <>
-                <button
+                {!recordingOnlyActive && <button
                   type="button"
                   disabled={audioMode === "mac" || recoveryButtonDisabled}
                   onClick={() =>
@@ -2720,9 +2812,9 @@ export function TrainingLivePanel({
                   }
                 >
                   {recoveryButtonLabel}
-                </button>
+                </button>}
                 <button type="button" onClick={handleStopLive}>
-                  Stop live
+                  {recordingOnlyActive ? "Остановить запись" : "Остановить встречу"}
                 </button>
               </>
             )}
@@ -2744,13 +2836,16 @@ export function TrainingLivePanel({
           </div>
         </header>
         <div className="recording-status" role="status">
-          {recordingStatus === "idle" ? "Start live также записывает аудио локально на этом компьютере." :
+          {recordingStatus === "idle" ? "Аудиозапись сохраняется локально на этом компьютере." :
             recordingStatus === "starting" ? "Подготовка аудиозаписи…" :
-            recordingStatus === "recording" ? "● Аудио записывается на этот компьютер" :
+            recordingStatus === "recording" ? `● Запись · ${Math.floor(Math.max(0, recordingClock - (recordingStartedAt ?? recordingClock)) / 60000).toString().padStart(2, "0")}:${Math.floor(Math.max(0, recordingClock - (recordingStartedAt ?? recordingClock)) / 1000 % 60).toString().padStart(2, "0")} · на этом компьютере` :
             recordingStatus === "saving" ? "Сохранение аудиозаписи…" :
             recordingStatus === "saved" ? "Аудиозапись — в Sessions" : "Ошибка аудиозаписи"}
           {recordingError && <span role="alert"> · {recordingError}</span>}
         </div>
+        {recordingStatus === "saved" && <button type="button" onClick={() => setHistoryPanelOpen(true)}>
+          Открыть запись
+        </button>}
         {meetingExportError && <p role="alert">{meetingExportError}</p>}
 
         <div className="audio-status-toolbar">
@@ -2773,7 +2868,7 @@ export function TrainingLivePanel({
           {audioMode !== "mac" && <span className={`status status-${stream == null ? "idle" : "active"}`}>
             Microphone: {stream == null ? "not connected" : stream.getAudioTracks()[0]?.label || "active"}
           </span>}
-          <span className={`status status-${realtimeStatus}`}>Realtime: {realtimeStatus}</span>
+          {!recordingOnlyActive && <span className={`status status-${realtimeStatus}`}>Realtime: {realtimeStatus}</span>}
           {audioMode === "mac" && (["microphone", "application"] as const).map(source => {
             const stats = macLevels[source];
             const fresh = stats != null && macClock - stats.seenAt < 3000;
@@ -2943,19 +3038,21 @@ export function TrainingLivePanel({
         </div>
       ) : null}
 
-      {audioMode !== "mac" && <details className="desktop-audio-settings"><summary>Turn detection settings</summary><TurnDetectionControls
+      {recordingOnlyActive && <p className="audio-only-summary">Только запись аудио. Расшифровка и подсказки выключены. После остановки запись появится в Sessions.</p>}
+
+      {audioMode !== "mac" && !recordingOnlyActive && <details className="desktop-audio-settings"><summary>Turn detection settings</summary><TurnDetectionControls
         settings={turnDetectionSettings}
         disabled={connection != null || realtimeStatus === "connecting"}
         onChange={handleTurnDetectionSettingsChange}
       /></details>}
 
-      <SpeechLanguageControls
+      {!recordingOnlyActive && <SpeechLanguageControls
         speechLanguage={speechLanguage}
         disabled={connection != null || realtimeStatus === "connecting"}
         onChange={handleSpeechLanguageChange}
-      />
+      />}
 
-      {audioMode !== "mac" && <section
+      {audioMode !== "mac" && !recordingOnlyActive && <section
         className="live-translation-panel"
         aria-labelledby="live-translation-title"
       >
@@ -3003,7 +3100,7 @@ export function TrainingLivePanel({
             ? streamingTranslationText
             : streamingTranslationStatus === "connected"
               ? "Listening for speech..."
-              : "Start live mode, then start translation."}
+              : "Start a meeting with transcription, then start translation."}
         </p>
         {streamingTranslationError.length > 0 ? (
           <p className="live-translation-error" role="alert">

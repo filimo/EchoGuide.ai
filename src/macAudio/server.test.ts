@@ -61,6 +61,23 @@ function setup(recordings?: RecordingStore) {
 }
 
 describe("Mac audio local bridge", () => {
+  it("records in audio-only mode without connecting to OpenAI", async () => {
+    const root = mkdtempSync(join(tmpdir(), "echoguide-mac-audio-only-"));
+    const recordings = new RecordingStore(root);
+    const test = setup(recordings);
+    const res = await test.run(request("session", { pid: 123, microphone: "default", language: "english",
+      sessionId: "audio-only-session", recordingOnly: true }));
+    expect(test.sockets).toHaveLength(0);
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "default"]);
+    test.helper.line({ type: "ready" });
+    expect(res.body).toContain('"status":"recording"');
+    test.helper.line({ type: "audio", source: "microphone", audio: Buffer.alloc(4800).toString("base64") });
+    test.helper.line({ type: "audio", source: "application", audio: Buffer.alloc(4800).toString("base64") });
+    await vi.waitFor(() => expect(recordings.list("audio-only-session")[0].bytes).toBeGreaterThan(44));
+    res.emit("close");
+    expect(recordings.list("audio-only-session")[0].status).toBe("saved");
+    rmSync(root, { recursive: true, force: true });
+  });
   it("records both voices in both channels, keeps recording after transcription failure and flushes the tail on stop", async () => {
     const root = mkdtempSync(join(tmpdir(), "echoguide-mac-recording-"));
     const recordings = new RecordingStore(root);

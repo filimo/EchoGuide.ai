@@ -167,7 +167,7 @@ describe("EchoGuide iPad setup flow", () => {
     await user.click(screen.getByRole("button", { name: "Перейти в live session" }));
 
     expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Начать встречу ▾" })).toBeInTheDocument();
     expect(screen.queryByText("Source: ChatGPT Real Voice practice")).not.toBeInTheDocument();
     expect(screen.queryByText("Can you commit by Friday?")).not.toBeInTheDocument();
     expect(window.localStorage.getItem(setupMemoryStorageKey) ?? "").not.toContain(
@@ -190,7 +190,7 @@ describe("EchoGuide iPad setup flow", () => {
     await user.type(screen.getByLabelText("Pasted notes"), "Mention dependency review.");
     await user.click(screen.getByRole("button", { name: "Перейти в live session" }));
 
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Начать встречу ▾" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Realtime" })).not.toBeInTheDocument();
   });
 
@@ -220,7 +220,7 @@ describe("EchoGuide iPad setup flow", () => {
 
     expect(screen.getByRole("heading", { name: "EchoGuide" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Подключить микрофон" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Начать встречу ▾" })).toBeInTheDocument();
     expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
     expect(screen.queryByText("Session notes are available for this training session.")).not.toBeInTheDocument();
     expect(requestMicrophone).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe("EchoGuide iPad setup flow", () => {
       0
     );
     expect(screen.getAllByText("Что ты построил в EchoGuide?").length).toBeGreaterThan(1);
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Начать встречу ▾" })).toBeInTheDocument();
     expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
   });
 });

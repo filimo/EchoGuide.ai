@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrainingLivePanel } from "./TrainingLivePanel";
@@ -5,13 +6,20 @@ import type { MacAudioOptions } from "../macAudio/client";
 import type { MacAudioEvent } from "../macAudio/protocol";
 import type { SessionHistoryEntry, SessionHistoryEntryDraft } from "../domain/sessionHistory";
 
+function getStartLiveOption() {
+  const option = screen.queryByRole("button", { name: "С подсказками и расшифровкой" });
+  if (option) return option;
+  flushSync(() => fireEvent.click(screen.getByRole("button", { name: "Начать встречу ▾" })));
+  return screen.getByRole("button", { name: "С подсказками и расшифровкой" });
+}
+
 vi.mock("../macAudio/client", async importOriginal => ({
   ...await importOriginal<typeof import("../macAudio/client")>(),
   listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }], microphones: [] }))
 }));
 afterEach(() => { window.localStorage.clear(); vi.restoreAllMocks(); });
 
-async function setup(pending = false) {
+async function setup(pending = false, recordingOnly = false) {
   let options: MacAudioOptions | undefined;
   let finish: () => void = () => {};
   const transport = { disconnect: vi.fn(), sendEvent: () => false, clearAudio: () => false,
@@ -33,14 +41,25 @@ async function setup(pending = false) {
   fireEvent.change(screen.getByLabelText("Audio source"), { target: { value: "mac" } });
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
-  fireEvent.click(screen.getByRole("button", { name: "Start live" }));
+  if (recordingOnly) {
+    fireEvent.click(screen.getByRole("button", { name: "Начать встречу ▾" }));
+    fireEvent.click(screen.getByRole("button", { name: "Только записать аудио" }));
+  } else fireEvent.click(getStartLiveOption());
   await waitFor(() => expect(options).toBeDefined());
-  if (!pending) await screen.findByRole("button", { name: "Stop live" });
+  if (!pending) await screen.findByRole("button", { name: recordingOnly ? "Остановить запись" : "Остановить встречу" });
   const emit = async (event: MacAudioEvent) => act(async () => { options!.onEvent(event); });
   return { ...view, emit, options: options!, transport, analyzePhrase, save, onRequestMicrophone, finish: () => finish() };
 }
 
 describe("Mac audio in Training Mode", () => {
+  it("starts native recording without requesting transcription", async () => {
+    const test = await setup(false, true);
+    expect(test.options.recordingOnly).toBe(true);
+    expect(test.save).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ sourceLabel: "Только аудио" }));
+    expect(screen.queryByRole("button", { name: "Start streaming translation" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Остановить запись" }));
+    expect(test.options.signal.aborted).toBe(true);
+  });
   it("keeps source roles, analyzes only the other side, and preserves chronological turns", async () => {
     const test = await setup();
     expect(test.onRequestMicrophone).not.toHaveBeenCalled();
@@ -55,7 +74,7 @@ describe("Mac audio in Training Mode", () => {
     expect(latest.map(turn => turn.audioSource)).toEqual(["microphone", "application"]);
     expect(screen.getByText("Они", { selector: "button" })).toBeInTheDocument();
     expect(screen.getByText("Я", { selector: "button" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Stop live" }));
+    fireEvent.click(screen.getByRole("button", { name: "Остановить встречу" }));
     expect(test.options.signal.aborted).toBe(true);
     expect(test.transport.disconnect).toHaveBeenCalledOnce();
   });
@@ -74,7 +93,7 @@ describe("Mac audio in Training Mode", () => {
     expect(test.options.signal.aborted).toBe(true);
     await act(async () => test.finish());
     expect(test.transport.disconnect).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "Stop live" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Остановить встречу" })).not.toBeInTheDocument();
   });
   it("stops capture on unmount and ignores late events", async () => {
     const test = await setup();

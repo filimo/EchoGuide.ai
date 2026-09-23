@@ -26,11 +26,10 @@ It does not start capture automatically. The normal setup screen also links here
 2. Click **Refresh Mac sources**. Grant the macOS capture permission if requested.
 3. Select **Call application** and **Mac microphone**. For Meet, select the browser.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
-5. Click **Start live** to start capture, transcription and local audio recording. Allow microphone access if macOS requests it.
+5. Click **Начать встречу** and choose **С подсказками и расшифровкой** to start capture, transcription and local audio recording, or **Только записать аудио** for local capture without OpenAI transcription. Allow microphone access if macOS requests it.
 6. Check both source meters. Completed turns appear with their source labels;
    per-turn Russian translations and existing phrase cards remain available.
-7. Click **Stop live** to stop native capture, both paid transcription sessions and
-   finalize the recording. Play it from **Sessions → Аудиозаписи**.
+7. Stop the active run to end native capture and finalize the recording. In live mode this also closes both paid transcription sessions. Play audio from **Sessions → Аудиозаписи**.
 
 If permission is denied, open macOS **System Settings → Privacy & Security** and
 allow **Screen & System Audio Recording** and **Microphone** for **EchoGuide Audio**
@@ -65,7 +64,7 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   a different saved session, or leaving the screen closes both upstream sessions and
   terminates the helper. A helper error also closes the whole capture session.
   After capture starts, an upstream error disables that transcription channel
-  while local capture and recording continue until Stop live.
+  while local capture and recording continue until the meeting is stopped.
 - Only a loopback client at `localhost`, `127.0.0.1`, or `[::1]`, with a matching Origin
   and the custom request header, can start capture. LAN/iPad requests are rejected.
   One capture session owns the helper at a time. The API key remains in Node.
@@ -115,7 +114,7 @@ API references: [Apple ScreenCaptureKit](https://developer.apple.com/videos/play
 Audio source, Call application and Mac microphone are saved automatically in this
 browser for the current site address. Opening Mac audio refreshes the source list
 and resolves the saved application bundle ID to its current PID. Process IDs are
-not saved. Capture still starts only with Start live.
+not saved. Capture still starts only through the meeting start menu.
 
 If the application is closed, open it and click Refresh Mac sources. Missing
 applications and microphones keep their saved preferences; capture stays disabled

@@ -1,4 +1,12 @@
+import { flushSync } from "react-dom";
 import { meetingRequest } from "../meeting/client";
+function getStartLiveOption() {
+  const option = screen.queryByRole("button", { name: "С подсказками и расшифровкой" });
+  if (option) return option;
+  flushSync(() => fireEvent.click(screen.getByRole("button", { name: "Начать встречу ▾" })));
+  return screen.getByRole("button", { name: "С подсказками и расшифровкой" });
+}
+
 vi.mock("../meeting/client", () => ({ meetingRequest: vi.fn() }));
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -135,7 +143,7 @@ describe("Training Live Panel", () => {
       requestClientSecret={async () => ({ clientSecret: "fake", expiresAt: 9999999999 })}
       connectRealtime={async ({ onEvent }) => { emit = onEvent; return createConnection(); }}
       analyzePhrase={analyzePhrase} generateQuickStart={generateQuickStart} {...overrides} />);
-    await userEvent.click(screen.getByRole("button", { name: "Start live" }));
+    await userEvent.click(getStartLiveOption());
     const say = async (transcript: string) => act(async () => {
       emit({ type: "conversation.item.input_audio_transcription.completed", transcript });
     });
@@ -299,9 +307,9 @@ describe("Training Live Panel", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(getStartLiveOption()).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Realtime" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Stop live" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Остановить встречу" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
     expect(onStopMicrophone).not.toHaveBeenCalled();
   });
@@ -347,7 +355,7 @@ describe("Training Live Panel", () => {
       within(translationRegion).getByRole("button", { name: "Start streaming translation" })
     ).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await user.click(
       within(translationRegion).getByRole("button", { name: "Start streaming translation" })
     );
@@ -391,7 +399,7 @@ describe("Training Live Panel", () => {
     await user.click(
       within(translationRegion).getByRole("button", { name: "Start streaming translation" })
     );
-    await user.click(screen.getByRole("button", { name: "Stop live" }));
+    await user.click(screen.getByRole("button", { name: "Остановить встречу" }));
 
     expect(translationConnection.disconnect).toHaveBeenCalled();
     expect(mainConnection.disconnect).toHaveBeenCalled();
@@ -426,7 +434,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(order.slice(0, 3)).toEqual([
       "create-recovery",
@@ -467,7 +475,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     const enableRecovery = screen.getByRole("button", { name: "Enable recovery" });
     expect(enableRecovery).toBeEnabled();
@@ -509,9 +517,9 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
-    await screen.findByRole("button", { name: "Stop live" });
-    await user.click(screen.getByRole("button", { name: "Stop live" }));
+    await user.click(getStartLiveOption());
+    await screen.findByRole("button", { name: "Остановить встречу" });
+    await user.click(screen.getByRole("button", { name: "Остановить встречу" }));
 
     expect(realtimeConnection.disconnect).toHaveBeenCalledTimes(1);
     expect(onStopMicrophone).toHaveBeenCalledTimes(1);
@@ -553,8 +561,8 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
-    await user.click(await screen.findByRole("button", { name: "Stop live" }));
+    await user.click(getStartLiveOption());
+    await user.click(await screen.findByRole("button", { name: "Остановить встречу" }));
 
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Realtime: disconnected")).toBeInTheDocument();
@@ -620,8 +628,8 @@ describe("Training Live Panel", () => {
 
     render(<TrackFailureHarness />);
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
-    await screen.findByRole("button", { name: "Stop live" });
+    await user.click(getStartLiveOption());
+    await screen.findByRole("button", { name: "Остановить встречу" });
 
     act(() => {
       emitDiagnostic({
@@ -632,21 +640,21 @@ describe("Training Live Panel", () => {
 
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(onStopMicrophone).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(getStartLiveOption()).toBeInTheDocument();
     expect(screen.getByText("Realtime: error")).toBeInTheDocument();
     expect(screen.getByText("Microphone: not connected")).toBeInTheDocument();
     expect(
       screen.getByText("Realtime audio path stopped. Diagnostics were recorded; restart live mode.")
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(onRequestMicrophone).toHaveBeenCalledTimes(1);
     expect(connectRealtime).toHaveBeenCalledTimes(2);
     expect(connectRealtime).toHaveBeenLastCalledWith(
       expect.objectContaining({ stream: replacementStream })
     );
-    expect(await screen.findByRole("button", { name: "Stop live" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Остановить встречу" })).toBeInTheDocument();
   });
 
   it("requests microphone and connects Realtime from the single start live control", async () => {
@@ -670,12 +678,12 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(onRequestMicrophone).toHaveBeenCalledTimes(1);
     expect(requestClientSecret).toHaveBeenCalledWith("realtime-vad");
     expect(connectRealtime).toHaveBeenCalledWith(expect.objectContaining({ stream }));
-    expect(await screen.findByRole("button", { name: "Stop live" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Остановить встречу" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Realtime" })).not.toBeInTheDocument();
   });
 
@@ -698,7 +706,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await waitFor(() => expect(submitDiagnostics).toHaveBeenCalled());
     const report = submitDiagnostics.mock.calls[0]?.[0];
@@ -763,7 +771,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Start live" }));
+    fireEvent.click(getStartLiveOption());
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -969,7 +977,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(requestClientSecret).toHaveBeenCalledWith("realtime-vad");
     expect(connectRealtime).toHaveBeenCalledWith(
@@ -1069,7 +1077,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -1136,7 +1144,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -1199,7 +1207,7 @@ describe("Training Live Panel", () => {
 
     await user.click(screen.getByRole("button", { name: "Semantic" }));
     await user.selectOptions(screen.getByLabelText("Eagerness"), "high");
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(connectRealtime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1254,7 +1262,7 @@ describe("Training Live Panel", () => {
     expect(screen.getByRole("button", { name: "Semantic" })).toHaveClass("mode-tab-active");
     expect(screen.getByLabelText("Eagerness")).toHaveValue("high");
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(secondConnectRealtime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1307,7 +1315,7 @@ describe("Training Live Panel", () => {
 
     expect(screen.getByRole("button", { name: "English" })).toHaveClass("mode-tab-active");
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     expect(connectRealtime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1357,7 +1365,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     act(() => {
       emitAudioStats({
@@ -1407,7 +1415,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await act(async () => {
       emitEvent({
@@ -1526,7 +1534,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     act(() => {
       emitAudioStats({
@@ -1604,7 +1612,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -1684,7 +1692,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await user.click(screen.getByRole("button", { name: "Add message" }));
 
     const editor = screen.getByRole("form", { name: "Add message" });
@@ -1708,7 +1716,7 @@ describe("Training Live Panel", () => {
       )
     ).toBeInTheDocument();
     expect(realtimeConnection.disconnect).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Stop live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Остановить встречу" })).toBeInTheDocument();
   });
 
   it("does not restore a stale automatic card after its transcript message was edited", async () => {
@@ -1739,7 +1747,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     act(() => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -1800,7 +1808,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await act(async () => {
       emitEvent({
@@ -1869,7 +1877,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await act(async () => {
       emitEvent({
@@ -1939,7 +1947,7 @@ describe("Training Live Panel", () => {
     );
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Start live" }));
+      fireEvent.click(getStartLiveOption());
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -2002,7 +2010,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     for (let index = 1; index <= 16; index += 1) {
       await act(async () => {
@@ -2055,7 +2063,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2125,7 +2133,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2178,7 +2186,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2235,7 +2243,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await act(async () => {
       emitEvent({
@@ -2299,7 +2307,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
 
     await act(async () => {
       emitEvent({
@@ -2358,7 +2366,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2457,7 +2465,7 @@ describe("Training Live Panel", () => {
 
     expect(jumpToLatestButton).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2551,7 +2559,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2630,7 +2638,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2700,7 +2708,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2776,7 +2784,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -2896,7 +2904,7 @@ describe("Training Live Panel", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -3044,7 +3052,7 @@ describe("Training Live Panel", () => {
       )
     ).toBeInTheDocument();
     expect(screen.queryByText("Session loaded.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start live" })).toBeInTheDocument();
+    expect(getStartLiveOption()).toBeInTheDocument();
   });
 
   it("repairs duplicate restored ids and continues after the highest phrase sequence", async () => {
@@ -3146,7 +3154,7 @@ describe("Training Live Panel", () => {
       "What's your approach to prioritizing when everything feels urgent?"
     );
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",
@@ -3404,7 +3412,7 @@ describe("Training Live Panel", () => {
 
     expect(screen.queryByRole("button", { name: "Save session" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Start live" }));
+    await user.click(getStartLiveOption());
     await act(async () => {
       emitEvent({
         type: "conversation.item.input_audio_transcription.completed",

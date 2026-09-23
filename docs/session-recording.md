@@ -1,8 +1,10 @@
 # Local session audio
 
-`Start live` starts audio recording with the live session. `Stop live` finalizes it.
-There are no separate recording controls. The status line explains local storage
-before starting and shows recording, saving, or an independent recording error.
+**Начать встречу** offers two starts: **С подсказками и расшифровкой** starts the
+existing live session with local recording; **Только записать аудио** captures
+locally without connecting to OpenAI transcription or generating suggestions.
+The active button stops the chosen run and finalizes its audio file. The status
+line shows elapsed recording time, saving, or an independent recording error.
 
 Open **Sessions → Аудиозаписи** on a saved session to play its recordings. Each
 new live run creates a separate file, even when continuing the same session.
@@ -10,13 +12,15 @@ Sessions are created before the first transcript, so a silent or untranscribed
 run can still have audio. Deleting a session deletes all its recording files;
 active recordings cannot be deleted. History is retained until explicit deletion,
 including sessions beyond the former twenty-entry limit.
+Audio-only sessions show **Только аудио** in history.
 
 ## Formats and storage
 
 - Mac mode writes 24 kHz, signed 16-bit stereo WAV. Microphone and application
   samples are mixed, clipped to the valid sample range and duplicated into both
   channels. Both voices play in both headphones. The transcription streams
-  remain separate and keep their source labels.
+  remain separate and keep their source labels in the live mode. Audio-only Mac
+  capture opens no OpenAI transcription sockets and needs no API key.
 - Browser microphone mode uses MediaRecorder: WebM/Opus where available,
   otherwise MP4. Mono input plays in both headphones. Unsupported browsers
   show a recording error while transcription can continue.
@@ -39,7 +43,7 @@ Mac WAV headers are checkpointed with each written frame. Stopping capture flush
 the queued tail; a server restart marks unfinished files interrupted. Disk errors
 leave the last successfully written data, without stopping transcription.
 Once Mac capture is running, an upstream transcription failure disables that
-transcription channel but leaves capture and recording active until Stop live.
+transcription channel but leaves capture and recording active until the meeting is stopped.
 Native capture failure, closing the page, or server shutdown ends capture and
 preserves the partial recording. Failed startup before capture begins has no audio.
 
