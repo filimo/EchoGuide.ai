@@ -100,12 +100,96 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     if (!(deps.helperExists?.() ?? existsSync(resolve(helperPath)))) {
       return json(res, 503, { error: "Build Mac audio first: npm run mac-audio:build" });
     }
-    if (path !== `${prefix}sources` && path !== `${prefix}session`) return json(res, 404, { error: "Unknown Mac audio route." });
-    if (active) return json(res, 409, { error: "Mac audio is already running. Stop the other session first." });
+    if (![`${prefix}sources`, `${prefix}session`, `${prefix}input-volume`, `${prefix}microphone-monitor`].includes(path)) {
+      return json(res, 404, { error: "Unknown Mac audio route." });
+    }
+    if (active && path !== `${prefix}input-volume`) return json(res, 409, { error: "Mac audio is already running. Stop the other session first." });
     let options: Record<string, unknown>;
     try { options = await readOptions(req); } catch { return json(res, 400, { error: "Invalid Mac audio options." }); }
     if (res.destroyed) return;
-    if (active) return json(res, 409, { error: "Mac audio is already running." });
+    if (active && path !== `${prefix}input-volume`) return json(res, 409, { error: "Mac audio is already running." });
+
+    if (path === `${prefix}input-volume`) {
+      if (typeof options.microphone !== "string" || !options.microphone || options.microphone.length > 512 ||
+          (options.value !== undefined && (!Number.isInteger(options.value) || Number(options.value) < 0 || Number(options.value) > 100))) {
+        return json(res, 400, { error: "Invalid microphone input volume." });
+      }
+      const args = ["--input-volume", options.microphone];
+      if (options.value !== undefined) args.push(String(Number(options.value) / 100));
+      const helper = child(args);
+      let output = "";
+      let finished = false;
+      const finish = (status: number, value: unknown) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        helper.kill();
+        if (!res.destroyed) json(res, status, value);
+      };
+      const timeout = setTimeout(() => finish(504, { error: "Microphone input volume timed out." }), 10_000);
+      res.on("close", () => { clearTimeout(timeout); helper.kill(); });
+      helper.on("error", () => finish(500, { error: "Could not read microphone input volume." }));
+      helper.stdout.on("data", chunk => {
+        output += chunk.toString();
+        if (output.length > 4096) finish(500, { error: "Invalid microphone input volume response." });
+      });
+      helper.on("close", () => {
+        try {
+          const result = JSON.parse(output.trim());
+          if (result.type === "input-volume" && typeof result.available === "boolean") {
+            finish(200, { available: result.available, value: result.available ? result.value : undefined });
+          } else finish(500, { error: result.message || "Could not read microphone input volume." });
+        } catch { finish(500, { error: "Could not read microphone input volume." }); }
+      });
+      return;
+    }
+
+    if (path === `${prefix}microphone-monitor`) {
+      if (typeof options.microphone !== "string" || !options.microphone || options.microphone.length > 512) {
+        return json(res, 400, { error: "Select a microphone to test." });
+      }
+      active = true;
+      res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+      res.flushHeaders();
+      const helper = child(["--monitor-microphone", options.microphone]);
+      let pending = "";
+      let stopped = false;
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(timeout);
+        helper.kill();
+        active = false;
+        stopActive = undefined;
+        if (!res.destroyed) res.end();
+      };
+      stopActive = stop;
+      const send = (event: { type: "ready" | "level" | "error"; level?: number; peak?: number; message?: string }) => {
+        if (!stopped && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
+      };
+      const timeout = setTimeout(() => { send({ type: "error", message: "Microphone test timed out." }); stop(); }, 30_000);
+      res.on("close", stop);
+      helper.on("error", () => { send({ type: "error", message: "Could not start microphone test." }); stop(); });
+      helper.on("close", () => { if (!stopped) { send({ type: "error", message: "Microphone test stopped." }); stop(); } });
+      helper.stdout.on("data", chunk => {
+        pending += chunk.toString();
+        if (pending.length > 4096) { send({ type: "error", message: "Invalid microphone test response." }); stop(); return; }
+        let end: number;
+        while (!stopped && (end = pending.indexOf("\n")) >= 0) {
+          const line = pending.slice(0, end);
+          pending = pending.slice(end + 1);
+          try {
+            const event = JSON.parse(line);
+            if (event.type === "ready") { clearTimeout(timeout); send({ type: "ready" }); }
+            else if (event.type === "level" && Number.isFinite(event.level) && Number.isFinite(event.peak) &&
+              event.level >= 0 && event.level <= 1 && event.peak >= 0 && event.peak <= 1) {
+              send({ type: "level", level: event.level, peak: event.peak });
+            } else if (event.type === "error") { send({ type: "error", message: String(event.message || "Microphone test failed.") }); stop(); }
+          } catch { send({ type: "error", message: "Invalid microphone test response." }); stop(); }
+        }
+      });
+      return;
+    }
 
     if (path === `${prefix}sources`) {
       const helper = child(["--list"]);
@@ -318,8 +402,14 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             if (now - stats.lastLevel >= 500) {
               stats.lastLevel = now;
               let squares = 0;
-              for (let i = 0; i < pcm.length; i += 2) squares += (pcm.readInt16LE(i) / 32768) ** 2;
-              send({ type: "level", source: event.source, chunks: stats.chunks, level: Math.sqrt(squares / (pcm.length / 2)) });
+              let peak = 0;
+              for (let i = 0; i < pcm.length; i += 2) {
+                const sample = Math.abs(pcm.readInt16LE(i) / 32768);
+                squares += sample ** 2;
+                peak = Math.max(peak, sample);
+              }
+              send({ type: "level", source: event.source, chunks: stats.chunks,
+                level: Math.sqrt(squares / (pcm.length / 2)), peak });
             }
           } catch { fail("Could not read the Mac audio stream."); }
         }

@@ -1,8 +1,23 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { connectMacAudio } from "./client";
+import { connectMacAudio, monitorMacMicrophone } from "./client";
 
 describe("Mac audio streamed client", () => {
+  it("reads microphone monitor levels and stops without sending audio", async () => {
+    const onEvent = vi.fn();
+    const onError = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"type":"ready"}\n{"type":"level","level":0.01,"peak":0.1}\n'));
+    } });
+    const fetchImpl = vi.fn(async () => new Response(body));
+    const monitor = monitorMacMicrophone("usb", onEvent, onError, fetchImpl);
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(2));
+    expect(fetchImpl).toHaveBeenCalledWith("/api/mac-audio/microphone-monitor",
+      expect.objectContaining({ body: JSON.stringify({ microphone: "usb" }) }));
+    expect(onEvent).toHaveBeenLastCalledWith({ type: "level", level: 0.01, peak: 0.1 });
+    monitor.stop();
+    expect(onError).not.toHaveBeenCalled();
+  });
   it("handles split NDJSON and UTF-8 chunks and stops reading on disconnect", async () => {
     let writer: ReadableStreamDefaultController<Uint8Array>;
     const stream = new ReadableStream<Uint8Array>({ start(controller) { writer = controller; } });

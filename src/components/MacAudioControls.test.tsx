@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
-import { listMacAudioSources } from "../macAudio/client";
+import { listMacAudioSources, macInputVolume, monitorMacMicrophone, type MacMicrophoneMonitorEvent } from "../macAudio/client";
 import { loadAudioMode, loadMacAudioPreference, saveAudioMode, saveMacAudioPreference } from "../macAudio/preferences";
-vi.mock("../macAudio/client", () => ({ listMacAudioSources: vi.fn() }));
+vi.mock("../macAudio/client", () => ({ listMacAudioSources: vi.fn(), macInputVolume: vi.fn().mockResolvedValue({ available: false }), monitorMacMicrophone: vi.fn() }));
+beforeEach(() => { vi.mocked(macInputVolume).mockResolvedValue({ available: false }); });
 afterEach(() => { localStorage.clear(); vi.resetAllMocks(); });
 function Harness() {
   const [selection, setSelection] = useState<MacAudioSelection | null>(null);
@@ -13,6 +14,45 @@ function Harness() {
 }
 const app = { pid: 10, name: "Call", bundleId: "com.test.call" };
 const microphones = [{ id: "usb", name: "USB mic" }];
+it("previews the selected microphone and stops monitoring when requested", async () => {
+  saveMacAudioPreference({ application: app, microphone: "usb" });
+  vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
+  let onEvent: ((event: MacMicrophoneMonitorEvent) => void) | undefined;
+  const stop = vi.fn();
+  vi.mocked(monitorMacMicrophone).mockImplementation((_microphone, next) => {
+    onEvent = next;
+    return { stop };
+  });
+  render(<Harness />);
+  await screen.findByRole("option", { name: "USB mic" });
+  fireEvent.click(screen.getByRole("button", { name: "Проверить микрофон" }));
+  expect(monitorMacMicrophone).toHaveBeenCalledWith("usb", expect.any(Function), expect.any(Function));
+  act(() => {
+    onEvent?.({ type: "ready" });
+    onEvent?.({ type: "level", level: 0.01, peak: 0.1 });
+  });
+  expect(screen.getByRole("meter", { name: "Уровень проверяемого микрофона" }))
+    .toHaveAttribute("aria-valuetext", expect.stringContaining("рабочий уровень"));
+  fireEvent.click(screen.getByRole("button", { name: "Остановить проверку" }));
+  expect(stop).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("meter", { name: "Уровень проверяемого микрофона" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Проверить микрофон" }));
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть настройки звука" }));
+  expect(stop).toHaveBeenCalledTimes(2);
+});
+it("shows and changes the selected microphone's system input volume", async () => {
+  vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
+  vi.mocked(macInputVolume).mockResolvedValueOnce({ available: true, value: 42 })
+    .mockResolvedValueOnce({ available: true, value: 55 });
+  render(<Harness />);
+  await screen.findByRole("option", { name: "Call (10)" });
+  const slider = await screen.findByRole("slider", { name: /Чувствительность микрофона/ });
+  expect(slider).toHaveValue("42");
+  fireEvent.change(slider, { target: { value: "55" } });
+  fireEvent.pointerUp(slider);
+  await waitFor(() => expect(macInputVolume).toHaveBeenCalledWith("default", 55));
+  expect(screen.getByText("55%")).toBeInTheDocument();
+});
 it("restores the app by bundle ID with a new PID after remount, ignoring a reused old PID", async () => {
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
   const view = render(<Harness />);
@@ -44,7 +84,9 @@ it("does not silently replace a missing microphone", async () => {
   render(<Harness />);
   expect(await screen.findByRole("alert")).toHaveTextContent("microphone is unavailable");
   expect(screen.getByTestId("selection")).toHaveTextContent("null");
-  fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "default" } });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "default" } });
+  });
   expect(screen.getByTestId("selection")).toHaveTextContent('{"pid":10,"microphone":"default"}');
 });
 it("requires explicit selection for duplicate bundle IDs", async () => {

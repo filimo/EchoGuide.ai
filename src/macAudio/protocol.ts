@@ -8,7 +8,7 @@ export type MacAudioEvent =
   | { type: "transcription-error"; message: string }
   | { type: "ready" }
   | { type: "error"; message: string }
-  | { type: "level"; source: MacAudioSource; level: number; chunks: number }
+  | { type: "level"; source: MacAudioSource; level: number; peak: number; chunks: number }
   | { type: "realtime"; source: MacAudioSource; capturedAt?: number; event: { type: string; [key: string]: unknown } };
 
 export const macAudioHeaders = { "Content-Type": "application/json", "X-EchoGuide-Mac-Audio": "1" };

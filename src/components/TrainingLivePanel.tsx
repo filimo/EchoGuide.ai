@@ -8,6 +8,7 @@ import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
 import { connectMacAudio } from "../macAudio/client";
 import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
+import { levelMeter } from "../macAudio/levelMeter";
 import { MicrophonePicker } from "./MicrophonePicker";
 import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -541,7 +542,7 @@ export function TrainingLivePanel({
 }: TrainingLivePanelProps) {
   const [audioMode, setAudioMode] = useState(() => loadAudioMode(initialAudioMode));
   const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
-  const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; chunks: number; seenAt: number }>>>({});
+  const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; peak: number; chunks: number; seenAt: number }>>>({});
   const [macClock, setMacClock] = useState(Date.now());
   const macAbortRef = useRef<AbortController | null>(null);
   const macRecordingIdRef = useRef<string | null>(null);
@@ -1780,7 +1781,7 @@ export function TrainingLivePanel({
           }
           if (event.type === "transcription-error") setErrorMessage(event.message);
           if (event.type === "level") setMacLevels(current => ({ ...current,
-            [event.source]: { level: event.level, chunks: event.chunks, seenAt: Date.now() }
+            [event.source]: { level: event.level, peak: event.peak, chunks: event.chunks, seenAt: Date.now() }
           }));
         },
         onError: message => {
@@ -2873,10 +2874,22 @@ export function TrainingLivePanel({
             const stats = macLevels[source];
             const fresh = stats != null && macClock - stats.seenAt < 3000;
             const label = source === "microphone" ? "Я / microphone" : "Собеседники / application";
+            const meter = levelMeter(fresh ? stats.level : 0, fresh ? stats.peak : 0);
+            const zoneLabel = {
+              silent: "тишина", quiet: "тихо", good: "рабочий уровень",
+              loud: "громко", clipping: "перегруз"
+            }[meter.zone];
             return <span className="status mac-source-level" key={source}
-              title={`${label}: ${fresh ? (stats.level > 0.005 ? "звук" : "тишина") : "нет аудиоданных"}`}>
-              {source === "microphone" ? "Я" : "Собеседники"}
-              <meter aria-label={label} min={0} max={1} value={fresh ? Math.min(1, stats.level * 5) : 0} />
+              title={fresh ? `${label}: RMS ${Math.round(meter.dbfs)} dBFS, пик ${Math.round(meter.peakDbfs)} dBFS` : `${label}: нет аудиоданных`}>
+              <span className="mac-source-name">{source === "microphone" ? "Я" : "Собеседники"}</span>
+              <span className="mac-level-track" role="meter" aria-label={label}
+                aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.round(meter.dbfs)}
+                aria-valuetext={fresh ? `${Math.round(meter.dbfs)} dBFS, ${zoneLabel}; пик ${Math.round(meter.peakDbfs)} dBFS` : "нет аудиоданных"}>
+                <span className="mac-level-fill" style={{ width: `${meter.percent}%` }} />
+              </span>
+              <span className={`mac-level-reading mac-level-${meter.zone}`}>
+                {fresh ? `${Math.round(meter.dbfs)} dB · ${zoneLabel}` : "—"}
+              </span>
             </span>;
           })}
           {recoverySuggested ? (

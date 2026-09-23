@@ -11,6 +11,66 @@ export async function listMacAudioSources(signal?: AbortSignal): Promise<MacAudi
   return payload;
 }
 
+export type MacInputVolume = { available: boolean; value?: number };
+
+export async function macInputVolume(microphone: string, value?: number, signal?: AbortSignal): Promise<MacInputVolume> {
+  const response = await fetch("/api/mac-audio/input-volume", {
+    method: "POST", headers: macAudioHeaders,
+    body: JSON.stringify({ microphone, ...(value === undefined ? {} : { value }) }), signal
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Could not read microphone input volume.");
+  return payload;
+}
+
+export type MacMicrophoneMonitorEvent =
+  | { type: "ready" }
+  | { type: "level"; level: number; peak: number };
+
+export function monitorMacMicrophone(microphone: string,
+  onEvent: (event: MacMicrophoneMonitorEvent) => void,
+  onError: (message: string) => void,
+  fetchImpl: typeof fetch = fetch
+): { stop: () => void } {
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      const response = await fetchImpl("/api/mac-audio/microphone-monitor", {
+        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ microphone }), signal: controller.signal
+      });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || "Could not start microphone test.");
+      }
+      if (!response.body) throw new Error("Microphone test streaming is unavailable.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = "";
+      try {
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          if (pending.length > 4096) throw new Error("Invalid microphone test response.");
+          let end: number;
+          while ((end = pending.indexOf("\n")) >= 0) {
+            const line = pending.slice(0, end);
+            pending = pending.slice(end + 1);
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event.type === "error") throw new Error(event.message || "Microphone test failed.");
+            if (!controller.signal.aborted && (event.type === "ready" || event.type === "level")) onEvent(event);
+          }
+        }
+      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      if (!controller.signal.aborted) throw new Error("Microphone test disconnected.");
+    } catch (error) {
+      if (!controller.signal.aborted) onError(error instanceof Error ? error.message : "Microphone test failed.");
+    }
+  })();
+  return { stop: () => controller.abort() };
+}
+
 export type MacAudioOptions = {
   sessionId?: string;
   recordingOnly?: boolean;

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import ScreenCaptureKit
+import CoreAudio
 
 // Stdout is a private, in-memory NDJSON pipe owned by the local server.
 func emit(_ value: [String: Any]) {
@@ -106,6 +107,68 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 
+final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    let session = AVCaptureSession()
+    let queue = DispatchQueue(label: "echoguide.microphone-monitor")
+    let encoder = PCMEncoder()
+    var lastLevel = Date.distantPast
+
+    func start(identifier: String) throws {
+        let device = identifier == "default" ? AVCaptureDevice.default(for: .audio) :
+            AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
+                                             mediaType: .audio, position: .unspecified).devices
+                .first(where: { $0.uniqueID == identifier })
+        guard let device else { fail("The selected microphone is unavailable. Refresh Mac sources.") }
+        let input = try AVCaptureDeviceInput(device: device)
+        let output = AVCaptureAudioDataOutput()
+        output.setSampleBufferDelegate(self, queue: queue)
+        session.beginConfiguration()
+        guard session.canAddInput(input), session.canAddOutput(output) else {
+            fail("Could not monitor the selected microphone.")
+        }
+        session.addInput(input)
+        session.addOutput(output)
+        session.commitConfiguration()
+        session.startRunning()
+        guard session.isRunning else { fail("Could not start the microphone test.") }
+        emit(["type": "ready"])
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        guard sample.isValid, Date().timeIntervalSince(lastLevel) >= 0.1,
+              let description = sample.formatDescription else { return }
+        lastLevel = Date()
+        let format = AVAudioFormat(cmAudioFormatDescription: description)
+        let list = AudioBufferList.allocate(maximumBuffers: Int(format.channelCount))
+        defer { free(list.unsafeMutablePointer) }
+        var block: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sample,
+            bufferListSizeNeededOut: nil, bufferListOut: list.unsafeMutablePointer,
+            bufferListSize: AudioBufferList.sizeInBytes(maximumBuffers: Int(format.channelCount)),
+            blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
+            flags: UInt32(kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment), blockBufferOut: &block)
+        guard status == noErr,
+              let input = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: list.unsafeMutablePointer) else { return }
+        input.frameLength = AVAudioFrameCount(sample.numSamples)
+        do {
+            let pcm = try encoder.convert(input)
+            let bytes = [UInt8](pcm)
+            guard bytes.count >= 2 else { return }
+            var squares = 0.0
+            var peak = 0.0
+            for index in stride(from: 0, to: bytes.count - 1, by: 2) {
+                let sample = Int16(bitPattern: UInt16(bytes[index]) | UInt16(bytes[index + 1]) << 8)
+                let amplitude = abs(Double(sample) / 32768)
+                squares += amplitude * amplitude
+                peak = max(peak, amplitude)
+            }
+            emit(["type": "level", "level": sqrt(squares / Double(bytes.count / 2)), "peak": peak])
+        } catch { fail("Could not measure microphone level.") }
+        withExtendedLifetime(block) {}
+    }
+}
+
 func selfTest() {
     // Exercise resampling and stereo-to-mono conversion without capture permissions.
     let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
@@ -129,14 +192,105 @@ func selfTest() {
     } catch { fail("PCM self-test failed.") }
 }
 
+func audioProperty(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope,
+                   _ element: AudioObjectPropertyElement = 0) -> AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
+}
+
+func inputDevice(_ identifier: String) -> AudioObjectID? {
+    if identifier == "default" {
+        var address = audioProperty(kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal)
+        var device = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address,
+                                          0, nil, &size, &device) == noErr && device != 0 ? device : nil
+    }
+    var address = audioProperty(kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address,
+                                         0, nil, &size) == noErr else { return nil }
+    var devices = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+    guard !devices.isEmpty,
+          AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address,
+                                     0, nil, &size, &devices) == noErr else { return nil }
+    for device in devices {
+        var uidAddress = audioProperty(kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal)
+        var uid: CFString? = nil
+        var uidSize = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafeMutablePointer(to: &uid) { pointer in
+            AudioObjectGetPropertyData(device, &uidAddress, 0, nil, &uidSize,
+                                       UnsafeMutableRawPointer(pointer))
+        }
+        if status == noErr,
+           uid as String? == identifier { return device }
+    }
+    return nil
+}
+
+func inputVolumeControls(_ device: AudioObjectID) -> [AudioObjectPropertyAddress] {
+    var controls: [AudioObjectPropertyAddress] = []
+    for element: UInt32 in 0...8 {
+        var address = audioProperty(kAudioDevicePropertyVolumeScalar,
+                                    kAudioDevicePropertyScopeInput, element)
+        var writable = DarwinBoolean(false)
+        if AudioObjectHasProperty(device, &address),
+           AudioObjectIsPropertySettable(device, &address, &writable) == noErr,
+           writable.boolValue {
+            if element == 0 { return [address] }
+            controls.append(address)
+        }
+    }
+    return controls
+}
+
+func inputVolume() {
+    guard CommandLine.arguments.count >= 3 else { fail("Select a microphone first.") }
+    let identifier = CommandLine.arguments[2]
+    guard let device = inputDevice(identifier) else {
+        emit(["type": "input-volume", "available": false]); return
+    }
+    let controls = inputVolumeControls(device)
+    guard !controls.isEmpty else { emit(["type": "input-volume", "available": false]); return }
+    if CommandLine.arguments.count >= 4 {
+        guard let requested = Float32(CommandLine.arguments[3]), requested >= 0,
+              requested <= 1 else { fail("Invalid input volume.") }
+        var value = requested
+        for var address in controls {
+            guard AudioObjectSetPropertyData(device, &address, 0, nil,
+                                             UInt32(MemoryLayout<Float32>.size), &value) == noErr else {
+                fail("Could not change this microphone's input volume.")
+            }
+        }
+    }
+    var address = controls[0]
+    var value: Float32 = 0
+    var size = UInt32(MemoryLayout<Float32>.size)
+    guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else {
+        fail("Could not read this microphone's input volume.")
+    }
+    emit(["type": "input-volume", "available": true, "value": Int((value * 100).rounded())])
+}
+
 if CommandLine.arguments.contains("--self-test") { selfTest(); exit(0) }
+if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--input-volume" {
+    inputVolume(); exit(0)
+}
 guard #available(macOS 15.0, *) else { fail("Mac audio requires macOS 15 or later.") }
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 var capture: Capture?
+var microphoneMonitor: MicrophoneMonitor?
 var capturedPID: Int32?
 Task { @MainActor in
     do {
+        if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--monitor-microphone" {
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
+            let monitor = MicrophoneMonitor()
+            microphoneMonitor = monitor
+            try monitor.start(identifier: CommandLine.arguments[2])
+            return
+        }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         if CommandLine.arguments.contains("--list") {
             let regularPIDs = Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map { $0.processIdentifier })

@@ -61,6 +61,40 @@ function setup(recordings?: RecordingStore) {
 }
 
 describe("Mac audio local bridge", () => {
+  it("streams microphone test levels without recording or connecting to OpenAI", async () => {
+    const test = setup();
+    const res = await test.run(request("microphone-monitor", { microphone: "usb" }));
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--monitor-microphone", "usb"]);
+    expect(test.sockets).toHaveLength(0);
+    test.helper.line({ type: "ready" });
+    test.helper.line({ type: "level", level: 0.02, peak: 0.1 });
+    expect(res.body).toContain('{"type":"ready"}\n');
+    expect(res.body).toContain('{"type":"level","level":0.02,"peak":0.1}\n');
+    expect((await test.run(request("session"))).status).toBe(409);
+    res.emit("close");
+    expect(test.helper.kill).toHaveBeenCalled();
+  });
+  it("reads and changes only a selected device's system input volume", async () => {
+    const test = setup();
+    const read = await test.run(request("input-volume", { microphone: "usb" }));
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--input-volume", "usb"]);
+    test.helper.line({ type: "input-volume", available: true, value: 42 });
+    test.helper.emit("close");
+    expect(JSON.parse(read.body)).toEqual({ available: true, value: 42 });
+
+    const other = setup();
+    const write = await other.run(request("input-volume", { microphone: "usb", value: 60 }));
+    expect(other.spawnHelper).toHaveBeenCalledWith(["--input-volume", "usb", "0.6"]);
+    other.helper.line({ type: "input-volume", available: true, value: 60 });
+    other.helper.emit("close");
+    expect(JSON.parse(write.body)).toEqual({ available: true, value: 60 });
+  });
+  it("rejects invalid input-volume values without starting a helper", async () => {
+    const test = setup();
+    const response = await test.run(request("input-volume", { microphone: "usb", value: 130 }));
+    expect(response.status).toBe(400);
+    expect(test.spawnHelper).not.toHaveBeenCalled();
+  });
   it("records in audio-only mode without connecting to OpenAI", async () => {
     const root = mkdtempSync(join(tmpdir(), "echoguide-mac-audio-only-"));
     const recordings = new RecordingStore(root);
@@ -87,6 +121,8 @@ describe("Mac audio local bridge", () => {
     const mic = Buffer.alloc(4800); const app = Buffer.alloc(4800);
     for (let i = 0; i < 4800; i += 2) { mic.writeInt16LE(1000, i); app.writeInt16LE(500, i); }
     test.helper.line({ type: "audio", source: "microphone", audio: mic.toString("base64") });
+    expect(res.body).toContain('"source":"microphone","chunks":1,"level":');
+    expect(res.body).toContain('"peak":0.030517578125');
     test.helper.line({ type: "audio", source: "application", audio: app.toString("base64") });
     test.sockets[0].message({ type: "error" });
     expect(test.helper.kill).not.toHaveBeenCalled();

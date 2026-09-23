@@ -15,6 +15,14 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Show Mac microphone and call audio on the same dBFS scale, with quiet, working,
+  loud and overload zones plus a peak reading. Add the selected microphone's
+  system input-volume control to audio settings where macOS supports it;
+  captured audio is not amplified by EchoGuide.
+- Add an on-demand microphone test in audio settings. It previews the selected
+  device's live level while adjusting macOS input volume, without starting a
+  meeting, saving audio, or using OpenAI.
+
 - Replace Start live with one meeting-start menu for live assistance or local audio-only recording. Audio-only mode avoids Realtime transcription and suggestions, shows an elapsed timer, and saves a labeled session in history.
 
 - Show the selected phrase's Russian meaning as the meeting card prompt, with the spoken English available under a collapsed `English original` disclosure.

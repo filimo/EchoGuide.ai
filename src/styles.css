@@ -1689,7 +1689,40 @@ textarea {
 .mac-audio-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .mac-audio-controls select { max-width: min(100%, 24rem); }
 .mac-audio-controls small { display: block; margin-top: 0.6rem; line-height: 1.5; }
-.training-status-row meter { width: 5rem; margin-left: 0.5rem; }
+.mac-source-level { display: inline-flex; align-items: center; gap: 6px; }
+.mac-source-name { white-space: nowrap; }
+.mac-level-track {
+  position: relative;
+  display: inline-block;
+  width: 84px;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid #b8c4d4;
+  border-radius: 999px;
+  background: linear-gradient(to right, #e6edf2 0 33%, #d8eeda 33% 70%, #fff0bb 70% 85%, #ffd2cd 85%);
+}
+.mac-level-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(to right, #627d8c 0 33%, #27834f 33% 70%, #c68011 70% 85%, #c94032 85%);
+  background-size: 84px 100%;
+  background-repeat: no-repeat;
+}
+.mac-level-reading { min-width: 104px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mac-level-good { color: #17623a; }
+.mac-level-loud { color: #94600b; }
+.mac-level-clipping { color: #b52219; font-weight: 700; }
+.mac-input-volume { display: grid; gap: 5px; width: 100%; }
+.mac-input-volume-control { display: flex; align-items: center; gap: 10px; }
+.mac-input-volume-control input { flex: 1; min-width: 0; }
+.mac-input-volume-control output { width: 3rem; text-align: right; font-variant-numeric: tabular-nums; }
+.mac-monitor-button { justify-self: start; }
+.mac-monitor-level { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: 4px 8px; min-width: 0; }
+.mac-monitor-prompt { grid-column: 1 / -1; }
+.mac-monitor-level .mac-level-track { width: 120px; }
+.mac-monitor-level .mac-level-fill { background-size: 120px 100%; }
+.mac-monitor-level .mac-level-reading { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .transcript-capture-time { font-size: 0.75rem; opacity: 0.65; }
 
 .transcript-turn-mac { grid-template-columns: 30px minmax(0, 1fr); }
@@ -1775,7 +1808,10 @@ textarea {
 .desktop-workspace .mac-sources-popover label { display: grid; gap: 5px; }
 .desktop-workspace .mac-sources-popover select { width: 100%; max-width: 100%; padding: 6px; }
 
-.desktop-workspace .mac-source-level meter { width: 44px; margin-left: 0; }
+.desktop-workspace .mac-level-track { width: 64px; }
+.desktop-workspace .mac-level-fill { background-size: 64px 100%; }
+.desktop-workspace .mac-monitor-level .mac-level-track { width: 120px; }
+.desktop-workspace .mac-monitor-level .mac-level-fill { background-size: 120px 100%; }
 
 .meeting-answer-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 12px; margin: 6px 0; color: #526176; font-size: 12px; line-height: 1.4; }
 .meeting-answer-meta:empty { display: none; }

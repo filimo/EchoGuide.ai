@@ -25,6 +25,8 @@ It does not start capture automatically. The normal setup screen also links here
 1. Wear headphones and open the call application.
 2. Click **Refresh Mac sources**. Grant the macOS capture permission if requested.
 3. Select **Call application** and **Mac microphone**. For Meet, select the browser.
+   To set input volume first, click **Проверить микрофон** in the source popover,
+   speak normally and adjust the system input-volume slider. Stop the test when done.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
 5. Click **Начать встречу** and choose **С подсказками и расшифровкой** to start capture, transcription and local audio recording, or **Только записать аудио** for local capture without OpenAI transcription. Allow microphone access if macOS requests it.
 6. Check both source meters. Completed turns appear with their source labels;
@@ -50,6 +52,17 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   The sender uses elapsed monotonic time, so late timer callbacks do not accumulate
   an ever-growing queue. Buffers remain bounded; a stall over one second or an
   overloaded transport stops rather than silently dropping speech.
+- The source meters use the same dBFS scale for microphone and application RMS.
+  Green is a working speech range, amber is loud, and red warns when a sample peak
+  is close to clipping. Hover over a meter to see RMS and peak separately. A low
+  microphone reading can indicate input gain, microphone placement or the wrong
+  device; the meter does not adjust the audio sent for transcription or recording.
+- Audio settings show the selected microphone's macOS input volume when the device
+  exposes a writable Core Audio control. Changing it affects that device system-wide,
+  including other apps. Some devices provide only hardware or vendor controls.
+- The microphone test uses the selected native device and sends only RMS and peak
+  measurements to the local UI. It does not capture application audio, start an
+  OpenAI session, or save audio. Closing the popover stops the test.
 - The existing `OPENAI_REALTIME_TRANSCRIPTION_MODEL` is reused. Each source uses
   its own paid session and fixed `server_vad` with the existing default 1.2 s pause.
   The model is not changed by this feature.

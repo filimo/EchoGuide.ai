@@ -15,7 +15,8 @@ function getStartLiveOption() {
 
 vi.mock("../macAudio/client", async importOriginal => ({
   ...await importOriginal<typeof import("../macAudio/client")>(),
-  listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }], microphones: [] }))
+  listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }], microphones: [] })),
+  macInputVolume: vi.fn(async () => ({ available: false }))
 }));
 afterEach(() => { window.localStorage.clear(); vi.restoreAllMocks(); });
 
@@ -52,6 +53,17 @@ async function setup(pending = false, recordingOnly = false) {
 }
 
 describe("Mac audio in Training Mode", () => {
+  it("uses the same dBFS scale for both source meters and reports peak overload", async () => {
+    const test = await setup();
+    await test.emit({ type: "level", source: "microphone", chunks: 1, level: 0.01, peak: 0.1 });
+    await test.emit({ type: "level", source: "application", chunks: 1, level: 0.2, peak: 0.95 });
+    const own = screen.getByRole("meter", { name: "Я / microphone" });
+    const others = screen.getByRole("meter", { name: "Собеседники / application" });
+    expect(own).toHaveAttribute("aria-valuenow", "-40");
+    expect(own).toHaveAttribute("aria-valuetext", expect.stringContaining("рабочий уровень"));
+    expect(others).toHaveAttribute("aria-valuenow", "-14");
+    expect(others).toHaveAttribute("aria-valuetext", expect.stringContaining("перегруз"));
+  });
   it("starts native recording without requesting transcription", async () => {
     const test = await setup(false, true);
     expect(test.options.recordingOnly).toBe(true);
