@@ -4,7 +4,7 @@
 
 EchoGuide evaluates text models against the real `transcript -> bilingual phrase card -> suggested replies` contract instead of selecting a model from generic benchmarks.
 
-The latest recorded comparison selected `gpt-5.6-luna` with `reasoning.effort: "none"` as the default phrase-analysis model. Realtime transcription remains a separate `gpt-4o-transcribe` path.
+The current default remains `gpt-5.6-luna` with `reasoning.effort: "none"`. A September 23, 2026 synthetic comparison favors `gpt-6-luna` as the next phrase-card candidate, but the shared meeting-assistant model setting and live latency still need validation. Realtime transcription remains a separate `gpt-4o-transcribe` path.
 
 The runtime values are configured in `.env.local` through `OPENAI_BILINGUAL_MODEL`
 and `OPENAI_BILINGUAL_REASONING_EFFORT`. Realtime transcription uses
@@ -53,6 +53,24 @@ The score combines two layers:
 Candidate identities are hidden behind rotating keys to reduce position bias.
 
 ## Recorded result
+
+### September 23, 2026 candidate check
+
+The current nine-case contract was run once with `gpt-5.6-luna`, `gpt-6-luna`, and `gpt-6-sol`, using the existing blind `gpt-5.5` judge. All 27 candidate requests succeeded.
+
+| Model | Average score | Wins | Mean latency | p95 latency | Output tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `gpt-6-luna` | **94.3** | **6 / 9** | **3.73s** | 6.54s | 2,060 |
+| `gpt-5.6-luna` | 92.6 | 3 / 9 | 4.10s | 6.38s | 2,510 |
+| `gpt-6-sol` | 91.4 | 0 / 9 | 3.74s | 4.75s | 2,037 |
+
+The scores come from one synthetic run, not real interview audio. GPT-6 Luna lost the noise and AI-use pressure cases to the current default. Its current list price is $0.10 per million input tokens and $0.50 per million output tokens, compared with $0.20 and $1.20 for GPT-5.6 Luna. See the [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) model pages.
+
+The separate seven-case quick-start check gave GPT-6 Luna two 3.5-second timeouts on the first run and none on the repeat; GPT-5.6 Luna passed all seven in its run. Keep quick start on the current default until its timeout behavior is measured in live use. The meeting assistant reads `OPENAI_BILINGUAL_MODEL`, so changing that setting also changes meeting answers; validate that path before switching the shared default.
+
+The detailed phrase-card run is in the ignored local file `.echoguide/evals/model-comparison-2026-09-23T05-40-51-321Z.json`.
+
+### Earlier comparison
 
 The recorded comparison below used the earlier, stricter sentence-shape contract.
 Re-run the evaluation before using these scores to compare models under the current

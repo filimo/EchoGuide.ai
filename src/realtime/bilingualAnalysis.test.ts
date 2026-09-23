@@ -146,6 +146,19 @@ describe("bilingual phrase analysis", () => {
     });
   });
 
+  it("preserves low-latency reasoning and explicit caching for GPT-6 Luna", () => {
+    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-6-luna");
+
+    expect(request).toMatchObject({
+      model: "gpt-6-luna",
+      reasoning: { effort: "none" },
+      prompt_cache_options: { mode: "explicit" }
+    });
+    expect(request.input[0]?.content).toEqual([
+      expect.objectContaining({ prompt_cache_breakpoint: { mode: "explicit" } })
+    ]);
+  });
+
   it("omits reasoning effort for legacy non-reasoning card models", () => {
     const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-4.1-mini");
 

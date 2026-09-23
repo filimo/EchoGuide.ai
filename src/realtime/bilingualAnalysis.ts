@@ -127,12 +127,12 @@ export function normalizeRecentContext(value: string[] | undefined): string[] {
 
 function supportsReasoningEffort(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
-  return match != null && Number(match[1]) >= 1;
+  return (match != null && Number(match[1]) >= 1) || /^gpt-6-(?:sol|luna)(?:-|$)/.test(model);
 }
 
 function supportsExplicitPromptCaching(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
-  return match != null && Number(match[1]) >= 6;
+  return (match != null && Number(match[1]) >= 6) || /^gpt-6-(?:astra|sol|luna)(?:-|$)/.test(model);
 }
 
 function readTokenCount(value: unknown): number {
