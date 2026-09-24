@@ -43,6 +43,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Add an optional BlackHole 2ch output in Mac audio mode so ChatGPT Voice can hear
+  the selected microphone and call application while EchoGuide keeps its separate
+  transcription channels and normal headphone playback.
+
 - Record audio automatically with Start live and finalize it with Stop live.
   Play recordings from session history and delete them with their session.
   Mac audio mixes both voices into both stereo channels; browser microphones

@@ -27,6 +27,9 @@ It does not start capture automatically. The normal setup screen also links here
 3. Select **Call application** and **Mac microphone**. For Meet, select the browser.
    To set input volume first, click **Проверить микрофон** in the source popover,
    speak normally and adjust the system input-volume slider. Stop the test when done.
+   To share both sources with the ChatGPT macOS app, select a named physical microphone
+   rather than `Default`, then enable **Передавать микрофон и звук приложения в ChatGPT через BlackHole 2ch**.
+   BlackHole 2ch must already be installed. EchoGuide does not change the Mac's default output.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
 5. Click **Начать встречу** and choose **С подсказками и расшифровкой** to start capture, transcription and local audio recording, or **Только записать аудио** for local capture without OpenAI transcription. Allow microphone access if macOS requests it.
 6. Check both source meters. Completed turns appear with their source labels;
@@ -52,6 +55,15 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   The sender uses elapsed monotonic time, so late timer callbacks do not accumulate
   an ever-growing queue. Buffers remain bounded; a stall over one second or an
   overloaded transport stops rather than silently dropping speech.
+- When the BlackHole option is enabled, a second native helper receives a copy of
+  the aligned microphone and application chunks as one stereo mix. It selects
+  BlackHole 2ch directly as its output. EchoGuide's source attribution and two
+  transcription sessions stay separate; a BlackHole failure leaves capture running
+  and reports an error in the toolbar. The helper stops with the meeting.
+- In ChatGPT Voice, select BlackHole 2ch as the microphone if that control is
+  available. Otherwise select BlackHole as the macOS system input for the Voice
+  session. Keep EchoGuide's own microphone set to the named physical device.
+  ChatGPT receives a single mixed input and cannot infer EchoGuide's source labels.
 - The source meters use the same dBFS scale for microphone and application RMS.
   Green is a working speech range, amber is loud, and red warns when a sample peak
   is close to clipping. Hover over a meter to see RMS and peak separately. A low

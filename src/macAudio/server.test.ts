@@ -19,6 +19,7 @@ class Socket extends EventEmitter {
   message(event: unknown) { this.emit("message", Buffer.from(JSON.stringify(event))); }
 }
 class Helper extends EventEmitter {
+  stdin = new PassThrough();
   stdout = new PassThrough();
   stderr = new PassThrough();
   kill = vi.fn();
@@ -45,7 +46,8 @@ afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); 
 function setup(recordings?: RecordingStore) {
   const sockets: Socket[] = [];
   const helper = new Helper();
-  const spawnHelper = vi.fn(() => helper as unknown as ChildProcessWithoutNullStreams);
+  const outputHelper = new Helper();
+  const spawnHelper = vi.fn((args: string[]) => (args[0] === "--virtual-output" ? outputHelper : helper) as unknown as ChildProcessWithoutNullStreams);
   const diagnostic = vi.fn();
   const bridge = createMacAudioMiddleware({ recordings, diagnostic, platform: "darwin", helperExists: () => true, spawnHelper,
     connectSocket: () => { const socket = new Socket(); sockets.push(socket); return socket as unknown as WebSocket; },
@@ -57,10 +59,52 @@ function setup(recordings?: RecordingStore) {
     return res;
   };
   const ready = () => sockets.forEach(socket => { socket.emit("open"); socket.message({ type: "session.updated" }); });
-  return { sockets, helper, spawnHelper, bridge, run, ready, diagnostic };
+  return { sockets, helper, outputHelper, spawnHelper, bridge, run, ready, diagnostic };
 }
 
 describe("Mac audio local bridge", () => {
+  it("routes a timed copy of both sources to BlackHole without changing EchoGuide transcription", async () => {
+    const test = setup();
+    const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
+      virtualOutput: true }));
+    test.ready();
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--virtual-output"]);
+    expect(test.spawnHelper).not.toHaveBeenCalledWith(["--capture", "123", "usb"]);
+    test.outputHelper.line({ type: "ready" });
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "usb"]);
+    test.helper.line({ type: "ready" });
+    const mixed: Buffer[] = [];
+    test.outputHelper.stdin.on("data", chunk => mixed.push(Buffer.from(chunk)));
+    const mic = Buffer.alloc(4800); const app = Buffer.alloc(4800);
+    mic.writeInt16LE(1000, 0); app.writeInt16LE(500, 0);
+    test.helper.line({ type: "audio", source: "microphone", audio: mic.toString("base64") });
+    test.helper.line({ type: "audio", source: "application", audio: app.toString("base64") });
+    await vi.waitFor(() => expect(mixed.length).toBeGreaterThan(0));
+    expect(mixed[0].readInt16LE(0)).toBe(1500);
+    expect(mixed[0].readInt16LE(2)).toBe(1500);
+    expect(test.sockets[0].send.mock.calls.some(([value]) => JSON.parse(value).type === "input_audio_buffer.append")).toBe(true);
+    expect(res.body).toContain('"type":"virtual-output","status":"ready"');
+    res.emit("close");
+    expect(test.outputHelper.kill).toHaveBeenCalled();
+  });
+  it("requires an explicit physical microphone when virtual output is enabled", async () => {
+    const test = setup();
+    const res = await test.run(request("session", { pid: 123, microphone: "default", language: "english",
+      virtualOutput: true }));
+    expect(res.status).toBe(400);
+    expect(test.spawnHelper).not.toHaveBeenCalled();
+  });
+  it("continues EchoGuide capture if BlackHole cannot start", async () => {
+    const test = setup();
+    const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
+      virtualOutput: true }));
+    test.ready();
+    test.outputHelper.line({ type: "error", message: "Device missing" });
+    expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "usb"]);
+    test.helper.line({ type: "ready" });
+    expect(res.body).toContain('"type":"virtual-output","status":"error"');
+    expect(res.body).toContain('{"type":"ready"}\n');
+  });
   it("streams microphone test levels without recording or connecting to OpenAI", async () => {
     const test = setup();
     const res = await test.run(request("microphone-monitor", { microphone: "usb" }));

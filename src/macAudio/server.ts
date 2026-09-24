@@ -223,6 +223,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         typeof options.microphone !== "string" || options.microphone.length > 512 ||
         !["english", "russian", "english-russian"].includes(String(options.language)) ||
         (options.recordingOnly !== undefined && typeof options.recordingOnly !== "boolean") ||
+        (options.virtualOutput !== undefined && typeof options.virtualOutput !== "boolean") ||
+        (options.virtualOutput === true && options.microphone === "default") ||
         (options.recordingOnly === true && (typeof options.sessionId !== "string" || !options.sessionId))) {
       return json(res, 400, { error: "Select an application, microphone and speech language." });
     }
@@ -264,6 +266,9 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     const turns = new Map<string, number>();
     const completed = new Set<string>();
     let helper: ChildProcessWithoutNullStreams | undefined;
+    let outputHelper: ChildProcessWithoutNullStreams | undefined;
+    let outputReady = false;
+    let outputTimeout: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -274,6 +279,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       clearTimeout(timeout);
       clearInterval(heartbeat);
       clearInterval(audioPump);
+      clearTimeout(outputTimeout);
       if (recording) {
         try {
           const mic = audioQueues.get("microphone") ?? Buffer.alloc(0);
@@ -287,6 +293,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       }
       audioQueues.clear();
       helper?.kill();
+      outputHelper?.kill();
       for (const socket of sockets.values()) socket.terminate();
       active = false;
       stopActive = undefined;
@@ -314,7 +321,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       if (!stopped && ++heartbeats % 2 === 0) diagnostic("mac_audio.stats");
     }, 5000);
 
-    function startCapture() {
+    function launchCapture() {
       if (stopped || helper || (!recordingOnly && ready.size !== 2)) return;
       helper = child(["--capture", String(options.pid), String(options.microphone)]);
       let buffer = "";
@@ -385,6 +392,12 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                       send({ type: "recording", status: "error", message: "Audio recording stopped: storage error or 1 GB / 4 hour limit. Earlier audio is kept." });
                     }
                   }
+                  if (outputReady && outputHelper && recordingChannels.length === 2) {
+                    const mixed = mixStereo(recordingChannels[0], recordingChannels[1]);
+                    try {
+                      if (!outputHelper.stdin.write(mixed)) outputHelper.kill();
+                    } catch { outputHelper.kill(); }
+                  }
                 }
               }, 100);
               send({ type: "ready" }); continue;
@@ -412,6 +425,50 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                 level: Math.sqrt(squares / (pcm.length / 2)), peak });
             }
           } catch { fail("Could not read the Mac audio stream."); }
+        }
+      });
+    }
+
+    function startCapture() {
+      if (stopped || helper || outputHelper || (!recordingOnly && ready.size !== 2)) return;
+      if (options.virtualOutput !== true) { launchCapture(); return; }
+      outputHelper = child(["--virtual-output"]);
+      let outputBuffer = "";
+      let settled = false;
+      const outputFailed = () => {
+        if (stopped) return;
+        clearTimeout(outputTimeout);
+        const wasReady = outputReady;
+        if (settled && !wasReady) return;
+        settled = true;
+        outputReady = false;
+        send({ type: "virtual-output", status: "error", message: wasReady
+          ? "BlackHole output stopped. EchoGuide capture continues."
+          : "BlackHole 2ch could not start. EchoGuide capture continues." });
+        outputHelper?.kill();
+        if (!wasReady) launchCapture();
+      };
+      outputHelper.on("error", outputFailed);
+      outputHelper.on("close", outputFailed);
+      outputHelper.stdin.on("error", outputFailed);
+      outputTimeout = setTimeout(outputFailed, 5000);
+      outputHelper.stdout.on("data", chunk => {
+        outputBuffer += chunk.toString();
+        if (outputBuffer.length > 4096) { outputFailed(); return; }
+        let end: number;
+        while ((end = outputBuffer.indexOf("\n")) >= 0) {
+          const line = outputBuffer.slice(0, end);
+          outputBuffer = outputBuffer.slice(end + 1);
+          try {
+            const event = JSON.parse(line);
+            if (event.type === "ready" && !settled) {
+              settled = true;
+              clearTimeout(outputTimeout);
+              outputReady = true;
+              send({ type: "virtual-output", status: "ready" });
+              launchCapture();
+            } else if (event.type === "error") outputFailed();
+          } catch { outputFailed(); }
         }
       });
     }

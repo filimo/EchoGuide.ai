@@ -9,7 +9,7 @@ bundle="$PWD/.echoguide/native/EchoGuide Audio.app"
 mkdir -p "$bundle/Contents/MacOS" "$PWD/.echoguide/native/module-cache"
 cp native/mac-audio/Info.plist "$bundle/Contents/Info.plist"
 xcrun swiftc -swift-version 5 -O -module-cache-path "$PWD/.echoguide/native/module-cache" \
-  -target "$(uname -m)-apple-macos15.0" native/mac-audio/main.swift \
+  -target "$(uname -m)-apple-macos15.0" native/mac-audio/main.swift native/mac-audio/virtualOutput.swift \
   -o "$bundle/Contents/MacOS/EchoGuideAudio"
 codesign --force --sign - --identifier ai.echoguide.audio.local "$bundle"
 "$bundle/Contents/MacOS/EchoGuideAudio" --self-test

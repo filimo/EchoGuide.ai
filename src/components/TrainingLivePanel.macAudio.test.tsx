@@ -15,12 +15,13 @@ function getStartLiveOption() {
 
 vi.mock("../macAudio/client", async importOriginal => ({
   ...await importOriginal<typeof import("../macAudio/client")>(),
-  listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }], microphones: [] })),
+  listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }],
+    microphones: [{ id: "usb", name: "UGREEN" }] })),
   macInputVolume: vi.fn(async () => ({ available: false }))
 }));
 afterEach(() => { window.localStorage.clear(); vi.restoreAllMocks(); });
 
-async function setup(pending = false, recordingOnly = false) {
+async function setup(pending = false, recordingOnly = false, virtualOutput = false) {
   let options: MacAudioOptions | undefined;
   let finish: () => void = () => {};
   const transport = { disconnect: vi.fn(), sendEvent: () => false, clearAudio: () => false,
@@ -42,6 +43,10 @@ async function setup(pending = false, recordingOnly = false) {
   fireEvent.change(screen.getByLabelText("Audio source"), { target: { value: "mac" } });
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
+  if (virtualOutput) {
+    fireEvent.click(screen.getByLabelText("Передавать микрофон и звук приложения в ChatGPT через BlackHole 2ch"));
+    fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "usb" } });
+  }
   if (recordingOnly) {
     fireEvent.click(screen.getByRole("button", { name: "Начать встречу ▾" }));
     fireEvent.click(screen.getByRole("button", { name: "Только записать аудио" }));
@@ -53,6 +58,14 @@ async function setup(pending = false, recordingOnly = false) {
 }
 
 describe("Mac audio in Training Mode", () => {
+  it("sends the optional BlackHole route with an explicitly selected microphone", async () => {
+    const test = await setup(false, false, true);
+    expect(test.options).toMatchObject({ microphone: "usb", virtualOutput: true });
+    await test.emit({ type: "virtual-output", status: "ready" });
+    expect(screen.getByText("Звук передаётся в BlackHole 2ch")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Остановить встречу" }));
+    expect(screen.queryByText("Звук передаётся в BlackHole 2ch")).not.toBeInTheDocument();
+  });
   it("uses the same dBFS scale for both source meters and reports peak overload", async () => {
     const test = await setup();
     await test.emit({ type: "level", source: "microphone", chunks: 1, level: 0.01, peak: 0.1 });
