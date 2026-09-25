@@ -2,11 +2,42 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
-private let virtualFrameBytes = 19_200 // 100 ms of 24 kHz, 16-bit stereo PCM.
+private let virtualFrameBytes = 3_840 // 40 ms of 24 kHz, 16-bit stereo PCM.
+private let maxBufferedBytes = virtualFrameBytes * 3
+
+private final class LivePCMBuffer {
+    private let lock = NSLock()
+    private var bytes = Data()
+
+    func append(_ input: Data) {
+        lock.lock()
+        bytes.append(input)
+        if bytes.count > maxBufferedBytes {
+            // Keep the newest audio so a slow output cannot build up speech delay.
+            let excess = bytes.count - maxBufferedBytes
+            bytes.removeFirst(excess - excess % 4)
+        }
+        lock.unlock()
+    }
+
+    func takeFrame() -> Data {
+        lock.lock()
+        let count = min(bytes.count - bytes.count % 4, virtualFrameBytes)
+        let frame = Data(bytes.prefix(count))
+        bytes.removeFirst(count)
+        lock.unlock()
+        var output = frame
+        if output.count < virtualFrameBytes {
+            output.append(Data(count: virtualFrameBytes - output.count))
+        }
+        return output
+    }
+}
 
 private final class VirtualOutput {
     private var queue: AudioQueueRef?
     private var buffers: [AudioQueueBufferRef] = []
+    private let pcm = LivePCMBuffer()
 
     private static let callback: AudioQueueOutputCallback = { context, queue, buffer in
         guard let context else { return }
@@ -15,12 +46,7 @@ private final class VirtualOutput {
     }
 
     private func enqueue(_ buffer: AudioQueueBufferRef, on queue: AudioQueueRef) {
-        var bytes = Data()
-        while bytes.count < virtualFrameBytes {
-            let next = FileHandle.standardInput.readData(ofLength: virtualFrameBytes - bytes.count)
-            if next.isEmpty { exit(0) }
-            bytes.append(next)
-        }
+        let bytes = pcm.takeFrame()
         bytes.withUnsafeBytes { source in
             guard let base = source.baseAddress else { return }
             memcpy(buffer.pointee.mAudioData, base, virtualFrameBytes)
@@ -60,18 +86,36 @@ private final class VirtualOutput {
         guard selectionStatus == noErr else {
             fail("Could not route audio to BlackHole 2ch.")
         }
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             var buffer: AudioQueueBufferRef?
             guard AudioQueueAllocateBuffer(created, UInt32(virtualFrameBytes), &buffer) == noErr,
                   let buffer else { fail("Could not allocate BlackHole audio buffers.") }
             buffers.append(buffer)
         }
-        emit(["type": "ready"])
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             for buffer in buffers { enqueue(buffer, on: created) }
             if AudioQueueStart(created, nil) != noErr { fail("Could not start BlackHole output.") }
+            emit(["type": "ready"])
+            while true {
+                let input = FileHandle.standardInput.readData(ofLength: 4096)
+                if input.isEmpty { exit(0) }
+                pcm.append(input)
+            }
         }
         RunLoop.main.run()
+    }
+}
+
+func virtualOutputSelfTest() {
+    let buffer = LivePCMBuffer()
+    for value in UInt8(0)..<UInt8(8) {
+        buffer.append(Data(repeating: value, count: virtualFrameBytes))
+    }
+    guard buffer.takeFrame() == Data(repeating: 5, count: virtualFrameBytes),
+          buffer.takeFrame() == Data(repeating: 6, count: virtualFrameBytes),
+          buffer.takeFrame() == Data(repeating: 7, count: virtualFrameBytes),
+          buffer.takeFrame() == Data(count: virtualFrameBytes) else {
+        fail("Virtual output buffer self-test failed.")
     }
 }
 

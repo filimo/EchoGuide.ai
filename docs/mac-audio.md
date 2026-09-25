@@ -66,6 +66,9 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   sessions stay separate; a BlackHole failure leaves meeting capture running
   and reports an error in the toolbar. Closing EchoGuide or its local server
   stops the idle route.
+- BlackHole playback keeps a short bounded buffer. If macOS output pauses, older
+  queued samples are discarded so the route can resume near the current speech.
+  This can skip audio during an output stall; ChatGPT Voice can add its own delay.
 - In ChatGPT Voice, select BlackHole 2ch as the microphone if that control is
   available. Otherwise select BlackHole as the macOS system input for the Voice
   session. Keep EchoGuide's own microphone set to the named physical device.
@@ -129,7 +132,7 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 ## Verification
 
 ```bash
-npm run mac-audio:build  # compiles/signs and checks 48 kHz stereo → 24 kHz mono PCM
+npm run mac-audio:build  # compiles/signs, checks PCM conversion and BlackHole buffering
 npm run lint
 npm run test
 npm run build

@@ -23,6 +23,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Keep BlackHole output close to live speech by reading its input independently
+  of audio playback and discarding stale queued samples if playback falls behind.
 - Restore a selected meeting card after its earlier context or rolling summary
   changes, instead of generating the same phrase again.
 - Discard exact transcription-prompt echoes, including long sentence-boundary
