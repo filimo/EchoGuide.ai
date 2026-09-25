@@ -16,6 +16,7 @@ import { isMacAudioSource, type MacAudioEvent, type MacAudioSource } from "./pro
 const prefix = "/api/mac-audio/";
 const helperPath = ".echoguide/native/EchoGuide Audio.app/Contents/MacOS/EchoGuideAudio";
 const sources: MacAudioSource[] = ["microphone", "application"];
+const maxNativeAudioQueueBytes = 144_000;
 
 export function isLocalMacAudioRequest(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress;
@@ -182,7 +183,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             clearTimeout(timeout);
             timeout = setTimeout(() => fail(microphoneStage === "device_lookup"
               ? "Выбранный микрофон не отвечает. Переподключи его или выбери другой, затем повтори."
-              : "Selected microphone did not start. Check the macOS audio device."), 10_000);
+              : "Selected microphone did not start. Check the macOS audio device."), 30_000);
             microphone = child(["--stream-microphone", options.microphone as string]);
             microphone.on("error", () => fail("Could not start the selected microphone."));
             microphone.on("close", () => fail("The selected microphone stopped."));
@@ -516,6 +517,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
               send({ type: "ready" }); continue;
             }
             if (event.type !== "audio" || !isMacAudioSource(event.source) || typeof event.audio !== "string") continue;
+            if (!audioPump) continue;
             const pcm = Buffer.from(event.audio, "base64");
             if (pcm.length === 0 || pcm.length % 2 !== 0 || pcm.length > 192_000) throw new Error("Invalid PCM");
             const now = Date.now();
@@ -523,7 +525,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             stats.chunks += 1;
             frames.set(event.source, stats);
             const queued = audioQueues.get(event.source)!;
-            if (queued.length + pcm.length > 48_000) { fail("Native audio delivery fell behind. Restart live mode.", "native_queue_overflow"); break; }
+            if (queued.length + pcm.length > maxNativeAudioQueueBytes) { fail("Native audio delivery fell behind. Restart live mode.", "native_queue_overflow"); break; }
             audioQueues.set(event.source, Buffer.concat([queued, pcm]));
             if (now - stats.lastLevel >= 500) {
               stats.lastLevel = now;

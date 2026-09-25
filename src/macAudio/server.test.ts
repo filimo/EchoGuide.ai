@@ -127,6 +127,8 @@ describe("Mac audio local bridge", () => {
       test.outputHelper.line({ type: "ready" });
       test.helper.line({ type: "stage", name: "device_lookup" });
       await vi.advanceTimersByTimeAsync(10_000);
+      expect(res.body).not.toContain('"type":"error"');
+      await vi.advanceTimersByTimeAsync(20_000);
       expect(res.body).toContain("Выбранный микрофон не отвечает.");
       expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
         type: "mac_audio.standby_microphone_stage", reason: "device_lookup"
@@ -322,9 +324,15 @@ describe("Mac audio local bridge", () => {
     expect(test.diagnostic).toHaveBeenLastCalledWith(expect.objectContaining({ type: "mac_audio.stopped", reason: "microphone_upstream_error" }));
     expect(JSON.stringify(test.diagnostic.mock.calls)).not.toContain("sk-sensitive");
   });
-  it("stops instead of building an unbounded audio queue", async () => {
+  it("absorbs a short native startup burst but stops before the audio queue grows without bound", async () => {
     const test = setup(); const res = await test.run(); test.ready();
-    test.helper.line({ type: "audio", source: "microphone", audio: Buffer.alloc(48_002).toString("base64") });
+    const chunk = { type: "audio", source: "application", audio: Buffer.alloc(960).toString("base64") };
+    for (let index = 0; index < 151; index++) test.helper.line(chunk);
+    expect(res.body).not.toContain("fell behind");
+    test.helper.line({ type: "ready" });
+    for (let index = 0; index < 51; index++) test.helper.line(chunk);
+    expect(res.body).not.toContain("fell behind");
+    for (let index = 51; index < 151; index++) test.helper.line(chunk);
     expect(res.body).toContain("fell behind");
     expect(test.helper.kill).toHaveBeenCalled();
   });

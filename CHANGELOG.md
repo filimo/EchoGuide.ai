@@ -15,6 +15,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Ignore native call audio received before capture is ready, allow a short
+  startup burst, and give a slow microphone lookup more time before reporting
+  a BlackHole routing error.
 - Show which BlackHole startup step stalled and suggest reconnecting or changing
   the selected microphone when macOS stops responding during device lookup.
 - Restore BlackHole microphone routing after a meeting when the live audio

@@ -54,7 +54,8 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 - The server sends separate 100 ms PCM chunks for each source, filling missing
   audio with silence so VAD can complete turns when application playback stops.
   The sender uses elapsed monotonic time, so late timer callbacks do not accumulate
-  an ever-growing queue. Buffers remain bounded; a stall over one second or an
+  an ever-growing queue. Audio received before native capture is ready is
+  discarded. Buffers remain bounded; a queue backlog over three seconds or an
   overloaded transport stops rather than silently dropping speech.
 - While the BlackHole option is enabled and the local EchoGuide page is open,
   the selected microphone is routed to BlackHole 2ch even before `Start live`
