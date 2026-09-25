@@ -115,11 +115,13 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     var streamAudio = false
 
     func start(identifier: String) throws {
+        if streamAudio { emit(["type": "stage", "name": "device_lookup"]) }
         let device = identifier == "default" ? AVCaptureDevice.default(for: .audio) :
             AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
                                              mediaType: .audio, position: .unspecified).devices
                 .first(where: { $0.uniqueID == identifier })
         guard let device else { fail("The selected microphone is unavailable. Refresh Mac sources.") }
+        if streamAudio { emit(["type": "stage", "name": "input_creation"]) }
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureAudioDataOutput()
         output.setSampleBufferDelegate(self, queue: queue)
@@ -130,6 +132,7 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
         session.addInput(input)
         session.addOutput(output)
         session.commitConfiguration()
+        if streamAudio { emit(["type": "stage", "name": "session_start"]) }
         session.startRunning()
         guard session.isRunning else { fail("Could not start the microphone test.") }
         emit(["type": "ready"])
@@ -285,6 +288,9 @@ if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--input-volu
     inputVolume(); exit(0)
 }
 guard #available(macOS 15.0, *) else { fail("Mac audio requires macOS 15 or later.") }
+if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--stream-microphone" {
+    emit(["type": "stage", "name": "process_entry"])
+}
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 var capture: Capture?
@@ -301,6 +307,8 @@ Task { @MainActor in
             return
         }
         if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--stream-microphone" {
+            emit(["type": "stage", "name": "main_actor"])
+            emit(["type": "stage", "name": "permission"])
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
             let monitor = MicrophoneMonitor()

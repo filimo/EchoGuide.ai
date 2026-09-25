@@ -119,6 +119,20 @@ describe("Mac audio local bridge", () => {
     }));
     expect(JSON.stringify(test.diagnostic.mock.calls)).not.toContain("usb");
   });
+  it("identifies a selected microphone that stops responding during startup", async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      const res = await test.run(request("standby", { microphone: "usb" }));
+      test.outputHelper.line({ type: "ready" });
+      test.helper.line({ type: "stage", name: "device_lookup" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(res.body).toContain("Выбранный микрофон не отвечает.");
+      expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+        type: "mac_audio.standby_microphone_stage", reason: "device_lookup"
+      }));
+    } finally { vi.useRealTimers(); }
+  });
   it("routes a timed copy of both sources to BlackHole without changing EchoGuide transcription", async () => {
     const test = setup();
     const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",

@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Show which BlackHole startup step stalled and suggest reconnecting or changing
+  the selected microphone when macOS stops responding during device lookup.
 - Restore BlackHole microphone routing after a meeting when the live audio
   session takes a moment to close, and tolerate normal output-stream backpressure.
 

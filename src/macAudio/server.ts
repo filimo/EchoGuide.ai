@@ -127,6 +127,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       let microphone: ChildProcessWithoutNullStreams | undefined;
       let outputReady = false;
       let microphoneReady = false;
+      let microphoneStage = "permission";
       let stopped = false;
       let pendingOutput = "";
       let pendingMicrophone = "";
@@ -161,7 +162,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (!stopped && !res.destroyed) res.write(`${JSON.stringify({ type: "error", message })}\n`);
         stop("error");
       };
-      const timeout = setTimeout(() => fail("BlackHole microphone routing timed out."), 5000);
+      let timeout = setTimeout(() => fail("BlackHole 2ch did not start. Check the macOS audio device."), 10_000);
       res.on("close", stop);
       output.on("error", () => fail("Could not start BlackHole 2ch."));
       output.on("close", () => fail("BlackHole 2ch stopped."));
@@ -177,6 +178,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             const event = JSON.parse(line);
             if (event.type !== "ready") return fail("BlackHole 2ch could not start.");
             outputReady = true;
+            diagnostic("mac_audio.standby_output_ready");
+            clearTimeout(timeout);
+            timeout = setTimeout(() => fail(microphoneStage === "device_lookup"
+              ? "Выбранный микрофон не отвечает. Переподключи его или выбери другой, затем повтори."
+              : "Selected microphone did not start. Check the macOS audio device."), 10_000);
             microphone = child(["--stream-microphone", options.microphone as string]);
             microphone.on("error", () => fail("Could not start the selected microphone."));
             microphone.on("close", () => fail("The selected microphone stopped."));
@@ -189,7 +195,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                 pendingMicrophone = pendingMicrophone.slice(boundary + 1);
                 try {
                   const micEvent = JSON.parse(micLine);
-                  if (micEvent.type === "ready") {
+                  if (micEvent.type === "stage" && ["process_entry", "main_actor", "permission", "device_lookup", "input_creation", "session_start"].includes(micEvent.name)) {
+                    microphoneStage = micEvent.name;
+                    diagnostic("mac_audio.standby_microphone_stage", microphoneStage);
+                  } else if (micEvent.type === "ready") {
                     microphoneReady = true;
                     if (outputReady) {
                       clearTimeout(timeout);
