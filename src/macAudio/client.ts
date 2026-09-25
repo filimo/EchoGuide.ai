@@ -34,9 +34,21 @@ export function routeStandbyMicrophone(microphone: string,
   const controller = new AbortController();
   void (async () => {
     try {
-      const response = await fetchImpl("/api/mac-audio/standby", {
-        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ microphone }), signal: controller.signal
-      });
+      let response: Response;
+      for (let attempt = 0; ; attempt++) {
+        response = await fetchImpl("/api/mac-audio/standby", {
+          method: "POST", headers: macAudioHeaders, body: JSON.stringify({ microphone }), signal: controller.signal
+        });
+        if (controller.signal.aborted) return;
+        if (response.status !== 409 || attempt === 19) break;
+        await response.body?.cancel();
+        await new Promise<void>(resolve => {
+          const finish = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", finish); resolve(); };
+          const timer = setTimeout(finish, 250);
+          controller.signal.addEventListener("abort", finish, { once: true });
+        });
+        if (controller.signal.aborted) return;
+      }
       if (controller.signal.aborted) return;
       if (!response.ok) {
         const payload = await response.json();

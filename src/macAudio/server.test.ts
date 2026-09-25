@@ -89,6 +89,9 @@ describe("Mac audio local bridge", () => {
     microphone.line({ type: "audio", audio: pcm.toString("base64") });
     expect(chunks[0].readInt16LE(0)).toBe(1234);
     expect(chunks[0].readInt16LE(2)).toBe(1234);
+    vi.spyOn(output.stdin, "write").mockReturnValue(false);
+    microphone.line({ type: "audio", audio: pcm.toString("base64") });
+    expect(idleResponse.body).not.toContain('"type":"error"');
 
     const liveResponse = response();
     await bridge.middleware(request("session", { pid: 123, microphone: "usb", language: "english" }),
@@ -103,6 +106,18 @@ describe("Mac audio local bridge", () => {
     const res = await test.run(request("standby", { microphone: "default" }));
     expect(res.status).toBe(400);
     expect(test.spawnHelper).not.toHaveBeenCalled();
+  });
+  it("records a standby routing failure without storing microphone audio", async () => {
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "usb" }));
+    test.outputHelper.line({ type: "ready" });
+    test.helper.line({ type: "ready" });
+    test.helper.emit("close");
+    expect(res.body).toContain("The selected microphone stopped.");
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.standby_error", reason: "The selected microphone stopped."
+    }));
+    expect(JSON.stringify(test.diagnostic.mock.calls)).not.toContain("usb");
   });
   it("routes a timed copy of both sources to BlackHole without changing EchoGuide transcription", async () => {
     const test = setup();

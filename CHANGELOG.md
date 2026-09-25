@@ -13,6 +13,11 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+### Fixed
+
+- Restore BlackHole microphone routing after a meeting when the live audio
+  session takes a moment to close, and tolerate normal output-stream backpressure.
+
 ### Changed
 
 - Keep the selected microphone routed to BlackHole 2ch while Mac audio mode is
