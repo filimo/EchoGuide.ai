@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { prepareSections, validateDocuments } from "./markdown";
-import { meetingFallback, type MeetingPack, type MeetingPackState, type MeetingSection, type MeetingEvidence, type MeetingAnswer } from "./types";
+import { meetingFallbackFor, type MeetingPack, type MeetingPackState, type MeetingSection, type MeetingEvidence, type MeetingAnswer } from "./types";
 import { defaultBilingualModel } from "../realtime/bilingualAnalysis";
 import { spokenProductQuestion } from "./spokenProduct";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
@@ -164,7 +164,7 @@ export class MeetingService {
     this.active(packId);
     const ticket = this.tickets.get(ticketId); this.tickets.delete(ticketId);
     if (!ticket || ticket.packId !== packId || ticket.expiresAt < Date.now()) throw new Error("Повторите поиск: предыдущий результат устарел.");
-    if (!ticket.evidence.length) return { ...meetingFallback };
+    if (!ticket.evidence.length) return meetingFallbackFor("no_hits", 0);
     const interpretedQuestion = spokenProductQuestion(ticket.transcript, ticket.evidence);
     const answerInput = { transcript: interpretedQuestion ?? ticket.transcript, recentContext: ticket.recentContext, conversationSummary: ticket.summary, opening, evidence: ticket.evidence,
       ...(interpretedQuestion ? { originalTranscript: ticket.transcript, interpretation: "Unconfirmed: codecs may mean Codex. Answer conditionally, never claim the user said Codex." } : {}) };
@@ -195,12 +195,16 @@ export class MeetingService {
     const response = await this.api("/responses", "POST", requestBody, 18000);
     this.active(packId);
     const output = response.output_text ?? response.output?.flatMap((o: any) => o.content ?? []).find((p: any) => p.type === "output_text")?.text;
-    if (response.status === "incomplete") throw new Error("Ответ не завершён.");
-    let answer = JSON.parse(output ?? "null");
-    if (answer?.status === "no_answer" || answer?.status === "conflict") return { ...meetingFallback, status: answer.status };
+    if (response.status === "incomplete") return meetingFallbackFor("invalid_answer", ticket.evidence.length);
+    let answer: any;
+    try { answer = JSON.parse(output ?? "null"); }
+    catch { return meetingFallbackFor("invalid_answer", ticket.evidence.length); }
+    if (answer?.status === "no_answer") return meetingFallbackFor("model_no_answer", ticket.evidence.length);
+    if (answer?.status === "conflict") return meetingFallbackFor("conflict", ticket.evidence.length);
     if (answer?.status !== "grounded" || typeof answer.english !== "string" || !answer.english.trim() || answer.english.length > 1000 ||
       typeof answer.russian !== "string" || !answer.russian.trim() || answer.russian.length > 1600 || !Array.isArray(answer.sourceIds) ||
-      !answer.sourceIds.length || answer.sourceIds.some((id: unknown) => !ticket.evidence.some(e => e.id === id))) return { ...meetingFallback };
+      !answer.sourceIds.length || answer.sourceIds.some((id: unknown) => !ticket.evidence.some(e => e.id === id)))
+      return meetingFallbackFor("invalid_answer", ticket.evidence.length);
     const spoken = (text: string) => text.replace(/\[s\d+(?:\s*[,;]\s*s\d+)*\]/g, "").replace(/ +([.,!?])/g, "$1").trim();
     const cleaned = removeRepeatedOpening({ english: spoken(answer.english), russian: spoken(answer.russian) }, opening);
     if (hasRepeatedOpening(cleaned, opening)) {
@@ -222,6 +226,7 @@ export class MeetingService {
       if (!/^Если ты имеешь в виду Codex/iu.test(continuation.russian)) continuation.russian = `Если ты имеешь в виду Codex: ${continuation.russian}`;
     }
     return { status: "grounded", ...continuation,
-      sources: ticket.evidence.filter(e => answer.sourceIds.includes(e.id)) };
+      sources: ticket.evidence.filter(e => answer.sourceIds.includes(e.id)),
+      diagnostics: { reason: "grounded", found: ticket.evidence.length } };
   }
 }

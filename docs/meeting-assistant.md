@@ -88,6 +88,12 @@ Interrupted attempts restore their available opening without generating again.
 Use “Новый вариант” to explicitly generate another attempt, or
 “Экспорт ответов сессии (JSON)” to export every stage and attempt in the session.
 These controls also apply to `/mac-audio`.
+New answers include a compact diagnostic reason and the number of retrieved
+sections when known. Open “Диагностика ответа” under a fallback card to tell
+empty search results, the model reporting insufficient evidence, conflicting
+evidence, invalid output and request errors apart. The reason is saved in the
+local snapshots and JSON export;
+older snapshots remain readable but cannot recover a reason they never stored.
 
 Read failures block automatic generation. Failed writes show a warning and stay
 in page memory for retry; use “Повторить сохранение / загрузку” before closing

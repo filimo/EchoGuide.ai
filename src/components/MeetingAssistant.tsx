@@ -5,7 +5,7 @@ import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "../meeting/history";
 import { meetingRequest } from "../meeting/client";
-import { meetingFallback, type MeetingAnswer, type MeetingPackState, type MeetingDocument } from "../meeting/types";
+import { meetingFallbackFor, type MeetingAnswer, type MeetingAnswerReason, type MeetingPackState, type MeetingDocument } from "../meeting/types";
 
 export type MeetingSelection = { id: string; text: string; speaker: string; context: string[]; summary?: string };
 type Props = {
@@ -16,6 +16,12 @@ type Props = {
   quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
+const diagnosticReasons: Record<MeetingAnswerReason, string> = {
+  grounded: "Ответ подтверждён материалами", no_hits: "Поиск не нашёл подходящих разделов",
+  model_no_answer: "Модель не нашла достаточных оснований в найденных разделах",
+  conflict: "В найденных разделах есть противоречие", invalid_answer: "Ответ не прошёл проверку формата или источников",
+  search_error: "Запрос поиска завершился ошибкой", answer_error: "Подготовка полного ответа завершилась ошибкой"
+};
 export function MeetingAssistant({ sessionId, selection, russianMeaning = "", conversationContextWarning = false, quickStart }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
@@ -148,7 +154,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       const found = await search;
       if (!current()) return;
       if (found.error) {
-        publish({ answer: { ...meetingFallback }, phase: "error", progress: "Поиск временно недоступен. Можно запросить новый вариант." }); setGenerating(false); return;
+        publish({ answer: meetingFallbackFor("search_error"), phase: "error", progress: "Поиск временно недоступен. Можно запросить новый вариант." }); setGenerating(false); return;
       }
       try {
         const result = await meetingRequest<MeetingAnswer>("answer", { packId: active.id, ticket: found.value.ticket,
@@ -158,7 +164,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
           timings: { ...snapshot.timings, answerMs: performance.now() - started },
           progress: result.status === "grounded" ? "Готово" : result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований для ответа." });
       } catch {
-        publish({ answer: { ...meetingFallback }, phase: "error", progress: "Не удалось подготовить ответ. Можно запросить новый вариант." });
+        publish({ answer: meetingFallbackFor("answer_error", found.value.found), phase: "error", progress: "Не удалось подготовить ответ. Можно запросить новый вариант." });
       }
       if (current()) setGenerating(false);
     })();
@@ -229,6 +235,9 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
     {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><p lang="en">{opening.english}</p><p lang="ru">{opening.russian}</p></section>}
     {answer && <section className="meeting-answer"><h3>{answer.status === "grounded" ? (opening ? "Продолжи" : "Ответ") : "Возьми время на проверку"}</h3>
       <p lang="en">{answer.english}</p><p lang="ru">{answer.russian}</p>
+      {answer.status !== "grounded" && <details><summary>Диагностика ответа</summary><p>{answer.diagnostics
+        ? `${diagnosticReasons[answer.diagnostics.reason]} (${answer.diagnostics.reason}) · Найдено разделов: ${answer.diagnostics.found ?? "неизвестно"}`
+        : "Причина не сохранена в этой старой карточке. Для новой проверки нажми «Новый вариант»."}</p></details>}
       {answer.sources.length > 0 && <details><summary>Основания ответа</summary>{answer.sources.map(source => <div key={source.id}>
         <strong>{source.filename} → {source.heading}</strong>
         <p>{Object.entries(source.metadata).filter(([key]) => !["source_hash", "pack_id"].includes(key)).map(([key,value]) => `${key}: ${value}`).join(" · ")}</p>

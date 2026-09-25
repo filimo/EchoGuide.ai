@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Show the reason behind a meeting-answer fallback in the card and save its
+  reason code and retrieved-section count in session answer exports.
 - Use a ten-minute conversation window in meeting mode and summarize older
   turns in the background. Keep the summary with local session history and
   distinguish conversational context from document evidence.

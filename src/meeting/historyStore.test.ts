@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MeetingHistoryStore } from "./historyStore";
 import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "./history";
+import { meetingFallbackFor } from "./types";
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })));
 function setup() {
@@ -25,6 +26,14 @@ describe("permanent meeting card snapshots", () => {
     store.save({ ...snapshot, attemptId: "attempt-2" });
     expect(new MeetingHistoryStore(path).read("s1")).toEqual([snapshot, completed, { ...snapshot, attemptId: "attempt-2" }]);
     expect(store.read("another-session")).toEqual([]);
+  });
+  it("persists a fallback reason in the archive and accepts legacy answers without diagnostics", () => {
+    const { store } = setup();
+    const diagnosed = { ...snapshot, phase: "complete" as const, answer: meetingFallbackFor("model_no_answer", 2) };
+    store.save(diagnosed);
+    store.save({ ...snapshot, attemptId: "legacy", phase: "complete", answer: { ...meetingFallbackFor("no_hits", 0), diagnostics: undefined } });
+    expect(store.read()[0].answer?.diagnostics).toEqual({ reason: "model_no_answer", found: 2 });
+    expect(store.read()[1].answer?.diagnostics).toBeUndefined();
   });
   it("retains out-of-order earlier stages without replacing later snapshots; retries are idempotent", () => {
     const { store } = setup(); store.save({ ...snapshot, sequence: 2 }); store.save(snapshot); store.save(snapshot);
@@ -47,7 +56,8 @@ describe("permanent meeting card snapshots", () => {
   it("rejects invalid or oversized snapshots without writing", () => {
     const { store } = setup();
     for (const value of [{}, { ...snapshot, opening: { english: "only English" } },
-      { ...snapshot, identity: { ...snapshot.identity, text: "x".repeat(4001) } }, { ...snapshot, sequence: -1 }]) expect(() => store.save(value)).toThrow();
+      { ...snapshot, identity: { ...snapshot.identity, text: "x".repeat(4001) } }, { ...snapshot, sequence: -1 },
+      { ...snapshot, answer: { ...meetingFallbackFor("no_hits", 0), diagnostics: { reason: "unknown" } } }]) expect(() => store.save(value)).toThrow();
     expect(store.read()).toEqual([]);
   });
 });

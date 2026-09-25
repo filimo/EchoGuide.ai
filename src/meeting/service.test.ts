@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MeetingService } from "./service";
-import { meetingFallback } from "./types";
+import { meetingFallbackFor } from "./types";
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(path => rmSync(path, { recursive: true, force: true })));
 function setup(reasoningEffort?: () => string) {
@@ -90,7 +90,7 @@ describe("meeting pack lifecycle and grounding", () => {
     expect(JSON.parse(call[1]!.body as string).filters.value).toBe(id);
     state.sourceIds = ["invented"];
     const invalid = await service.search(id, "question", []);
-    expect(await service.answer(id, invalid.ticket)).toEqual(meetingFallback);
+    expect(await service.answer(id, invalid.ticket)).toEqual(meetingFallbackFor("invalid_answer", 1));
   });
   it("removes a repeated bilingual opening while retaining grounded sources", async () => {
     const { service, ready, state } = setup(); const id = await ready(); service.activate(id);
@@ -142,18 +142,18 @@ describe("meeting pack lifecycle and grounding", () => {
     const id = await ready("Sample", "# Status\nMaria tried Codex."); service.activate(id);
     state.responseStatus = "no_answer";
     const found = await service.search(id, "What has an unknown person confirmed about codecs usage?", []);
-    expect(await service.answer(id, found.ticket)).toEqual(meetingFallback);
+    expect(await service.answer(id, found.ticket)).toEqual(meetingFallbackFor("model_no_answer", 1));
   });
   it("returns a safe fallback on no evidence without asking a model", async () => {
     const { service, ready, state, fetchImpl } = setup(); const id = await ready(); service.activate(id); state.empty = true;
     const found = await service.search(id, "Unknown detail", []);
-    expect(await service.answer(id, found.ticket)).toEqual(meetingFallback);
+    expect(await service.answer(id, found.ticket)).toEqual(meetingFallbackFor("no_hits", 0));
     expect(vi.mocked(fetchImpl).mock.calls.some(c => String(c[0]).endsWith("/responses"))).toBe(false);
   });
   it("does not expose generated speculation when sources conflict", async () => {
     const { service, ready, state } = setup(); const id = await ready(); service.activate(id); state.responseStatus = "conflict";
     const found = await service.search(id, "question", []);
-    expect(await service.answer(id, found.ticket)).toEqual({ ...meetingFallback, status: "conflict" });
+    expect(await service.answer(id, found.ticket)).toEqual(meetingFallbackFor("conflict", 1));
   });
   it("rejects old tickets after switching packs and retains local archive", async () => {
     const { service, ready, directory } = setup(); const old = await ready(); service.activate(old);

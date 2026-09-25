@@ -5,7 +5,7 @@ import { MeetingAssistant } from "./MeetingAssistant";
 import { meetingRequest } from "../meeting/client";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import type { MeetingCardSnapshot } from "../meeting/history";
-import { meetingFallback } from "../meeting/types";
+import { meetingFallback, meetingFallbackFor } from "../meeting/types";
 vi.mock("../meeting/client", () => ({ meetingRequest: vi.fn() }));
 vi.mock("../meeting/historyClient", () => ({ meetingHistoryClient: { load: vi.fn(), save: vi.fn(), retry: vi.fn(), hasPending: vi.fn(() => false) } }));
 let snapshots: MeetingCardSnapshot[] = [];
@@ -22,6 +22,27 @@ function mockRoutes() {
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
 }
 describe("manual meeting assistance", () => {
+  it("shows and saves why the full answer fell back after an opening", async () => {
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search"
+      ? { ticket: "t", found: 2 } : meetingFallbackFor("model_no_answer", 2));
+    render(<MeetingAssistant sessionId="session-one" selection={selection}
+      quickStart={async () => ({ mode: "start", english: "I would compare both options.", russian: "Я бы сравнил оба варианта." })} />);
+    await screen.findByText(meetingFallback.english);
+    fireEvent.click(screen.getByText("Диагностика ответа"));
+    expect(screen.getByText(/model_no_answer/)).toHaveTextContent("Найдено разделов: 2");
+    expect(snapshots.at(-1)?.answer?.diagnostics).toEqual({ reason: "model_no_answer", found: 2 });
+  });
+  it("distinguishes a search failure from an unsupported answer", async () => {
+    vi.mocked(meetingRequest).mockImplementation(async path => {
+      if (path === "packs") return packs;
+      throw new Error("synthetic search failure");
+    });
+    render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={async () => null} />);
+    await screen.findByText(meetingFallback.english);
+    fireEvent.click(screen.getByText("Диагностика ответа"));
+    expect(screen.getByText(/search_error/)).toHaveTextContent("Найдено разделов: неизвестно");
+    expect(snapshots.at(-1)?.answer?.diagnostics).toEqual({ reason: "search_error" });
+  });
   it("shows the Russian meaning first and keeps the spoken English in a disclosure", async () => {
     mockRoutes();
     render(<MeetingAssistant

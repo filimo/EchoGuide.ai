@@ -2,6 +2,8 @@ import type { GenerationInput } from "../realtime/generationInput";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import type { MeetingAnswer } from "./types";
 
+const answerReasons = new Set(["grounded", "no_hits", "model_no_answer", "conflict", "invalid_answer", "search_error", "answer_error"]);
+
 export type MeetingCardIdentity = {
   sessionId: string; phraseId: string; text: string; speaker: string; context: string[]; summary?: string;
   packId: string;
@@ -35,6 +37,8 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
     r.generationInput.recentContext.length > 120 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;
   const a = r.answer;
   if (a !== null && (!a || !["grounded", "no_answer", "conflict"].includes(a.status) || !string(a.english, 2000) || !string(a.russian, 3000) ||
+    (a.diagnostics !== undefined && (!a.diagnostics || !answerReasons.has(a.diagnostics.reason) ||
+      (a.diagnostics.found !== undefined && (!Number.isInteger(a.diagnostics.found) || a.diagnostics.found < 0 || a.diagnostics.found > 160)))) ||
     !Array.isArray(a.sources) || a.sources.length > 160 || a.sources.some(s => !s || !string(s.id, 200) || !string(s.filename, 300) ||
       !string(s.heading, 1000) || !string(s.text, 100000) || !s.metadata || typeof s.metadata !== "object" ||
       Object.entries(s.metadata).some(([k,v]) => !string(k, 200) || !string(v, 2000))))) return false;
