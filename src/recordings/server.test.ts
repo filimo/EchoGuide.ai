@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PassThrough, Writable } from "node:stream";
@@ -30,6 +31,50 @@ function setup() {
 }
 
 describe("recording HTTP API", () => {
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0 || spawnSync("ffprobe", ["-version"]).status !== 0)("downloads WAV, WebM and MP4 recordings as mono speech MP3 without changing the originals", async () => {
+    const { run, store } = setup();
+    const record = store.start("speech-session", "wav");
+    const samples = Buffer.alloc(24_000 * 4);
+    for (let i = 0; i < 24_000; i++) {
+      const value = Math.round(8000 * Math.sin(2 * Math.PI * 440 * i / 24_000));
+      samples.writeInt16LE(value, i * 4); samples.writeInt16LE(value, i * 4 + 2);
+    }
+    store.append(record.sessionId, record.id, 0, samples);
+    expect((await run(`speech-session/${record.id}/mp3`)).status).toBe(409);
+    store.finish(record.sessionId, record.id);
+    const result = await run(`speech-session/${record.id}/mp3`, "GET", "", { "x-echoguide-recording": "" });
+    expect(result.status).toBe(200);
+    expect(result.headers["Content-Type"]).toBe("audio/mpeg");
+    const localStart = new Date(record.startedAt);
+    const pad = (value: number) => value.toString().padStart(2, "0");
+    expect(result.headers["Content-Disposition"]).toContain(
+      `echoguide-${localStart.getFullYear()}-${pad(localStart.getMonth() + 1)}-${pad(localStart.getDate())}` +
+      `_${pad(localStart.getHours())}-${pad(localStart.getMinutes())}-${pad(localStart.getSeconds())}-${record.id.slice(0, 8)}.mp3`
+    );
+    expect(result.bytes.subarray(0, 3).toString()).toBe("ID3");
+    expect(result.bytes.length).toBeGreaterThan(6000);
+    const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,channels,sample_rate,bit_rate", "-of", "json", "pipe:0"],
+      { input: result.bytes });
+    expect(probe.status).toBe(0);
+    expect(JSON.parse(probe.stdout.toString()).streams[0]).toMatchObject({ codec_name: "mp3", channels: 1, sample_rate: "24000", bit_rate: "64000" });
+    expect(store.get(record.sessionId, record.id).format).toBe("wav");
+    expect((await run(`speech-session/${record.id}/mp3`, "GET", "", { origin: "https://other.example" })).status).toBe(403);
+
+    for (const format of ["webm", "mp4"] as const) {
+      const source = join(store.root, `browser-source.${format}`);
+      const converted = spawnSync("ffmpeg", ["-nostdin", "-loglevel", "error", "-i", store.file(record),
+        "-c:a", format === "webm" ? "libopus" : "aac", source]);
+      expect(converted.status).toBe(0);
+      const browser = store.start(`browser-${format}`, format);
+      const sourceBytes = readFileSync(source);
+      store.append(browser.sessionId, browser.id, 0, sourceBytes);
+      store.finish(browser.sessionId, browser.id);
+      const download = await run(`${browser.sessionId}/${browser.id}/mp3`);
+      expect(download.status).toBe(200);
+      expect(download.bytes.subarray(0, 3).toString()).toBe("ID3");
+      expect(readFileSync(store.file(browser))).toEqual(sourceBytes);
+    }
+  });
   it("persists ordered upload chunks, reopens recordings and serves seekable byte ranges", async () => {
     const { run } = setup();
     const start = await run("session", "POST", JSON.stringify({ format: "webm" }));

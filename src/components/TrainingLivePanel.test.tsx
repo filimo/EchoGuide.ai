@@ -3232,7 +3232,7 @@ describe("Training Live Panel", () => {
     });
   });
 
-  it("shows the latest saved message with created and updated timestamps in the history list", async () => {
+  it("shows the latest saved message and creation time in the history list", async () => {
     const user = userEvent.setup();
     const savedSessions: SessionHistoryEntry[] = [
       {
@@ -3281,13 +3281,13 @@ describe("Training Live Panel", () => {
     });
 
     expect(within(sessionButton).getByText("Created")).toBeInTheDocument();
-    expect(within(sessionButton).getByText("Updated")).toBeInTheDocument();
+    expect(within(sessionButton).queryByText("Updated")).not.toBeInTheDocument();
     expect(
       within(sessionButton).queryByText("This earlier message should not name the session.")
     ).not.toBeInTheDocument();
     expect(within(sessionButton).queryByText("Interview practice")).not.toBeInTheDocument();
     expect(sessionButton.querySelector('time[datetime="2026-07-08T10:00:00.000Z"]')).not.toBeNull();
-    expect(sessionButton.querySelector('time[datetime="2026-07-08T10:15:00.000Z"]')).not.toBeNull();
+    expect(sessionButton.querySelector('time[datetime="2026-07-08T10:15:00.000Z"]')).toBeNull();
   });
 
   it("deletes a saved session from the history list after confirmation", async () => {

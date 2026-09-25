@@ -1,9 +1,27 @@
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 import { RecordingError, RecordingStore, recordingStore } from "./store";
 
 const base = "/api/recordings/";
+function mp3Filename(startedAt: string, id: string) {
+  const date = new Date(startedAt);
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+  return `echoguide-${timestamp}-${id.slice(0, 8)}.mp3`;
+}
+async function makeSpeechMp3(input: string, output: string) {
+  await new Promise<void>((resolve, reject) => {
+    const encoder = spawn("ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error", "-i", input,
+      "-vn", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", output]);
+    encoder.once("error", reject);
+    encoder.once("close", code => code === 0 ? resolve() : reject(new Error(`MP3 encoder exited with code ${code}.`)));
+  });
+}
 function sameOrigin(req: IncomingMessage, media: boolean) {
   const authority = req.headers[":authority"] ?? req.headers.host;
   try {
@@ -35,7 +53,7 @@ export function createRecordingMiddleware(store: RecordingStore = recordingStore
       const url = new URL(req.url, "http://localhost");
       const parts = url.pathname.slice(base.length).split("/").map(decodeURIComponent);
       const [sessionId, id, action] = parts;
-      const media = req.method === "GET" && action === "audio";
+      const media = req.method === "GET" && (action === "audio" || action === "mp3");
       if (!sameOrigin(req, media) || (!media && req.headers["x-echoguide-recording"] !== "1")) {
         throw new RecordingError("Recording access requires the same-origin app.", 403);
       }
@@ -55,6 +73,29 @@ export function createRecordingMiddleware(store: RecordingStore = recordingStore
       if (req.method === "POST" && action === "finish") {
         const { interrupted } = JSON.parse((await readBytes(req, 1024)).toString() || "{}");
         return json(res, 200, store.finish(sessionId, id, interrupted ? "interrupted" : "saved"));
+      }
+      if (req.method === "GET" && action === "mp3") {
+        const record = store.get(sessionId, id);
+        if (record.status === "recording") throw new RecordingError("Stop recording before downloading MP3.", 409);
+        const temporary = mkdtempSync(join(tmpdir(), "echoguide-mp3-"));
+        try {
+          const output = join(temporary, `${record.id}.mp3`);
+          await makeSpeechMp3(store.file(record), output);
+          const size = statSync(output).size;
+          res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": size,
+            "Content-Disposition": `attachment; filename="${mp3Filename(record.startedAt, record.id)}"`,
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+          await new Promise<void>((resolve, reject) => {
+            const stream = createReadStream(output);
+            stream.once("error", reject);
+            res.once("close", resolve);
+            stream.pipe(res);
+          });
+        } catch (error) {
+          if (res.headersSent) throw error;
+          throw new RecordingError("MP3 export failed. Check that FFmpeg is installed and the recording is playable.", 503);
+        } finally { rmSync(temporary, { recursive: true, force: true }); }
+        return;
       }
       if (media) {
         const record = store.get(sessionId, id);

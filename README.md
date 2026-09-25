@@ -46,7 +46,7 @@ EchoGuide turns each meaningful utterance into a compact bilingual card: Russian
 - manual card generation from a selected group of transcript turns;
 - manual transcript messages and in-place corrections with speaker selection;
 - selectable in-memory recovery of recent phrases, separate from session recording;
-- local session history with audio recording, playback and deletion;
+- local session history with audio recording, playback, MP3 download and deletion;
 - privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
 - a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
 

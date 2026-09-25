@@ -16,6 +16,7 @@ it("loads persisted audio on reopening history and exposes the same-origin playb
   };
   const first = open();
   await waitFor(() => expect(screen.getByLabelText("Запись сессии")).toHaveAttribute("src", "/api/recordings/session-1/recording-1/audio"));
+  expect(screen.getByRole("link", { name: "Скачать MP3" })).toHaveAttribute("href", "/api/recordings/session-1/recording-1/mp3");
   first.unmount();
   open();
   await waitFor(() => expect(screen.getByLabelText("Запись сессии")).toHaveAttribute("controls"));

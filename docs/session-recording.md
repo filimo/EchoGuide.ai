@@ -8,6 +8,13 @@ line shows elapsed recording time, saving, or an independent recording error.
 
 Open **Sessions → Аудиозаписи** on a saved session to play its recordings. Each
 new live run creates a separate file, even when continuing the same session.
+Use **Скачать MP3** beside a completed recording to export a mono, 24 kHz,
+64 kbit/s MP3 optimized for speech. The original recording remains available.
+The filename includes the recording start date and time in the server computer's
+local timezone, followed by a short ID to distinguish recordings started close together.
+The local development server requires FFmpeg with `libmp3lame` on `PATH` for
+this export; conversion runs when the download is requested.
+
 Sessions are created before the first transcript, so a silent or untranscribed
 run can still have audio. Deleting a session deletes all its recording files;
 active recordings cannot be deleted. History is retained until explicit deletion,

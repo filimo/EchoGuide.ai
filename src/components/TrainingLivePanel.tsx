@@ -3036,12 +3036,6 @@ export function TrainingLivePanel({
                             {formatSessionTimestamp(session.createdAt)}
                           </time>
                         </span>
-                        <span>
-                          <span className="session-history-meta-label">Updated</span>
-                          <time dateTime={session.updatedAt}>
-                            {formatSessionTimestamp(session.updatedAt)}
-                          </time>
-                        </span>
                       </span>
                     </button>
                     <button

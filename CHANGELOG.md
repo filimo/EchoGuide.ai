@@ -20,6 +20,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Show the full recording start date and time in session history, and omit the
+  session's last-updated date from the list. Name MP3 downloads by recording start time.
+
 - Keep the selected microphone routed to BlackHole 2ch while Mac audio mode is
   idle, so ChatGPT can use the same input before and after a meeting. Starting
   a meeting adds call audio; stopping it restores microphone-only routing.
@@ -56,6 +59,8 @@ Until the first versioned release, changes are grouped by date.
 - Remove iPad companion and Training Mode labels from the main screen and update microphone setup copy for Mac use.
 
 ### Added
+
+- Download completed session recordings as mono 64 kbit/s MP3 files for speech.
 
 - Add an optional BlackHole 2ch output in Mac audio mode so ChatGPT Voice can hear
   the selected microphone and call application while EchoGuide keeps its separate
