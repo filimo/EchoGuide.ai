@@ -118,12 +118,14 @@ All known synthetic cloud resources were deleted.
 
 ## Generation input boundaries
 
-Raw transcript turns and existing meeting snapshots are never rewritten by input
-preparation. A generation-only filter excludes a turn when its entire text
-matches one of the three configured Realtime transcription prompts, allowing
-whitespace/case differences and a known speaker prefix. Partial echoes, quoted
-examples with surrounding speech, and arbitrary instructions are not classified
-as prompt echoes. This is a narrow defense, not a general transcription fix.
+Existing transcript turns and meeting snapshots are never rewritten by input
+preparation. New Realtime turns are dropped before storage when their text is
+an exact configured transcription prompt or a long exact prefix ending at a
+sentence boundary. The same filter excludes such turns from generation context,
+allowing whitespace/case differences and a known speaker prefix. A single
+matching sentence, quoted examples with surrounding speech, and arbitrary
+instructions are retained. This is a narrow defense, not a general
+transcription fix.
 
 Explicit sentence-boundary handoffs such as “Next question:” or
 “А теперь следующий вопрос:” select the complete following utterance. The

@@ -1,13 +1,18 @@
 import { englishRealtimeTranscriptionPrompt, russianRealtimeTranscriptionPrompt, realtimeTranscriptionPrompt } from "./realtimeSession.ts";
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
-const knownPrompts = new Set([englishRealtimeTranscriptionPrompt, russianRealtimeTranscriptionPrompt, realtimeTranscriptionPrompt].map(normalize));
+const knownPrompts = [englishRealtimeTranscriptionPrompt, russianRealtimeTranscriptionPrompt, realtimeTranscriptionPrompt].map(prompt => {
+  const secondSentenceEnd = prompt.indexOf(". ", prompt.indexOf(". ") + 2);
+  return { full: normalize(prompt), minimumEcho: normalize(prompt.slice(0, secondSentenceEnd + 1)) };
+});
 
-// Match only a complete configured prompt, optionally preceded by a known speaker label.
-// Raw transcript storage is deliberately independent of this generation-only filter.
+// A long exact prefix ending at a sentence boundary is also a prompt echo.
+// Keep a single matching sentence: it could be ordinary speech.
 export function withoutTranscriptionPrompt(text: string): string {
   const unlabeled = text.replace(/^(?:Me|Heard|Interviewer):\s*/i, "");
-  return knownPrompts.has(normalize(unlabeled)) ? "" : text.trim();
+  const candidate = normalize(unlabeled);
+  return knownPrompts.some(({ full, minimumEcho }) =>
+    candidate === full || (candidate.length >= minimumEcho.length && candidate.endsWith(".") && full.startsWith(candidate))) ? "" : text.trim();
 }
 
 // Explicit conversational handoffs only: never split on language or an arbitrary question mark.

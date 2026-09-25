@@ -3,9 +3,10 @@ import { prepareGenerationInput, focusExplicitHandoff, withoutTranscriptionPromp
 import { englishRealtimeTranscriptionPrompt, russianRealtimeTranscriptionPrompt, realtimeTranscriptionPrompt } from "./realtimeSession";
 
 describe("generation input boundaries", () => {
-  it("excludes only complete known transcription prompts and keeps ordinary speech", () => {
+  it("excludes known transcription prompts and long exact prefixes while keeping ordinary speech", () => {
     for (const prompt of [englishRealtimeTranscriptionPrompt, russianRealtimeTranscriptionPrompt, realtimeTranscriptionPrompt]) {
       expect(withoutTranscriptionPrompt(`Me: ${prompt.replaceAll(" ", "  ")}`)).toBe("");
+      expect(withoutTranscriptionPrompt(prompt.slice(0, prompt.indexOf(". ", prompt.indexOf(". ") + 2) + 1))).toBe("");
     }
     for (const text of ["The spoken language is English.", "We discussed transcription prompts.",
       `I read this example: ${englishRealtimeTranscriptionPrompt}`, "usual human review", "similar tasks"]) {

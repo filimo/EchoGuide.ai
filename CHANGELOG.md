@@ -23,6 +23,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Discard exact transcription-prompt echoes, including long sentence-boundary
+  prefixes, before they become transcript turns.
 - Keep the BlackHole live output running when its pipe briefly applies
   backpressure. Correlate standby attempts and log output pressure and
   microphone delivery gaps without storing audio or device identifiers.

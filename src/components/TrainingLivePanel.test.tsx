@@ -12,7 +12,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultRealtimeVadTurnDetection } from "../realtime/realtimeSession";
+import { defaultRealtimeVadTurnDetection, englishRealtimeTranscriptionPrompt } from "../realtime/realtimeSession";
 import type { RealtimeServerEvent } from "../realtime/realtimeConnection";
 import type {
   ConnectRealtimeTranslationOptions,
@@ -149,6 +149,18 @@ describe("Training Live Panel", () => {
     });
     return { say, analyzePhrase, generateQuickStart, history };
   }
+
+  it("does not save a full transcription prompt or its two-sentence echo as speech", async () => {
+    const { say, analyzePhrase } = await setupQuickStart();
+    const firstTwoSentences = englishRealtimeTranscriptionPrompt.slice(0,
+      englishRealtimeTranscriptionPrompt.indexOf(". ", englishRealtimeTranscriptionPrompt.indexOf(". ") + 2) + 1);
+    await say(firstTwoSentences);
+    await say(englishRealtimeTranscriptionPrompt);
+    expect(screen.getByLabelText("Conversation transcript")).not.toHaveTextContent("The spoken language is English");
+    expect(analyzePhrase).not.toHaveBeenCalled();
+    await say("What criteria would you use?");
+    expect(screen.getByLabelText("Conversation transcript")).toHaveTextContent("What criteria would you use?");
+  });
 
   it("restores meeting mode after remount and remembers disabling it", async () => {
     vi.mocked(meetingRequest).mockResolvedValue({ activePackId: null, packs: [] });

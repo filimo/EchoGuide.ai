@@ -1653,7 +1653,7 @@ export function TrainingLivePanel({
         (audioSource == null || (capturedAt ?? Date.now()) > lastOwnSpeechAtRef.current);
       const shouldShowAnalysis = followLiveRef.current && shouldAnalyze;
 
-      if (isObviousTranscriptNoise(completedTranscript)) {
+      if (isObviousTranscriptNoise(completedTranscript) || !withoutTranscriptionPrompt(completedTranscript)) {
         setLiveTranscriptDraft("");
         return;
       }
