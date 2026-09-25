@@ -826,13 +826,16 @@ describe("Training Live Panel", () => {
     expect(
       screen.getByRole("button", { name: "Can you repeat that? Можете повторить?" })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Let me check the project details. Дайте мне свериться с деталями проекта." })
+    ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("button", { name: "I will answer simply. Я отвечу просто." })
+      screen.getByRole("button", { name: "I want to get the details right. Хочу ответить точно, поэтому уточню детали." })
     );
     await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
 
-    expect(copyText).toHaveBeenCalledWith("I will answer simply.");
+    expect(copyText).toHaveBeenCalledWith("I want to get the details right.");
     expect(screen.getByText("Bridge phrase copied.")).toBeInTheDocument();
   });
 

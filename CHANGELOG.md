@@ -62,6 +62,8 @@ Until the first versioned release, changes are grouped by date.
 
 - Download completed session recordings as mono 64 kbit/s MP3 files for speech.
 
+- Add two instant bridge phrases for checking project details before answering.
+
 - Add an optional BlackHole 2ch output in Mac audio mode so ChatGPT Voice can hear
   the selected microphone and call application while EchoGuide keeps its separate
   transcription channels and normal headphone playback.
