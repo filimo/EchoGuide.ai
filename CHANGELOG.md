@@ -26,6 +26,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Look up a selected microphone directly during Mac audio startup, allow a slow
+  BlackHole output twenty seconds to start, and log each startup stage and duration.
 - Keep BlackHole output close to live speech by reading its input independently
   of audio playback and discarding stale queued samples if playback falls behind.
 - Restore a selected meeting card after its earlier context or rolling summary

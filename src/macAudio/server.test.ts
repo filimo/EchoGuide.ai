@@ -117,6 +117,46 @@ describe("Mac audio local bridge", () => {
       type: "mac_audio.standby_output_error", reason: "device_selection"
     }));
   });
+  it("records BlackHole and microphone startup times by stage", async () => {
+    let clock = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "usb" }));
+    clock = 200;
+    test.outputHelper.line({ type: "stage", name: "queue_start" });
+    clock = 350;
+    test.outputHelper.line({ type: "ready" });
+    clock = 400;
+    test.helper.line({ type: "stage", name: "device_lookup" });
+    clock = 900;
+    test.helper.line({ type: "ready" });
+    const events = test.diagnostic.mock.calls.map(([event]) => event);
+    expect(events.find(event => event.type === "mac_audio.standby_output_stage")).toMatchObject({
+      reason: "queue_start", outputStage: "queue_start", elapsedMs: 100
+    });
+    expect(events.find(event => event.type === "mac_audio.standby_ready")).toMatchObject({
+      outputStartupMs: 250, microphoneStartupMs: 550, connectionMs: 800
+    });
+    expect(res.body).toContain('{"type":"ready"}');
+    expect(JSON.stringify(events)).not.toContain("usb");
+    res.emit("close");
+  });
+  it("records the BlackHole stage when output startup exceeds twenty seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      const res = await test.run(request("standby", { microphone: "usb" }));
+      test.outputHelper.line({ type: "stage", name: "queue_start" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(res.body).not.toContain('"type":"error"');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+        type: "mac_audio.standby_output_error", reason: "startup_timeout",
+        outputStage: "queue_start", outputStartupMs: -1
+      }));
+      expect(res.body).toContain("BlackHole 2ch did not start.");
+    } finally { vi.useRealTimers(); }
+  });
   it("records a standby routing failure without storing microphone audio", async () => {
     const test = setup();
     const res = await test.run(request("standby", { microphone: "usb" }));
@@ -188,7 +228,14 @@ describe("Mac audio local bridge", () => {
     test.ready();
     expect(test.spawnHelper).toHaveBeenCalledWith(["--virtual-output"]);
     expect(test.spawnHelper).not.toHaveBeenCalledWith(["--capture", "123", "usb"]);
+    test.outputHelper.line({ type: "stage", name: "queue_start" });
     test.outputHelper.line({ type: "ready" });
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.virtual_output_stage", reason: "queue_start", outputStage: "queue_start"
+    }));
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.virtual_output_ready", outputStartupMs: expect.any(Number)
+    }));
     expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "usb"]);
     test.helper.line({ type: "ready" });
     const mixed: Buffer[] = [];
@@ -236,6 +283,24 @@ describe("Mac audio local bridge", () => {
     expect(res.body).toContain('"type":"virtual-output","status":"error"');
     expect(test.helper.kill).not.toHaveBeenCalled();
     res.emit("close");
+  });
+  it("keeps meeting capture available when BlackHole output startup times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
+        virtualOutput: true }));
+      test.ready();
+      test.outputHelper.line({ type: "stage", name: "device_selection" });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+        type: "mac_audio.virtual_output_error", reason: "startup_timeout",
+        outputStage: "device_selection", outputStartupMs: -1
+      }));
+      expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "usb"]);
+      expect(res.body).toContain('"type":"virtual-output","status":"error"');
+      res.emit("close");
+    } finally { vi.useRealTimers(); }
   });
   it("requires an explicit physical microphone when virtual output is enabled", async () => {
     const test = setup();

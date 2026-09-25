@@ -17,6 +17,8 @@ const prefix = "/api/mac-audio/";
 const helperPath = ".echoguide/native/EchoGuide Audio.app/Contents/MacOS/EchoGuideAudio";
 const sources: MacAudioSource[] = ["microphone", "application"];
 const maxNativeAudioQueueBytes = 144_000;
+const virtualOutputStages = new Set(["process_entry", "device_lookup", "queue_creation", "device_id",
+  "device_selection", "buffer_allocation", "queue_start"]);
 
 export function isLocalMacAudioRequest(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress;
@@ -140,19 +142,27 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       let microphone: ChildProcessWithoutNullStreams | undefined;
       let outputReady = false;
       let microphoneReady = false;
+      let outputStage = "process_start";
       let microphoneStage = "permission";
       let stopped = false;
       let pendingOutput = "";
       let pendingMicrophone = "";
       const routeId = randomUUID();
       const routeStartedAt = performance.now();
+      let outputReadyAt = 0;
+      let microphoneStartedAt = 0;
+      let microphoneReadyAt = 0;
       let microphoneChunks = 0;
       let lastMicrophoneChunkAt = 0;
       let outputBackpressureWrites = 0;
       let maxOutputPendingBytes = 0;
       const diagnostic = (type: string, reason = "") => {
         const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, routeId, reason,
-          elapsedMs: Math.round(performance.now() - routeStartedAt), microphoneStage, microphoneChunks,
+          elapsedMs: Math.round(performance.now() - routeStartedAt), outputStage, microphoneStage,
+          outputStartupMs: outputReadyAt ? Math.round(outputReadyAt - routeStartedAt) : -1,
+          microphoneStartupMs: microphoneReadyAt ? Math.round(microphoneReadyAt - microphoneStartedAt) : -1,
+          connectionMs: microphoneReadyAt ? Math.round(microphoneReadyAt - routeStartedAt) : -1,
+          microphoneChunks,
           microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1,
           outputPendingBytes: output.stdin.writableLength, outputBackpressureWrites, maxOutputPendingBytes };
         try {
@@ -188,7 +198,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (!stopped && !res.destroyed) res.write(`${JSON.stringify({ type: "error", message })}\n`);
         stop("error");
       };
-      let timeout = setTimeout(() => fail("BlackHole 2ch did not start. Check the macOS audio device."), 10_000);
+      let timeout = setTimeout(() => {
+        diagnostic("mac_audio.standby_output_error", "startup_timeout");
+        fail("BlackHole 2ch did not start. Check the macOS audio device.");
+      }, 20_000);
       res.on("close", stop);
       output.on("error", () => fail("Could not start BlackHole 2ch."));
       output.on("close", () => fail("BlackHole 2ch stopped."));
@@ -202,17 +215,25 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           pendingOutput = pendingOutput.slice(end + 1);
           try {
             const event = JSON.parse(line);
+            if (event.type === "stage" && virtualOutputStages.has(event.name)) {
+              outputStage = event.name;
+              diagnostic("mac_audio.standby_output_stage", outputStage);
+              continue;
+            }
             if (event.type !== "ready") {
               diagnostic("mac_audio.standby_output_error", event.type === "error"
                 ? virtualOutputErrorReason(event.message) : "invalid_response");
               return fail("BlackHole 2ch could not start.");
             }
             outputReady = true;
+            outputStage = "ready";
+            outputReadyAt = performance.now();
             diagnostic("mac_audio.standby_output_ready");
             clearTimeout(timeout);
             timeout = setTimeout(() => fail(microphoneStage === "device_lookup"
               ? "Выбранный микрофон не отвечает. Переподключи его или выбери другой, затем повтори."
               : "Selected microphone did not start. Check the macOS audio device."), 30_000);
+            microphoneStartedAt = performance.now();
             microphone = child(["--stream-microphone", options.microphone as string]);
             microphone.on("error", () => fail("Could not start the selected microphone."));
             microphone.on("close", () => fail("The selected microphone stopped."));
@@ -230,6 +251,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                     diagnostic("mac_audio.standby_microphone_stage", microphoneStage);
                   } else if (micEvent.type === "ready") {
                     microphoneReady = true;
+                    microphoneReadyAt = performance.now();
                     if (outputReady) {
                       clearTimeout(timeout);
                       diagnostic("mac_audio.standby_ready");
@@ -396,6 +418,9 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     let recording: Recording | undefined;
     const startedAt = performance.now();
     let outputHelper: ChildProcessWithoutNullStreams | undefined;
+    let outputStartedAt = 0;
+    let outputReadyAt = 0;
+    let outputStage = "not_started";
     let outputBackpressureWrites = 0;
     let maxOutputPendingBytes = 0;
     let lastMicrophoneChunkAt = 0;
@@ -408,7 +433,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         applicationChunks: frames.get("application")?.chunks ?? 0,
         microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1,
         outputPendingBytes: outputHelper?.stdin.writableLength ?? 0,
-        outputBackpressureWrites, maxOutputPendingBytes };
+        outputBackpressureWrites, maxOutputPendingBytes, outputStage,
+        outputStartupMs: outputReadyAt ? Math.round(outputReadyAt - outputStartedAt) : -1 };
       try {
         if (deps.diagnostic) deps.diagnostic(event);
         else {
@@ -602,7 +628,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     function startCapture() {
       if (stopped || helper || outputHelper || (!recordingOnly && ready.size !== 2)) return;
       if (options.virtualOutput !== true) { launchCapture(); return; }
+      outputStartedAt = performance.now();
+      outputStage = "process_start";
       outputHelper = child(["--virtual-output"]);
+      diagnostic("mac_audio.virtual_output_started");
       let outputBuffer = "";
       let settled = false;
       const outputFailed = (reason: string) => {
@@ -623,7 +652,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       outputHelper.on("error", () => outputFailed("process_error"));
       outputHelper.on("close", () => outputFailed("process_closed"));
       outputHelper.stdin.on("error", () => outputFailed("delivery_error"));
-      outputTimeout = setTimeout(() => outputFailed("startup_timeout"), 10_000);
+      outputTimeout = setTimeout(() => outputFailed("startup_timeout"), 20_000);
       outputHelper.stdout.on("data", chunk => {
         outputBuffer += chunk.toString();
         if (outputBuffer.length > 4096) { outputFailed("invalid_response"); return; }
@@ -633,10 +662,15 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           outputBuffer = outputBuffer.slice(end + 1);
           try {
             const event = JSON.parse(line);
-            if (event.type === "ready" && !settled) {
+            if (event.type === "stage" && virtualOutputStages.has(event.name) && !settled) {
+              outputStage = event.name;
+              diagnostic("mac_audio.virtual_output_stage", outputStage);
+            } else if (event.type === "ready" && !settled) {
               settled = true;
               clearTimeout(outputTimeout);
               outputReady = true;
+              outputReadyAt = performance.now();
+              outputStage = "ready";
               diagnostic("mac_audio.virtual_output_ready");
               send({ type: "virtual-output", status: "ready" });
               launchCapture();

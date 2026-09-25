@@ -56,6 +56,7 @@ private final class VirtualOutput {
     }
 
     func run() {
+        emit(["type": "stage", "name": "device_lookup"])
         guard let device = outputDevice(named: "BlackHole 2ch") else {
             fail("BlackHole 2ch is unavailable as an output device.")
         }
@@ -66,9 +67,11 @@ private final class VirtualOutput {
             mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0)
         var created: AudioQueueRef?
         let context = Unmanaged.passUnretained(self).toOpaque()
+        emit(["type": "stage", "name": "queue_creation"])
         guard AudioQueueNewOutput(&format, Self.callback, context, CFRunLoopGetMain(), nil, 0, &created) == noErr,
               let created else { fail("Could not create the BlackHole audio queue.") }
         queue = created
+        emit(["type": "stage", "name": "device_id"])
         var uidAddress = audioProperty(kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal)
         var uid: CFString? = nil
         var size = UInt32(MemoryLayout<CFString?>.size)
@@ -79,6 +82,7 @@ private final class VirtualOutput {
         guard uidStatus == noErr,
               let uid else { fail("Could not read the BlackHole device ID.") }
         var selected = uid
+        emit(["type": "stage", "name": "device_selection"])
         let selectionStatus = withUnsafePointer(to: &selected) { pointer in
             AudioQueueSetProperty(created, kAudioQueueProperty_CurrentDevice,
                                   UnsafeRawPointer(pointer), UInt32(MemoryLayout<CFString?>.size))
@@ -86,6 +90,7 @@ private final class VirtualOutput {
         guard selectionStatus == noErr else {
             fail("Could not route audio to BlackHole 2ch.")
         }
+        emit(["type": "stage", "name": "buffer_allocation"])
         for _ in 0..<4 {
             var buffer: AudioQueueBufferRef?
             guard AudioQueueAllocateBuffer(created, UInt32(virtualFrameBytes), &buffer) == noErr,
@@ -94,6 +99,7 @@ private final class VirtualOutput {
         }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             for buffer in buffers { enqueue(buffer, on: created) }
+            emit(["type": "stage", "name": "queue_start"])
             if AudioQueueStart(created, nil) != noErr { fail("Could not start BlackHole output.") }
             emit(["type": "ready"])
             while true {
@@ -142,6 +148,7 @@ private func outputDevice(named name: String) -> AudioObjectID? {
 }
 
 func runVirtualOutput() -> Never {
+    emit(["type": "stage", "name": "process_entry"])
     let output = VirtualOutput()
     output.run()
     exit(0)

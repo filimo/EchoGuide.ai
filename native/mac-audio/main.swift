@@ -64,7 +64,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         config.channelCount = 2
         config.captureMicrophone = true
         if let microphone, microphone != "default" {
-            guard AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices.contains(where: { $0.uniqueID == microphone }) else {
+            guard AVCaptureDevice(uniqueID: microphone) != nil else {
                 fail("The selected microphone is no longer available. Refresh sources.")
             }
             config.microphoneCaptureDeviceID = microphone
@@ -117,9 +117,7 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     func start(identifier: String) throws {
         if streamAudio { emit(["type": "stage", "name": "device_lookup"]) }
         let device = identifier == "default" ? AVCaptureDevice.default(for: .audio) :
-            AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
-                                             mediaType: .audio, position: .unspecified).devices
-                .first(where: { $0.uniqueID == identifier })
+            AVCaptureDevice(uniqueID: identifier)
         guard let device else { fail("The selected microphone is unavailable. Refresh Mac sources.") }
         if streamAudio { emit(["type": "stage", "name": "input_creation"]) }
         let input = try AVCaptureDeviceInput(device: device)
