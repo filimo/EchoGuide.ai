@@ -1626,6 +1626,8 @@ describe("Training Live Panel", () => {
     expect(
       within(screen.getByLabelText("Current phrase suggestions")).getByText("Старый смысл.")
     ).toBeInTheDocument();
+    const originalCaptureTime = vi.mocked(sessionHistoryClient.saveCurrentSession).mock.calls.at(-1)?.[1].transcriptTurns[0]?.capturedAt;
+    expect(originalCaptureTime).toEqual(expect.any(Number));
     await user.click(screen.getByRole("button", { name: "Edit message" }));
 
     let editor = screen.getByRole("form", { name: "Edit message" });
@@ -1652,6 +1654,7 @@ describe("Training Live Panel", () => {
         source: "realtime",
         originalText: "The system miss this phrase."
       });
+      expect(editedTurn?.capturedAt).toBe(originalCaptureTime);
       expect(latestDraft?.phraseCards).toEqual([]);
     });
 

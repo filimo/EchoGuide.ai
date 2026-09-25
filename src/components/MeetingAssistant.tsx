@@ -7,15 +7,16 @@ import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "../
 import { meetingRequest } from "../meeting/client";
 import { meetingFallback, type MeetingAnswer, type MeetingPackState, type MeetingDocument } from "../meeting/types";
 
-export type MeetingSelection = { id: string; text: string; speaker: string; context: string[] };
+export type MeetingSelection = { id: string; text: string; speaker: string; context: string[]; summary?: string };
 type Props = {
   sessionId: string;
   selection: MeetingSelection | null;
   russianMeaning?: string;
+  conversationContextWarning?: boolean;
   quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
-export function MeetingAssistant({ sessionId, selection, russianMeaning = "", quickStart }: Props) {
+export function MeetingAssistant({ sessionId, selection, russianMeaning = "", conversationContextWarning = false, quickStart }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
@@ -90,7 +91,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", qu
     setGenerating(false); setHistoryLoading(false);
     if (!active || !selection) return;
     const last = JSON.parse(selected) as MeetingSelection;
-    const identity = { sessionId, phraseId: last.id, text: last.text.slice(0, 4000), speaker: last.speaker, context: last.context, packId: active.id };
+    const identity = { sessionId, phraseId: last.id, text: last.text.slice(0, 4000), speaker: last.speaker, context: last.context, summary: last.summary, packId: active.id };
     const key = meetingCardKey(identity);
     const force = regenerate.current === key; regenerate.current = null;
     const controller = new AbortController(); request.current = controller;
@@ -135,7 +136,8 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", qu
         });
       }
       publish({});
-      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: generationInput.transcript, recentContext: generationInput.recentContext }, controller.signal)
+      const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: generationInput.transcript,
+        recentContext: generationInput.recentContext, ...(last.summary ? { summary: last.summary } : {}) }, controller.signal)
         .then(value => ({ value, error: false as const })).catch(() => ({ error: true as const }));
       const firstPiece = await quickRef.current(generationInput.transcript, generationInput.recentContext, last.speaker,
         AbortSignal.any([controller.signal, AbortSignal.timeout(4000)])).catch(() => null);
@@ -166,10 +168,11 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", qu
   return <div className="meeting-assistant">
     <div className="meeting-card-header"><h2>Помощник на встрече</h2>
     {active && selection && <button className="meeting-regenerate" aria-label="Новый вариант" title="Новый вариант" type="button" disabled={historyLoading || generating || !!historyError} onClick={() => {
-      regenerate.current = meetingCardKey({ sessionId, phraseId: selection.id, text: selection.text.slice(0,4000), speaker: selection.speaker, context: selection.context, packId: active.id });
+      regenerate.current = meetingCardKey({ sessionId, phraseId: selection.id, text: selection.text.slice(0,4000), speaker: selection.speaker, context: selection.context, summary: selection.summary, packId: active.id });
       setRequestVersion(v => v + 1);
     }}><RotateCw size={17} aria-hidden="true" /></button>}
     </div>
+    {conversationContextWarning && <p role="alert">Не удалось обновить резюме разговора. В длинной встрече часть раннего контекста может быть недоступна.</p>}
     {historyError && <div role="alert"><p>{historyError}</p>
       <button type="button" onClick={async () => { try { await meetingHistoryClient.retry(); setHistoryError(""); setRequestVersion(v => v + 1); } catch { setHistoryError("Не удалось сохранить историю. Не закрывай страницу и повтори попытку."); } }}>Повторить сохранение / загрузку</button>
     </div>}

@@ -42,13 +42,23 @@ export function createMeetingMiddleware(service?: MeetingService, history = new 
       if (path === "/api/meeting/history/save") { history.save(body.record); return send(200, { saved: true }); }
       if (path === "/api/meeting/packs") return send(202, api.create(body.name, body.files));
       if (path === "/api/meeting/active" && (body.packId === null || typeof body.packId === "string")) return send(200, api.activate(body.packId));
+      if (path === "/api/meeting/summarize") {
+        if (typeof body.previousSummary !== "string" || body.previousSummary.length > 2400 ||
+          !Array.isArray(body.turns) || body.turns.length > 30 ||
+          body.turns.some((s: unknown) => typeof s !== "string" || s.length > 1800) ||
+          body.turns.join("\n").length > 16000) return send(400, { error: "Некорректный контекст." });
+        return send(200, { summary: await api.summarize(body.previousSummary, body.turns) });
+      }
       if (typeof body.packId !== "string") return send(400, { error: "Выберите набор." });
       if (path === "/api/meeting/delete") return send(200, await api.remove(body.packId));
       if (path === "/api/meeting/search") {
         if (typeof body.transcript !== "string" || !body.transcript.trim() || body.transcript.length > 4000 ||
-          !Array.isArray(body.recentContext) || body.recentContext.length > 8 ||
-          body.recentContext.some((s: unknown) => typeof s !== "string" || s.length > 2000)) return send(400, { error: "Некорректный вопрос." });
-        return send(200, await api.search(body.packId, body.transcript, body.recentContext));
+          !Array.isArray(body.recentContext) || body.recentContext.length > 120 ||
+          body.recentContext.some((s: unknown) => typeof s !== "string" || s.length > 2000) ||
+          body.recentContext.join("\n").length > 12000 ||
+          (body.summary !== undefined && (typeof body.summary !== "string" || body.summary.length > 2400))) return send(400, { error: "Некорректный вопрос." });
+        return send(200, await api.search(body.packId, body.transcript, body.recentContext,
+          ...(body.summary ? [body.summary] : [])));
       }
       if (path === "/api/meeting/answer" && typeof body.ticket === "string") {
         if (body.opening !== undefined && !isQuickStart(body.opening)) return send(400, { error: "Некорректное начало." });

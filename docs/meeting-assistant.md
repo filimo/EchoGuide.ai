@@ -8,6 +8,29 @@ clicks on the same turn do not regenerate the card. Selecting another turn
 cancels the old request; late results cannot replace the selected answer.
 Changing sessions or leaving meeting mode clears the selection.
 
+## Conversation window
+
+New meeting turns carry capture times. A selected turn receives preceding speech
+from the prior ten minutes, bounded to 12,000 characters. Older session turns
+without capture times retain the previous seven-turn behavior. The full local
+transcript can retain up to 500 turns in meeting mode.
+
+Older turns are summarized on the local development server in the background,
+in batches of up to 30. The cumulative Russian summary is capped at 2,400
+characters and saved with local session history. Until a batch succeeds, its
+turns remain available as unsummarized context within the request size limit.
+Summarization sends those transcript turns to the configured OpenAI API and
+incurs API usage; requests set `store: false`.
+Editing or deleting a summarized turn rebuilds the summary from retained turns.
+If the meeting exceeds 500 turns, older raw turns are no longer available for
+rebuilding after such an edit. The summary helps resolve
+references in later questions but never establishes a project fact. Document
+sections remain the evidence for grounded answers.
+
+Quick openings continue to use the smaller low-latency context. The full
+meeting answer and material search receive the ten-minute context and summary.
+Selecting a historical turn excludes any summary that may contain later speech.
+
 The opening and retrieval start concurrently on selection. The
 opening stays visible; one English continuation and Russian meaning appear
 below, with expandable source sections. The continuation requests only new

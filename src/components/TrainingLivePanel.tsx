@@ -11,6 +11,8 @@ import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
 import { levelMeter } from "../macAudio/levelMeter";
 import { MicrophonePicker } from "./MicrophonePicker";
 import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
+import { meetingRequest } from "../meeting/client";
+import { expiredMeetingTurns, meetingContextBefore } from "../meeting/conversationContext";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Copy, Check, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
@@ -618,6 +620,14 @@ export function TrainingLivePanel({
   const [streamingTranslationText, setStreamingTranslationText] = useState("");
   const [streamingTranslationError, setStreamingTranslationError] = useState("");
   const [transcriptTurns, setTranscriptTurns] = useState<TranscriptTurn[]>([]);
+  const [meetingSummary, setMeetingSummary] = useState("");
+  const [meetingSummaryError, setMeetingSummaryError] = useState(false);
+  const meetingSummaryRef = useRef({ sessionId: "", coveredIds: new Set<string>(), pending: false });
+  function resetMeetingConversationSummary() {
+    meetingSummaryRef.current = { sessionId: currentSessionIdRef.current ?? "", coveredIds: new Set(), pending: false };
+    setMeetingSummary("");
+    setMeetingSummaryError(false);
+  }
   const [liveTranscriptDraft, setLiveTranscriptDraft] = useState("");
   const [phraseCards, setPhraseCards] = useState<TrainingPhraseCard[]>([]);
   const [pendingAnalysisIds, setPendingAnalysisIds] = useState<Set<string>>(() => new Set());
@@ -1061,6 +1071,10 @@ export function TrainingLivePanel({
       sourceLabel: sourceLabel.trim() || "Training session",
       knowledgeContext: notes,
       transcriptTurns,
+      ...(meetingSummary ? { conversationSummary: {
+        text: meetingSummary, coveredTurnIds: transcriptTurns.filter(turn =>
+          meetingSummaryRef.current.coveredIds.has(turn.id)).map(turn => turn.id)
+      } } : {}),
       phraseCards,
       selectedReplies,
       usedBridgePhrases
@@ -1073,6 +1087,9 @@ export function TrainingLivePanel({
     const sessionId = createSessionId();
     currentSessionIdRef.current = sessionId;
     transcriptTurnsRef.current = [];
+    meetingSummaryRef.current = { sessionId, coveredIds: new Set(), pending: false };
+    setMeetingSummary("");
+    setMeetingSummaryError(false);
     setTranscriptTurns([]);
     setLiveTranscriptDraft("");
     setPhraseCards([]);
@@ -1216,6 +1233,7 @@ export function TrainingLivePanel({
 
   function cycleTranscriptSpeakerLabel(turn: TranscriptTurn) {
     manuallyAssignedSpeakerTurnIdsRef.current.add(turn.id);
+    if (meetingSummaryRef.current.coveredIds.has(turn.id)) resetMeetingConversationSummary();
     updateTranscriptSpeakerLabel(turn.id, getNextSpeakerLabel(turn.speakerLabel));
   }
 
@@ -1295,6 +1313,7 @@ export function TrainingLivePanel({
   }, [
     hasSessionContent,
     transcriptTurns,
+    meetingSummary,
     phraseCards,
     selectedReplies,
     usedBridgePhrases,
@@ -1646,11 +1665,13 @@ export function TrainingLivePanel({
           speakerLabel: audioSource ? sourceSpeaker(audioSource) : "Heard" as const,
           text: completedTranscript,
           source: "realtime" as const,
-          ...(audioSource ? { audioSource, capturedAt: capturedAt ?? Date.now() } : {})
+          capturedAt: capturedAt ?? Date.now(),
+          ...(audioSource ? { audioSource } : {})
         };
         const nextTranscriptTurns = [...transcriptTurnsRef.current, nextTurn];
         if (audioSource) nextTranscriptTurns.sort((a, b) => (a.capturedAt ?? 0) - (b.capturedAt ?? 0));
-        if (nextTranscriptTurns.length > 50) nextTranscriptTurns.splice(0, nextTranscriptTurns.length - 50);
+        const turnLimit = meetingModeRef.current ? 500 : 50;
+        if (nextTranscriptTurns.length > turnLimit) nextTranscriptTurns.splice(0, nextTranscriptTurns.length - turnLimit);
         transcriptTurnsRef.current = nextTranscriptTurns;
         setTranscriptTurns(nextTranscriptTurns);
         if (shouldShowAnalysis) {
@@ -2298,6 +2319,7 @@ export function TrainingLivePanel({
     if (!window.confirm(`Delete ${selectedIds.size} selected ${messageLabel}?`)) {
       return;
     }
+    if ([...selectedIds].some(id => meetingSummaryRef.current.coveredIds.has(id))) resetMeetingConversationSummary();
 
     selectedIds.forEach((turnId) => deletedTranscriptTurnIdsRef.current.add(turnId));
     selectedIds.forEach((turnId) => manuallyAssignedSpeakerTurnIdsRef.current.delete(turnId));
@@ -2508,6 +2530,8 @@ export function TrainingLivePanel({
       speakerLabel,
       text,
       source,
+      ...(turn.capturedAt == null ? {} : { capturedAt: turn.capturedAt }),
+      ...(turn.audioSource == null ? {} : { audioSource: turn.audioSource }),
       ...(originalText == null ? {} : { originalText })
     };
   }
@@ -2531,9 +2555,10 @@ export function TrainingLivePanel({
         id: createManualTranscriptTurnId(transcriptTurnsRef.current),
         speakerLabel: transcriptEditor.speakerLabel,
         text,
-        source: "manual"
+        source: "manual",
+        capturedAt: Date.now()
       };
-      nextTranscriptTurns = [...transcriptTurnsRef.current, savedTurn].slice(-50);
+      nextTranscriptTurns = [...transcriptTurnsRef.current, savedTurn].slice(meetingModeRef.current ? -500 : -50);
     } else {
       const currentTurn = transcriptTurnsRef.current.find(
         (turn) => turn.id === transcriptEditor.turnId
@@ -2545,6 +2570,7 @@ export function TrainingLivePanel({
       }
 
       savedTurn = buildEditedTranscriptTurn(currentTurn, text, transcriptEditor.speakerLabel);
+      if (meetingSummaryRef.current.coveredIds.has(savedTurn.id)) resetMeetingConversationSummary();
       nextTranscriptTurns = transcriptTurnsRef.current.map((turn) =>
         turn.id === savedTurn.id ? savedTurn : turn
       );
@@ -2642,6 +2668,9 @@ export function TrainingLivePanel({
     transcriptScrollBehaviorRef.current = "auto";
     setTranscriptFollowsLatest(true);
     transcriptTurnsRef.current = [];
+    meetingSummaryRef.current = { sessionId: "", coveredIds: new Set(), pending: false };
+    setMeetingSummary("");
+    setMeetingSummaryError(false);
     deletedTranscriptTurnIdsRef.current = new Set();
     manuallyAssignedSpeakerTurnIdsRef.current = new Set();
     phraseAnalysisRevisionRef.current = new Map();
@@ -2680,6 +2709,10 @@ export function TrainingLivePanel({
       null;
 
     currentSessionIdRef.current = normalizedSession.id;
+    meetingSummaryRef.current = { sessionId: normalizedSession.id,
+      coveredIds: new Set(normalizedSession.conversationSummary?.coveredTurnIds ?? []), pending: false };
+    setMeetingSummary(normalizedSession.conversationSummary?.text ?? "");
+    setMeetingSummaryError(false);
     setFollowLiveMode(false);
     setTranscriptFollowsLatest(true);
     phraseCardSequence.current = getNextPhraseCardSequence(normalizedSession);
@@ -2737,6 +2770,44 @@ export function TrainingLivePanel({
   }
 
   useEffect(() => {
+    if (!meetingMode || !transcriptTurns.length) return;
+    const sessionId = currentSessionIdRef.current ?? "";
+    if (meetingSummaryRef.current.sessionId !== sessionId) {
+      meetingSummaryRef.current = { sessionId, coveredIds: new Set(), pending: false };
+      setMeetingSummary("");
+      setMeetingSummaryError(false);
+      return;
+    }
+    if (meetingSummaryRef.current.pending) return;
+    const latestTime = transcriptTurns.at(-1)?.capturedAt;
+    if (latestTime == null) return;
+    const expired = expiredMeetingTurns(transcriptTurns, latestTime)
+      .filter(turn => !meetingSummaryRef.current.coveredIds.has(turn.id));
+    if (expired.length < 10 && expired.map(turn => turn.text).join("\n").length < 3000 &&
+      latestTime - (expired[0]?.capturedAt ?? latestTime) < 2 * 60 * 1000) return;
+    const batch: TranscriptTurn[] = [];
+    let characters = 0;
+    for (const turn of expired) {
+      const length = Math.min(turn.text.length, 1800) + 24;
+      if (batch.length >= 30 || characters + length > 16000) break;
+      batch.push(turn); characters += length;
+    }
+    if (!batch.length) return;
+    const tracker = meetingSummaryRef.current;
+    tracker.pending = true;
+    const lines = batch.map(turn => `${turn.speakerLabel}: ${turn.text.slice(0, 1770)}`);
+    void meetingRequest<{ summary: string }>("summarize", { previousSummary: meetingSummary, turns: lines })
+      .then(result => {
+        if (tracker !== meetingSummaryRef.current || currentSessionIdRef.current !== sessionId || !meetingModeRef.current) return;
+        tracker.pending = false;
+        for (const turn of batch) tracker.coveredIds.add(turn.id);
+        setMeetingSummary(result.summary);
+        setMeetingSummaryError(false);
+      })
+      .catch(() => { tracker.pending = false; if (tracker === meetingSummaryRef.current) setMeetingSummaryError(true); });
+  }, [meetingMode, meetingSummary, transcriptTurns]);
+
+  useEffect(() => {
     if (!meetingMode || !followLive) return;
     const latestTurn = transcriptTurns.at(-1);
     if (!latestTurn) return;
@@ -2749,10 +2820,10 @@ export function TrainingLivePanel({
     setSelectedPhraseCardId(latestTurn.id);
     setMeetingSelection(current => current?.id === latestTurn.id && current.text === latestTurn.text ? current : {
       id: latestTurn.id, text: latestTurn.text, speaker: latestTurn.speakerLabel,
-      context: transcriptTurns.slice(0, -1).slice(-7)
-        .map(item => `${item.speakerLabel}: ${item.text.slice(0, 1800)}`)
+      context: meetingContextBefore(transcriptTurns, latestTurn.id, meetingSummaryRef.current.coveredIds),
+      summary: meetingSummary
     });
-  }, [meetingMode, followLive, transcriptTurns]);
+  }, [meetingMode, followLive, transcriptTurns, meetingSummary]);
 
   function handlePauseFollowLive() {
     setFollowLiveMode(false);
@@ -3484,8 +3555,9 @@ export function TrainingLivePanel({
                         }
                         setMeetingSelection(current => current?.id === turn.id ? current : {
                           id: turn.id, text: turn.text, speaker: turn.speakerLabel,
-                          context: transcriptTurns.slice(0, transcriptTurns.findIndex(item => item.id === turn.id))
-                            .slice(-7).map(item => `${item.speakerLabel}: ${item.text.slice(0, 1800)}`)
+                          context: meetingContextBefore(transcriptTurns, turn.id,
+                            meetingSummaryRef.current.coveredIds, turn.id === transcriptTurns.at(-1)?.id),
+                          summary: turn.id === transcriptTurns.at(-1)?.id ? meetingSummary : ""
                         });
                       }
                       setSelectedPhraseCardId(turn.id);
@@ -3559,7 +3631,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} quickStart={generateQuickStart} /> : <>
+          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} conversationContextWarning={meetingSummaryError} quickStart={generateQuickStart} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>

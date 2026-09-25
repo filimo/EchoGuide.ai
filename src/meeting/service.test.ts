@@ -22,7 +22,9 @@ function setup(reasoningEffort?: () => string) {
     else if (path.endsWith("/file_batches")) { files[path.split("/")[2]] = body.files.map((f: any) => f.file_id); value = { id: "batch" }; }
     else if (path.endsWith("/file_batches/batch")) value = { status: "completed", file_counts: { failed: state.batchFailed ? 1 : 0, completed: files[path.split("/")[2]].length } };
     else if (path.endsWith("/search")) value = { data: state.empty ? [] : files[path.split("/")[2]].map(file_id => ({ file_id })) };
-    else if (path === "/responses") value = { output_text: JSON.stringify({ status: state.responseStatus, english: state.english, russian: state.russian, sourceIds: state.sourceIds }) };
+    else if (path === "/responses") value = body.text?.format?.name === "meeting_conversation_summary"
+      ? { output_text: JSON.stringify({ summary: "Собеседник предложил проверить процесс; решение не принято." }) }
+      : { output_text: JSON.stringify({ status: state.responseStatus, english: state.english, russian: state.russian, sourceIds: state.sourceIds }) };
     return new Response(JSON.stringify(value), { status: 200 });
   }) as unknown as typeof fetch;
   const service = new MeetingService({ directory, apiKey: () => "test-only", reasoningEffort, fetchImpl });
@@ -35,6 +37,19 @@ function setup(reasoningEffort?: () => string) {
   return { service, state, ready, fetchImpl, directory };
 }
 describe("meeting pack lifecycle and grounding", () => {
+  it("summarizes older dialogue separately and treats it as conversational context", async () => {
+    const { service, fetchImpl, ready } = setup();
+    const summary = await service.summarize("", ["Interviewer: Could we try it?", "Me: I would test one task."]);
+    expect(summary).toContain("решение не принято");
+    const summaryCall = vi.mocked(fetchImpl).mock.calls.find(call =>
+      JSON.parse(String(call[1]?.body ?? "{}")).text?.format?.name === "meeting_conversation_summary")!;
+    expect(JSON.parse(summaryCall[1]!.body as string).store).toBe(false);
+    const id = await ready(); service.activate(id);
+    const found = await service.search(id, "What did we decide?", ["Me: We need a pilot."], summary);
+    await service.answer(id, found.ticket);
+    const answerCall = vi.mocked(fetchImpl).mock.calls.filter(call => String(call[0]).endsWith("/responses")).at(-1)!;
+    expect(JSON.parse(JSON.parse(answerCall[1]!.body as string).input).conversationSummary).toBe(summary);
+  });
   it("keeps the live reasoning effort at none and allows an eval override", async () => {
     let effort = "low";
     const { service, ready, fetchImpl } = setup(() => effort);

@@ -13,6 +13,12 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+### Added
+
+- Use a ten-minute conversation window in meeting mode and summarize older
+  turns in the background. Keep the summary with local session history and
+  distinguish conversational context from document evidence.
+
 ### Fixed
 
 - Ignore native call audio received before capture is ready, allow a short

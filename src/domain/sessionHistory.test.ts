@@ -117,6 +117,15 @@ describe("session history storage", () => {
     );
   });
 
+  it("retains a bounded meeting conversation summary in local session history", () => {
+    saveSessionHistoryEntry(window.localStorage, { ...draftEntry,
+      conversationSummary: { text: "Earlier discussion was provisional.", coveredTurnIds: ["training-phrase-0"] }
+    }, { id: () => "meeting-session" });
+    expect(loadSessionHistory(window.localStorage).sessions[0]?.conversationSummary).toEqual({
+      text: "Earlier discussion was provisional.", coveredTurnIds: ["training-phrase-0"]
+    });
+  });
+
   it("falls back to empty history when stored JSON is invalid", () => {
     window.localStorage.setItem(sessionHistoryStorageKey, "{bad json");
 

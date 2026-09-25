@@ -3,7 +3,7 @@ import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import type { MeetingAnswer } from "./types";
 
 export type MeetingCardIdentity = {
-  sessionId: string; phraseId: string; text: string; speaker: string; context: string[];
+  sessionId: string; phraseId: string; text: string; speaker: string; context: string[]; summary?: string;
   packId: string;
 };
 export type MeetingCardSnapshot = {
@@ -15,7 +15,7 @@ export type MeetingCardSnapshot = {
   progress: string; timings: { openingMs?: number; answerMs?: number };
 };
 export function meetingCardKey(i: MeetingCardIdentity): string {
-  return JSON.stringify([i.sessionId, i.phraseId, i.text, i.speaker, i.context, i.packId]);
+  return JSON.stringify([i.sessionId, i.phraseId, i.text, i.speaker, i.context, i.packId, ...(i.summary ? [i.summary] : [])]);
 }
 const string = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
 export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnapshot {
@@ -23,7 +23,8 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
   const r = value as MeetingCardSnapshot; const i = r.identity;
   if (r.version !== 1 || !i || !string(i.sessionId, 200) || !i.sessionId || !string(i.phraseId, 200) || !i.phraseId ||
     !string(i.packId, 200) || !i.packId || !string(i.text, 4000) || !string(i.speaker, 100) ||
-    !Array.isArray(i.context) || i.context.length > 8 || !i.context.every(s => string(s, 2000)) ||
+    !Array.isArray(i.context) || i.context.length > 120 || !i.context.every(s => string(s, 2000)) ||
+    (i.summary !== undefined && !string(i.summary, 2400)) ||
     !string(r.attemptId, 200) || !r.attemptId || !Number.isInteger(r.sequence) || r.sequence < 0 || r.sequence > 10 ||
     !string(r.savedAt, 100) || !Number.isFinite(Date.parse(r.savedAt)) || !string(r.packName, 120) || !string(r.packCreatedAt, 100) ||
     !["started", "opening", "complete", "error"].includes(r.phase) || !string(r.progress, 500) ||
@@ -31,7 +32,7 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
     Object.values(r.timings).some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0)) return false;
   if (r.generationInput !== undefined && (!r.generationInput || r.generationInput.version !== 1 ||
     !string(r.generationInput.transcript, 4000) || !Array.isArray(r.generationInput.recentContext) ||
-    r.generationInput.recentContext.length > 8 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;
+    r.generationInput.recentContext.length > 120 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;
   const a = r.answer;
   if (a !== null && (!a || !["grounded", "no_answer", "conflict"].includes(a.status) || !string(a.english, 2000) || !string(a.russian, 3000) ||
     !Array.isArray(a.sources) || a.sources.length > 160 || a.sources.some(s => !s || !string(s.id, 200) || !string(s.filename, 300) ||

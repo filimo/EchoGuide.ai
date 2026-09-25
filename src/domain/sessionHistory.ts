@@ -40,6 +40,7 @@ export type SessionHistoryEntry = {
   sourceLabel: string;
   knowledgeContext: string;
   transcriptTurns: SessionHistoryTranscriptTurn[];
+  conversationSummary?: { text: string; coveredTurnIds: string[] };
   phraseCards: SessionHistoryPhraseCard[];
   selectedReplies: SessionHistorySelectedReply[];
   usedBridgePhrases: SessionHistoryBridgePhrase[];
@@ -291,6 +292,12 @@ function normalizeSessionHistoryEntry(value: unknown): SessionHistoryEntry | nul
     !isString(candidate.knowledgeContext) ||
     !Array.isArray(candidate.transcriptTurns) ||
     !candidate.transcriptTurns.every(isTranscriptTurn) ||
+    (candidate.conversationSummary !== undefined &&
+      (typeof candidate.conversationSummary !== "object" || candidate.conversationSummary === null ||
+        !isString(candidate.conversationSummary.text) || candidate.conversationSummary.text.length > 2400 ||
+        !Array.isArray(candidate.conversationSummary.coveredTurnIds) ||
+        candidate.conversationSummary.coveredTurnIds.length > 500 ||
+        !candidate.conversationSummary.coveredTurnIds.every(id => isString(id) && id.length <= 200))) ||
     !Array.isArray(candidate.phraseCards) ||
     !candidate.phraseCards.every(isPhraseCard) ||
     !Array.isArray(candidate.selectedReplies) ||
@@ -310,6 +317,7 @@ function normalizeSessionHistoryEntry(value: unknown): SessionHistoryEntry | nul
     sourceLabel: candidate.sourceLabel,
     knowledgeContext: candidate.knowledgeContext,
     transcriptTurns: candidate.transcriptTurns,
+    conversationSummary: candidate.conversationSummary,
     phraseCards: candidate.phraseCards,
     selectedReplies: candidate.selectedReplies,
     usedBridgePhrases: candidate.usedBridgePhrases
@@ -328,6 +336,12 @@ export function isSessionHistoryEntryDraft(value: unknown): value is SessionHist
     isString(candidate.knowledgeContext) &&
     Array.isArray(candidate.transcriptTurns) &&
     candidate.transcriptTurns.every(isTranscriptTurn) &&
+    (candidate.conversationSummary === undefined ||
+      (candidate.conversationSummary !== null && typeof candidate.conversationSummary === "object" &&
+        typeof candidate.conversationSummary.text === "string" && candidate.conversationSummary.text.length <= 2400 &&
+        Array.isArray(candidate.conversationSummary.coveredTurnIds) &&
+        candidate.conversationSummary.coveredTurnIds.length <= 500 &&
+        candidate.conversationSummary.coveredTurnIds.every(id => typeof id === "string" && id.length <= 200))) &&
     Array.isArray(candidate.phraseCards) &&
     candidate.phraseCards.every(isPhraseCard) &&
     Array.isArray(candidate.selectedReplies) &&
@@ -356,6 +370,7 @@ function createSessionHistoryEntry(
     sourceLabel: draft.sourceLabel,
     knowledgeContext: draft.knowledgeContext,
     transcriptTurns: draft.transcriptTurns,
+    conversationSummary: draft.conversationSummary,
     phraseCards: draft.phraseCards,
     selectedReplies: draft.selectedReplies,
     usedBridgePhrases: draft.usedBridgePhrases

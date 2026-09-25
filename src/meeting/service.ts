@@ -8,10 +8,11 @@ import { defaultBilingualModel } from "../realtime/bilingualAnalysis";
 import { spokenProductQuestion } from "./spokenProduct";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
 import type { QuickStart } from "../realtime/quickStart";
+import { maxMeetingSummaryCharacters } from "./conversationContext";
 
 type StoredPack = MeetingPack & { storeId?: string; batchId?: string; fileIds: string[]; sections: MeetingSection[]; fileMap: Record<string, string> };
 type StoredState = { packs: StoredPack[]; activePackId: string | null };
-type SearchTicket = { packId: string; transcript: string; recentContext: string[]; evidence: MeetingEvidence[]; expiresAt: number };
+type SearchTicket = { packId: string; transcript: string; recentContext: string[]; summary: string; evidence: MeetingEvidence[]; expiresAt: number };
 const apiBase = "https://api.openai.com/v1";
 
 export class MeetingService {
@@ -116,13 +117,30 @@ export class MeetingService {
     if (!pack?.storeId) throw new Error("Активный набор изменился или не готов.");
     return pack;
   }
-  async search(packId: string, transcript: string, recentContext: string[]) {
+  async summarize(previousSummary: string, turns: string[]): Promise<string> {
+    if (previousSummary.length > maxMeetingSummaryCharacters || turns.length > 30 ||
+      turns.some(turn => turn.length > 1800) || turns.join("\n").length > 16000) throw new Error("Invalid summary input");
+    const result = await this.api("/responses", "POST", {
+      model: this.options.model?.() || defaultBilingualModel,
+      reasoning: { effort: "none" }, store: false, max_output_tokens: 1200,
+      instructions: "Summarize an older segment of a live meeting for later conversational reference. Combine the previous summary with the new turns. Preserve who said what, open questions, negation, uncertainty, and whether an item is a proposal, decision, hypothesis, or measured result. Never turn a question's premise or AI-generated wording into a confirmed fact. Omit filler, transcription noise, and repeated wording. Do not invent missing details. Return a concise summary in Russian, at most 2400 characters. The summary is conversation context, not evidence for project facts.",
+      input: JSON.stringify({ previousSummary, turns }),
+      text: { format: { type: "json_schema", name: "meeting_conversation_summary", strict: true,
+        schema: { type: "object", additionalProperties: false, required: ["summary"], properties: { summary: { type: "string" } } } } }
+    }, 18000);
+    if (result.status === "incomplete") throw new Error("Summary incomplete");
+    const output = result.output_text ?? result.output?.flatMap((o: any) => o.content ?? []).find((p: any) => p.type === "output_text")?.text;
+    const summary = JSON.parse(output ?? "null")?.summary;
+    if (typeof summary !== "string" || !summary.trim() || summary.length > maxMeetingSummaryCharacters) throw new Error("Invalid summary output");
+    return summary.trim();
+  }
+  async search(packId: string, transcript: string, recentContext: string[], summary = "") {
     const prepared = prepareGenerationInput(transcript, recentContext);
     transcript = prepared.transcript; recentContext = prepared.recentContext;
     if (!transcript) throw new Error("No spoken input");
     const pack = this.active(packId);
     const result = await this.api(`/vector_stores/${pack.storeId}/search`, "POST", {
-      query: `Recent dialogue:\n${recentContext.join("\n")}\nCurrent question / utterance:\n${transcript}`,
+      query: `Earlier conversation summary (for referents only):\n${summary}\nRecent dialogue:\n${recentContext.join("\n")}\nCurrent question / utterance:\n${transcript}`,
       rewrite_query: true, max_num_results: 8,
       filters: { type: "eq", key: "pack_id", value: packId }
     }, 12000);
@@ -139,7 +157,7 @@ export class MeetingService {
     for (const [id, ticket] of this.tickets) if (ticket.expiresAt < now) this.tickets.delete(id);
     if (this.tickets.size >= 100) this.tickets.delete(this.tickets.keys().next().value!);
     const ticket = randomUUID();
-    this.tickets.set(ticket, { packId, transcript, recentContext, evidence, expiresAt: now + 90000 });
+    this.tickets.set(ticket, { packId, transcript, recentContext, summary, evidence, expiresAt: now + 90000 });
     return { ticket, found: evidence.length };
   }
   async answer(packId: string, ticketId: string, opening?: QuickStart): Promise<MeetingAnswer> {
@@ -148,7 +166,7 @@ export class MeetingService {
     if (!ticket || ticket.packId !== packId || ticket.expiresAt < Date.now()) throw new Error("Повторите поиск: предыдущий результат устарел.");
     if (!ticket.evidence.length) return { ...meetingFallback };
     const interpretedQuestion = spokenProductQuestion(ticket.transcript, ticket.evidence);
-    const answerInput = { transcript: interpretedQuestion ?? ticket.transcript, recentContext: ticket.recentContext, opening, evidence: ticket.evidence,
+    const answerInput = { transcript: interpretedQuestion ?? ticket.transcript, recentContext: ticket.recentContext, conversationSummary: ticket.summary, opening, evidence: ticket.evidence,
       ...(interpretedQuestion ? { originalTranscript: ticket.transcript, interpretation: "Unconfirmed: codecs may mean Codex. Answer conditionally, never claim the user said Codex." } : {}) };
     const requestBody = {
       model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: this.options.reasoningEffort?.() || "none" }, store: false, max_output_tokens: 700,
