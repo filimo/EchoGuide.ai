@@ -1786,8 +1786,12 @@ textarea {
 .desktop-workspace .transcript-turn-content { min-height: 0; padding: 2px 0; }
 .desktop-workspace .transcript-action-icon { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 0; }
 .desktop-workspace .audio-status-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.desktop-workspace .audio-source-mode { margin: 0; gap: 6px; font-size: 12px; }
-.desktop-workspace .audio-source-mode select { max-width: 205px; height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: inherit; padding: 3px 6px; }
+.blackhole-route-button { white-space: nowrap; font-weight: 600; }
+.blackhole-route-button[data-state="microphone"],
+.blackhole-route-button[data-state="mix"] { border-color: #9bd7b0; background: #effaf2; color: #18633a; }
+.blackhole-route-button[data-state="error"] { border-color: #f0b4b4; background: #fff1f1; color: #9b1c1c; }
+.blackhole-route-button[data-state="warning"] { border-color: #e7c66c; background: #fff8df; color: #75560a; }
+.desktop-workspace .audio-source-mode { max-width: 205px; height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: inherit; padding: 3px 6px; font-size: 12px; }
 .desktop-workspace .training-status-row { gap: 6px; }
 .desktop-workspace .microphone-picker select { max-width: 190px; height: 30px; padding: 3px 6px; }
 .desktop-workspace .training-audio-level .audio-meter { width: 64px; }

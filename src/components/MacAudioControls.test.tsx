@@ -25,6 +25,9 @@ it("previews the selected microphone and stops monitoring when requested", async
   });
   render(<Harness />);
   await screen.findByRole("option", { name: "USB mic" });
+  expect(screen.getByRole("button", { name: /Call \+ USB mic/ })).toHaveAttribute("title", expect.stringContaining("Источники звука"));
+  expect(screen.getByLabelText("Call application")).toHaveAttribute("title", expect.stringContaining("Звук выбранного приложения"));
+  expect(screen.getByLabelText("Mac microphone")).toHaveAttribute("title", expect.stringContaining("Микрофон для EchoGuide"));
   fireEvent.click(screen.getByRole("button", { name: "Проверить микрофон" }));
   expect(monitorMacMicrophone).toHaveBeenCalledWith("usb", expect.any(Function), expect.any(Function));
   act(() => {

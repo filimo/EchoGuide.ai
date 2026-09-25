@@ -72,6 +72,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
   const children = new Set<ChildProcessWithoutNullStreams>();
   let active = false;
   let stopActive: ((reason?: string) => void) | undefined;
+  let standby = false;
   const spawnHelper = deps.spawnHelper ?? ((args) => spawn(resolve(helperPath), args, {
     // The native helper needs no API credentials and opens no network port.
     env: { PATH: "/usr/bin:/bin", HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
@@ -100,14 +101,96 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     if (!(deps.helperExists?.() ?? existsSync(resolve(helperPath)))) {
       return json(res, 503, { error: "Build Mac audio first: npm run mac-audio:build" });
     }
-    if (![`${prefix}sources`, `${prefix}session`, `${prefix}input-volume`, `${prefix}microphone-monitor`].includes(path)) {
+    if (![`${prefix}sources`, `${prefix}session`, `${prefix}standby`, `${prefix}input-volume`, `${prefix}microphone-monitor`].includes(path)) {
       return json(res, 404, { error: "Unknown Mac audio route." });
     }
-    if (active && path !== `${prefix}input-volume`) return json(res, 409, { error: "Mac audio is already running. Stop the other session first." });
+    if (active && (path !== `${prefix}input-volume` && !(standby && (path === `${prefix}sources` || path === `${prefix}session`)))) {
+      return json(res, 409, { error: "Mac audio is already running. Stop the other session first." });
+    }
     let options: Record<string, unknown>;
     try { options = await readOptions(req); } catch { return json(res, 400, { error: "Invalid Mac audio options." }); }
     if (res.destroyed) return;
-    if (active && path !== `${prefix}input-volume`) return json(res, 409, { error: "Mac audio is already running." });
+    if (active && path === `${prefix}session` && standby) stopActive?.("live_start");
+    if (active && path !== `${prefix}input-volume` && !(standby && path === `${prefix}sources`)) return json(res, 409, { error: "Mac audio is already running." });
+
+    if (path === `${prefix}standby`) {
+      if (active) return json(res, 409, { error: "Mac audio is already running." });
+      if (typeof options.microphone !== "string" || !options.microphone ||
+          options.microphone === "default" || options.microphone.length > 512) {
+        return json(res, 400, { error: "Select a named microphone for BlackHole." });
+      }
+      active = true;
+      standby = true;
+      res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+      res.flushHeaders();
+      const output = child(["--virtual-output"]);
+      let microphone: ChildProcessWithoutNullStreams | undefined;
+      let outputReady = false;
+      let microphoneReady = false;
+      let stopped = false;
+      let pendingOutput = "";
+      let pendingMicrophone = "";
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(timeout);
+        output.kill();
+        microphone?.kill();
+        active = false;
+        standby = false;
+        stopActive = undefined;
+        if (!res.destroyed) res.end();
+      };
+      stopActive = stop;
+      const fail = (message: string) => {
+        if (!stopped && !res.destroyed) res.write(`${JSON.stringify({ type: "error", message })}\n`);
+        stop();
+      };
+      const timeout = setTimeout(() => fail("BlackHole microphone routing timed out."), 5000);
+      res.on("close", stop);
+      output.on("error", () => fail("Could not start BlackHole 2ch."));
+      output.on("close", () => fail("BlackHole 2ch stopped."));
+      output.stdin.on("error", () => fail("BlackHole audio delivery stopped."));
+      output.stdout.on("data", chunk => {
+        pendingOutput += chunk.toString();
+        if (pendingOutput.length > 4096) return fail("Invalid BlackHole response.");
+        let end: number;
+        while ((end = pendingOutput.indexOf("\n")) >= 0 && !stopped) {
+          const line = pendingOutput.slice(0, end);
+          pendingOutput = pendingOutput.slice(end + 1);
+          try {
+            const event = JSON.parse(line);
+            if (event.type !== "ready") return fail("BlackHole 2ch could not start.");
+            outputReady = true;
+            microphone = child(["--stream-microphone", options.microphone as string]);
+            microphone.on("error", () => fail("Could not start the selected microphone."));
+            microphone.on("close", () => fail("The selected microphone stopped."));
+            microphone.stdout.on("data", data => {
+              pendingMicrophone += data.toString();
+              if (pendingMicrophone.length > 262_144) return fail("Microphone delivery fell behind.");
+              let boundary: number;
+              while ((boundary = pendingMicrophone.indexOf("\n")) >= 0 && !stopped) {
+                const micLine = pendingMicrophone.slice(0, boundary);
+                pendingMicrophone = pendingMicrophone.slice(boundary + 1);
+                try {
+                  const micEvent = JSON.parse(micLine);
+                  if (micEvent.type === "ready") {
+                    microphoneReady = true;
+                    if (outputReady) { clearTimeout(timeout); res.write('{"type":"ready"}\n'); }
+                  } else if (micEvent.type === "audio" && typeof micEvent.audio === "string") {
+                    if (!microphoneReady) continue;
+                    const pcm = Buffer.from(micEvent.audio, "base64");
+                    if (!pcm.length || pcm.length % 2 || pcm.length > 192_000 ||
+                        !output.stdin.write(mixStereo(pcm, Buffer.alloc(0)))) fail("BlackHole audio delivery fell behind.");
+                  } else fail("Could not read the selected microphone.");
+                } catch { fail("Could not read the selected microphone."); }
+              }
+            });
+          } catch { fail("Invalid BlackHole response."); }
+        }
+      });
+      return;
+    }
 
     if (path === `${prefix}input-volume`) {
       if (typeof options.microphone !== "string" || !options.microphone || options.microphone.length > 512 ||

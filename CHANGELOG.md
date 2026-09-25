@@ -15,6 +15,15 @@ Until the first versioned release, changes are grouped by date.
 
 ### Changed
 
+- Keep the selected microphone routed to BlackHole 2ch while Mac audio mode is
+  idle, so ChatGPT can use the same input before and after a meeting. Starting
+  a meeting adds call audio; stopping it restores microphone-only routing.
+  A compact BlackHole button shows the current routing state.
+- Remove the visible `Audio source` label and explain the audio source and
+  microphone selectors with hover hints.
+- Add hover hints to buttons, selectors, and status indicators throughout the
+  app, while retaining specific help text where it already exists.
+
 - Show Mac microphone and call audio on the same dBFS scale, with quiet, working,
   loud and overload zones plus a peak reading. Add the selected microphone's
   system input-volume control to audio settings where macOS supports it;

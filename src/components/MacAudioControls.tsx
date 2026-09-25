@@ -7,8 +7,9 @@ import { loadMacAudioPreference, saveMacAudioPreference, type MacAudioPreference
 
 export type MacAudioSelection = { pid: number; microphone: string };
 
-export function MacAudioControls({ disabled, selection, onChange }: {
+export function MacAudioControls({ disabled, selection, onChange, onMicrophoneChange }: {
   disabled: boolean; selection: MacAudioSelection | null; onChange: (value: MacAudioSelection | null) => void;
+  onMicrophoneChange?: (microphone: string) => void;
 }) {
   const popoverId = useId();
   const [sources, setSources] = useState<MacAudioSources>({ applications: [], microphones: [] });
@@ -107,7 +108,8 @@ export function MacAudioControls({ disabled, selection, onChange }: {
     loud: "громко", clipping: "перегруз" }[preview.zone];
   return <section className="mac-audio-controls" aria-label="MacBook audio sources">
     <button type="button" className="mac-sources-trigger" popoverTarget={popoverId}
-      title={selection ? `${applicationName} + ${microphoneName}` : "Choose microphone and call application"}>
+      title={selection ? `Источники звука: ${applicationName} и ${microphoneName}. Нажми, чтобы изменить.` :
+        "Выбери приложение звонка и микрофон для EchoGuide"}>
       <span aria-hidden="true">⚙</span> {loading ? "Loading sources…" : selection ? `${applicationName} + ${microphoneName}` : "Настроить источники"}
     </button>
     {error && <span className="mac-source-error" role="alert">{error}</span>}
@@ -120,7 +122,8 @@ export function MacAudioControls({ disabled, selection, onChange }: {
       <button type="button" disabled={disabled || loading} onClick={() => void refresh()}>
         {loading ? "Loading Mac sources…" : "Refresh Mac sources"}
       </button>
-      <label>Call application <select disabled={disabled || loading} value={selection?.pid ?? ""}
+      <label>Call application <select title="Звук выбранного приложения будет поступать в EchoGuide во время встречи"
+        disabled={disabled || loading} value={selection?.pid ?? ""}
         onChange={event => {
           const app = sources.applications.find(app => app.pid === Number(event.target.value));
           remember({ ...preference, application: app?.bundleId ? { bundleId: app.bundleId, name: app.name } : null });
@@ -131,9 +134,11 @@ export function MacAudioControls({ disabled, selection, onChange }: {
         <option value="">Select an application</option>
         {sources.applications.map(app => <option key={app.pid} value={app.pid}>{app.name} ({app.pid})</option>)}
       </select></label>
-      <label>Mac microphone <select disabled={disabled || loading || monitorState !== "idle"} value={preference.microphone}
+      <label>Mac microphone <select title="Микрофон для EchoGuide и передачи в BlackHole"
+        disabled={disabled || loading || monitorState !== "idle"} value={preference.microphone}
         onChange={event => {
           remember({ ...preference, microphone: event.target.value });
+          onMicrophoneChange?.(event.target.value);
           const matches = sources.applications.filter(app => app.bundleId === preference.application?.bundleId);
           const pid = selection?.pid ?? (matches.length === 1 ? matches[0].pid : null);
           onChange(pid == null ? null : { pid, microphone: event.target.value });

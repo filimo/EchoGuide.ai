@@ -2,7 +2,7 @@ import { flushSync } from "react-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrainingLivePanel } from "./TrainingLivePanel";
-import type { MacAudioOptions } from "../macAudio/client";
+import { routeStandbyMicrophone, type MacAudioOptions } from "../macAudio/client";
 import type { MacAudioEvent } from "../macAudio/protocol";
 import type { SessionHistoryEntry, SessionHistoryEntryDraft } from "../domain/sessionHistory";
 
@@ -17,7 +17,8 @@ vi.mock("../macAudio/client", async importOriginal => ({
   ...await importOriginal<typeof import("../macAudio/client")>(),
   listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }],
     microphones: [{ id: "usb", name: "UGREEN" }] })),
-  macInputVolume: vi.fn(async () => ({ available: false }))
+  macInputVolume: vi.fn(async () => ({ available: false })),
+  routeStandbyMicrophone: vi.fn(() => ({ stop: vi.fn() }))
 }));
 afterEach(() => { window.localStorage.clear(); vi.restoreAllMocks(); });
 
@@ -40,11 +41,13 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
       if (pending) await new Promise<void>(resolve => { finish = resolve; });
       return transport;
     }} />);
+  expect(screen.getByLabelText("Audio source")).toHaveAttribute("title", expect.stringContaining("Источник звука"));
+  expect(screen.queryByText("Audio source")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Audio source"), { target: { value: "mac" } });
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
   if (virtualOutput) {
-    fireEvent.click(screen.getByLabelText("Передавать микрофон и звук приложения в ChatGPT через BlackHole 2ch"));
+    fireEvent.click(screen.getByRole("button", { name: "BlackHole · выкл" }));
     fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "usb" } });
   }
   if (recordingOnly) {
@@ -59,12 +62,16 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
 
 describe("Mac audio in Training Mode", () => {
   it("sends the optional BlackHole route with an explicitly selected microphone", async () => {
+    vi.mocked(routeStandbyMicrophone).mockClear();
     const test = await setup(false, false, true);
+    expect(routeStandbyMicrophone).toHaveBeenCalledWith("usb", expect.any(Function), expect.any(Function));
+    const standbyCalls = vi.mocked(routeStandbyMicrophone).mock.calls.length;
     expect(test.options).toMatchObject({ microphone: "usb", virtualOutput: true });
     await test.emit({ type: "virtual-output", status: "ready" });
-    expect(screen.getByText("Звук передаётся в BlackHole 2ch")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "BlackHole · микс" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Остановить встречу" }));
-    expect(screen.queryByText("Звук передаётся в BlackHole 2ch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "BlackHole · микс" })).not.toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(routeStandbyMicrophone).mock.calls.length).toBeGreaterThan(standbyCalls));
   });
   it("uses the same dBFS scale for both source meters and reports peak overload", async () => {
     const test = await setup();

@@ -37,7 +37,7 @@ export function MicrophonePicker({ value, onChange, disabled, stream }: Props) {
   const missing = value !== "default" && !devices.some(device => device.deviceId === value);
   return <label className="microphone-picker">
     <select aria-label="Microphone" value={value} disabled={disabled}
-      title={disabled ? "Stop the meeting before changing microphones." : "Choose the meeting audio input."}
+      title={disabled ? "Останови встречу, чтобы сменить микрофон" : "Выбери микрофон для встречи"}
       onChange={event => onChange(event.target.value)}>
       <option value="default">System default</option>
       {missing && <option value={value}>Saved microphone (unavailable)</option>}

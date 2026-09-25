@@ -9,6 +9,7 @@ import {
   setMicrophoneStatus
 } from "./domain/session";
 import { loadSetupMemory, saveSetupMemory } from "./domain/setupMemory";
+import { installHoverHints } from "./ui/hoverHints";
 
 type AppProps = {
   requestMicrophone?: (deviceId: string) => Promise<MicrophoneResult>;
@@ -43,6 +44,10 @@ async function saveLocalKnowledgeContext(knowledgeContext: string): Promise<stri
 }
 
 export default function App({ requestMicrophone = (deviceId: string) => requestMicrophoneStream(undefined, undefined, deviceId) }: AppProps = {}) {
+  useEffect(() => {
+    const root = document.getElementById("root");
+    return root ? installHoverHints(root) : undefined;
+  }, []);
   const [setupMemory, setSetupMemory] = useState(() => loadSetupMemory(window.localStorage));
   const [session, setSession] = useState(() =>
     setKnowledgeNotes(createInitialSession(), setupMemory.legacyKnowledgeContext)

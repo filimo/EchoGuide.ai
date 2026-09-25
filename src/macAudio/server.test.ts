@@ -63,6 +63,47 @@ function setup(recordings?: RecordingStore) {
 }
 
 describe("Mac audio local bridge", () => {
+  it("routes the selected microphone to BlackHole while idle and hands over to a live session", async () => {
+    const output = new Helper();
+    const microphone = new Helper();
+    const capture = new Helper();
+    const spawned = vi.fn((args: string[]) => (args[0] === "--virtual-output" ? output :
+      args[0] === "--stream-microphone" ? microphone : capture) as unknown as ChildProcessWithoutNullStreams);
+    const bridge = createMacAudioMiddleware({ platform: "darwin", helperExists: () => true,
+      spawnHelper: spawned, readEnv: () => "OPENAI_API_KEY=test-only",
+      connectSocket: () => { const socket = new Socket(); queueMicrotask(() => {
+        socket.emit("open"); socket.message({ type: "session.updated" });
+      }); return socket as unknown as WebSocket; } });
+    cleanups.push(bridge.dispose);
+    const idleResponse = response();
+    await bridge.middleware(request("standby", { microphone: "usb" }), idleResponse as unknown as ServerResponse, vi.fn());
+    expect(spawned).toHaveBeenCalledWith(["--virtual-output"]);
+    output.line({ type: "ready" });
+    expect(spawned).toHaveBeenCalledWith(["--stream-microphone", "usb"]);
+    microphone.line({ type: "ready" });
+    expect(idleResponse.body).toContain('{"type":"ready"}');
+    const chunks: Buffer[] = [];
+    output.stdin.on("data", chunk => chunks.push(Buffer.from(chunk)));
+    const pcm = Buffer.alloc(4800);
+    pcm.writeInt16LE(1234, 0);
+    microphone.line({ type: "audio", audio: pcm.toString("base64") });
+    expect(chunks[0].readInt16LE(0)).toBe(1234);
+    expect(chunks[0].readInt16LE(2)).toBe(1234);
+
+    const liveResponse = response();
+    await bridge.middleware(request("session", { pid: 123, microphone: "usb", language: "english" }),
+      liveResponse as unknown as ServerResponse, vi.fn());
+    expect(output.kill).toHaveBeenCalled();
+    expect(microphone.kill).toHaveBeenCalled();
+    expect(spawned).toHaveBeenCalledWith(["--capture", "123", "usb"]);
+    liveResponse.emit("close");
+  });
+  it("requires a named microphone for idle BlackHole routing", async () => {
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "default" }));
+    expect(res.status).toBe(400);
+    expect(test.spawnHelper).not.toHaveBeenCalled();
+  });
   it("routes a timed copy of both sources to BlackHole without changing EchoGuide transcription", async () => {
     const test = setup();
     const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",

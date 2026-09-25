@@ -1,12 +1,12 @@
 import { loadMeetingMode, saveMeetingMode } from "../meeting/preferences";
-import { loadAudioMode, saveAudioMode, loadVirtualOutputPreference, saveVirtualOutputPreference } from "../macAudio/preferences";
+import { loadAudioMode, saveAudioMode, loadMacAudioPreference, loadVirtualOutputPreference, saveVirtualOutputPreference } from "../macAudio/preferences";
 import { startBrowserRecording, recordingPath, type BrowserRecording, type RecordingStatus } from "../recordings/client";
 import { recordingHeaders, type Recording } from "../recordings/types";
 import { SessionAudio } from "./SessionAudio";
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
-import { connectMacAudio } from "../macAudio/client";
+import { connectMacAudio, routeStandbyMicrophone } from "../macAudio/client";
 import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
 import { levelMeter } from "../macAudio/levelMeter";
 import { MicrophonePicker } from "./MicrophonePicker";
@@ -542,8 +542,11 @@ export function TrainingLivePanel({
 }: TrainingLivePanelProps) {
   const [audioMode, setAudioMode] = useState(() => loadAudioMode(initialAudioMode));
   const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
+  const [standbyMicrophone, setStandbyMicrophone] = useState(() => loadMacAudioPreference().microphone);
   const [virtualOutputEnabled, setVirtualOutputEnabled] = useState(loadVirtualOutputPreference);
-  const [virtualOutputStatus, setVirtualOutputStatus] = useState("");
+  const [virtualOutputStatus, setVirtualOutputStatus] = useState<{
+    kind: "idle" | "connecting" | "microphone" | "mix" | "error"; detail?: string;
+  }>({ kind: "idle" });
   const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; peak: number; chunks: number; seenAt: number }>>>({});
   const [macClock, setMacClock] = useState(Date.now());
   const macAbortRef = useRef<AbortController | null>(null);
@@ -589,6 +592,17 @@ export function TrainingLivePanel({
   meetingModeRef.current = meetingMode;
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
   const [connection, setConnection] = useState<RealtimeTranscriptionConnection | null>(null);
+  useEffect(() => {
+    if (audioMode !== "mac" || !virtualOutputEnabled || realtimeStatus === "connecting" ||
+        realtimeStatus === "connected" || connection != null) return;
+    const microphone = standbyMicrophone;
+    if (microphone === "default") return;
+    setVirtualOutputStatus({ kind: "connecting" });
+    const route = routeStandbyMicrophone(microphone,
+      () => setVirtualOutputStatus({ kind: "microphone" }),
+      message => setVirtualOutputStatus({ kind: "error", detail: message }));
+    return () => route.stop();
+  }, [audioMode, virtualOutputEnabled, realtimeStatus, connection, standbyMicrophone]);
   const [translationConnection, setTranslationConnection] =
     useState<RealtimeTranslationConnection | null>(null);
   const [streamingTranslationStatus, setStreamingTranslationStatus] =
@@ -1748,7 +1762,7 @@ export function TrainingLivePanel({
     lastOwnSpeechAtRef.current = 0;
     setFollowLiveMode(true);
     setMacLevels({});
-    setVirtualOutputStatus(virtualOutputEnabled ? "Подключение BlackHole…" : "");
+    setVirtualOutputStatus({ kind: virtualOutputEnabled ? "connecting" : "idle" });
     setErrorMessage("");
     realtimeStatusRef.current = "connecting";
     setRealtimeStatus("connecting");
@@ -1785,7 +1799,7 @@ export function TrainingLivePanel({
           }
           if (event.type === "transcription-error") setErrorMessage(event.message);
           if (event.type === "virtual-output") setVirtualOutputStatus(event.status === "ready"
-            ? "Звук передаётся в BlackHole 2ch" : event.message ?? "BlackHole недоступен");
+            ? { kind: "mix" } : { kind: "error", detail: event.message ?? "BlackHole недоступен" });
           if (event.type === "level") setMacLevels(current => ({ ...current,
             [event.source]: { level: event.level, peak: event.peak, chunks: event.chunks, seenAt: Date.now() }
           }));
@@ -2027,7 +2041,7 @@ export function TrainingLivePanel({
     macAbortRef.current?.abort();
     macAbortRef.current = null;
     setMacLevels({});
-    setVirtualOutputStatus("");
+    setVirtualOutputStatus({ kind: "idle" });
     flushPendingAutomaticAnalysis();
     quickStartControllersRef.current.forEach((controller) => controller.abort());
     const liveConnection = connectionRef.current;
@@ -2857,21 +2871,29 @@ export function TrainingLivePanel({
         {meetingExportError && <p role="alert">{meetingExportError}</p>}
 
         <div className="audio-status-toolbar">
-        <label className="audio-source-mode">Audio source <select aria-label="Audio source"
+        <select className="audio-source-mode" aria-label="Audio source"
+          title="Источник звука для EchoGuide: микрофон или микрофон вместе со звуком приложения"
           value={audioMode} disabled={connection != null || realtimeStatus === "connecting"}
           onChange={event => { setAudioMode(event.target.value as "microphone" | "mac"); saveAudioMode(event.target.value as "microphone" | "mac"); setMacSelection(null); setErrorMessage(""); }}>
           <option value="microphone">Microphone</option>
           <option value="mac">MacBook: microphone + call application</option>
-        </select></label>
+        </select>
         {audioMode === "mac" && <MacAudioControls disabled={connection != null || realtimeStatus === "connecting"}
-          selection={macSelection} onChange={setMacSelection} />}
-        {audioMode === "mac" && <label className="meeting-mode-toggle"><input type="checkbox"
-          checked={virtualOutputEnabled} disabled={connection != null || realtimeStatus === "connecting"}
-          onChange={event => { setVirtualOutputEnabled(event.target.checked); saveVirtualOutputPreference(event.target.checked); }}
-        />Передавать микрофон и звук приложения в ChatGPT через BlackHole 2ch</label>}
-        {audioMode === "mac" && virtualOutputEnabled && macSelection?.microphone === "default" &&
-          <span className="status status-idle">Выбери внешний микрофон явно перед запуском.</span>}
-        {audioMode === "mac" && virtualOutputStatus && <span className="status status-idle">{virtualOutputStatus}</span>}
+          selection={macSelection} onChange={setMacSelection} onMicrophoneChange={setStandbyMicrophone} />}
+        {audioMode === "mac" && <button type="button" className="blackhole-route-button"
+          data-state={!virtualOutputEnabled ? "off" : standbyMicrophone === "default" ? "warning" : virtualOutputStatus.kind}
+          aria-pressed={virtualOutputEnabled}
+          title={!virtualOutputEnabled ? "Включить передачу звука в BlackHole 2ch" :
+            standbyMicrophone === "default" ? "Выбери конкретный микрофон в настройках звука" :
+            virtualOutputStatus.kind === "error" ? virtualOutputStatus.detail :
+            "До встречи: микрофон. Во время встречи: микрофон и звук приложения."}
+          disabled={connection != null || realtimeStatus === "connecting"}
+          onClick={() => { const enabled = !virtualOutputEnabled; setVirtualOutputEnabled(enabled);
+            saveVirtualOutputPreference(enabled); if (!enabled) setVirtualOutputStatus({ kind: "idle" }); }}>
+          BlackHole · {!virtualOutputEnabled ? "выкл" : standbyMicrophone === "default" ? "выбери микрофон" :
+            virtualOutputStatus.kind === "microphone" ? "микрофон" : virtualOutputStatus.kind === "mix" ? "микс" :
+            virtualOutputStatus.kind === "error" ? "ошибка" : "подключение…"}
+        </button>}
         {audioMode !== "mac" && microphoneError && <p role="alert">{microphoneError}</p>}
         <section className="training-status-row" aria-label="Training Mode status">
             {audioMode !== "mac" && onMicrophoneDeviceChange && <MicrophonePicker

@@ -27,8 +27,9 @@ It does not start capture automatically. The normal setup screen also links here
 3. Select **Call application** and **Mac microphone**. For Meet, select the browser.
    To set input volume first, click **Проверить микрофон** in the source popover,
    speak normally and adjust the system input-volume slider. Stop the test when done.
-   To share both sources with the ChatGPT macOS app, select a named physical microphone
-   rather than `Default`, then enable **Передавать микрофон и звук приложения в ChatGPT через BlackHole 2ch**.
+   To share audio with the ChatGPT macOS app, select a named physical microphone
+   rather than `Default`, then click **BlackHole · выкл**. The button shows
+   `микрофон` while idle, `микс` during a meeting, or an error state.
    BlackHole 2ch must already be installed. EchoGuide does not change the Mac's default output.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
 5. Click **Начать встречу** and choose **С подсказками и расшифровкой** to start capture, transcription and local audio recording, or **Только записать аудио** for local capture without OpenAI transcription. Allow microphone access if macOS requests it.
@@ -55,11 +56,15 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   The sender uses elapsed monotonic time, so late timer callbacks do not accumulate
   an ever-growing queue. Buffers remain bounded; a stall over one second or an
   overloaded transport stops rather than silently dropping speech.
-- When the BlackHole option is enabled, a second native helper receives a copy of
-  the aligned microphone and application chunks as one stereo mix. It selects
-  BlackHole 2ch directly as its output. EchoGuide's source attribution and two
-  transcription sessions stay separate; a BlackHole failure leaves capture running
-  and reports an error in the toolbar. The helper stops with the meeting.
+- While the BlackHole option is enabled and the local EchoGuide page is open,
+  the selected microphone is routed to BlackHole 2ch even before `Start live`
+  and after `Stop live`. This idle route does not record audio or use OpenAI.
+  Starting a meeting replaces it with a copy of the aligned microphone and
+  application chunks as one stereo mix; stopping the meeting restores the
+  microphone-only route. EchoGuide's source attribution and two transcription
+  sessions stay separate; a BlackHole failure leaves meeting capture running
+  and reports an error in the toolbar. Closing EchoGuide or its local server
+  stops the idle route.
 - In ChatGPT Voice, select BlackHole 2ch as the microphone if that control is
   available. Otherwise select BlackHole as the macOS system input for the Voice
   session. Keep EchoGuide's own microphone set to the named physical device.

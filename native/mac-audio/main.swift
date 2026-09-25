@@ -112,6 +112,7 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     let queue = DispatchQueue(label: "echoguide.microphone-monitor")
     let encoder = PCMEncoder()
     var lastLevel = Date.distantPast
+    var streamAudio = false
 
     func start(identifier: String) throws {
         let device = identifier == "default" ? AVCaptureDevice.default(for: .audio) :
@@ -136,9 +137,11 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        guard sample.isValid, Date().timeIntervalSince(lastLevel) >= 0.1,
-              let description = sample.formatDescription else { return }
-        lastLevel = Date()
+        guard sample.isValid, let description = sample.formatDescription else { return }
+        if !streamAudio {
+            guard Date().timeIntervalSince(lastLevel) >= 0.1 else { return }
+            lastLevel = Date()
+        }
         let format = AVAudioFormat(cmAudioFormatDescription: description)
         let list = AudioBufferList.allocate(maximumBuffers: Int(format.channelCount))
         defer { free(list.unsafeMutablePointer) }
@@ -153,6 +156,11 @@ final class MicrophoneMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDel
         input.frameLength = AVAudioFrameCount(sample.numSamples)
         do {
             let pcm = try encoder.convert(input)
+            if streamAudio {
+                emit(["type": "audio", "audio": pcm.base64EncodedString()])
+                withExtendedLifetime(block) {}
+                return
+            }
             let bytes = [UInt8](pcm)
             guard bytes.count >= 2 else { return }
             var squares = 0.0
@@ -288,6 +296,15 @@ Task { @MainActor in
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
             let monitor = MicrophoneMonitor()
+            microphoneMonitor = monitor
+            try monitor.start(identifier: CommandLine.arguments[2])
+            return
+        }
+        if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--stream-microphone" {
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
+            let monitor = MicrophoneMonitor()
+            monitor.streamAudio = true
             microphoneMonitor = monitor
             try monitor.start(identifier: CommandLine.arguments[2])
             return
