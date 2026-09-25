@@ -137,6 +137,18 @@ it("restores a persisted pair after switching away and remounting without genera
   expect(quick).toHaveBeenCalledTimes(1);
   expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "search")).toHaveLength(1);
 });
+it("restores the same phrase when its earlier context and summary have changed", async () => {
+  mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "start", english: "Saved opening", russian: "Начало" });
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  await screen.findByText(meetingFallback.english);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection,
+    context: ["Heard: Earlier dialogue was summarized."], summary: "A later rolling summary." }} quickStart={quick} />);
+  await screen.findByText("Saved opening");
+  expect(screen.getByText(meetingFallback.english)).toBeInTheDocument();
+  expect(quick).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "search")).toHaveLength(1);
+});
 it("restores an interrupted opening and preserves old attempts on explicit regeneration", async () => {
   const pendingAnswer = deferred<any>();
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : pendingAnswer.promise);

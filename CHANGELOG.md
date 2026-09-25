@@ -23,6 +23,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Restore a selected meeting card after its earlier context or rolling summary
+  changes, instead of generating the same phrase again.
 - Discard exact transcription-prompt echoes, including long sentence-boundary
   prefixes, before they become transcript turns.
 - Keep the BlackHole live output running when its pipe briefly applies

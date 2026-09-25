@@ -40,13 +40,15 @@ describe("permanent meeting card snapshots", () => {
     expect(store.read()).toHaveLength(2);
     expect(() => store.save({ ...snapshot, progress: "changed" })).toThrow("immutable");
     expect(() => store.save({ ...snapshot, sequence: 3, identity: { ...snapshot.identity, sessionId: "other" } })).toThrow("identity");
+    expect(() => store.save({ ...snapshot, sequence: 3, identity: { ...snapshot.identity, context: ["changed"] } })).toThrow("identity");
   });
-  it("separates text, context, speaker, session, phrase and pack identities", () => {
+  it("keeps phrase identity stable as context and summary evolve", () => {
     for (const identity of [{ ...snapshot.identity, sessionId: "s2" }, { ...snapshot.identity, phraseId: "p2" },
       { ...snapshot.identity, text: "Edited?" }, { ...snapshot.identity, speaker: "Me" },
-      { ...snapshot.identity, context: ["new"] }, { ...snapshot.identity, packId: "pack2" }]) {
+      { ...snapshot.identity, packId: "pack2" }]) {
       expect(meetingCardKey(identity)).not.toBe(meetingCardKey(snapshot.identity));
     }
+    expect(meetingCardKey({ ...snapshot.identity, context: ["new"], summary: "Later summary" })).toBe(meetingCardKey(snapshot.identity));
   });
   it("fails closed on corrupt archives without overwriting them", () => {
     const { store, path } = setup(); writeFileSync(path, "broken");

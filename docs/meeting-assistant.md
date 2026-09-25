@@ -83,7 +83,9 @@ openings, continuations, sources, timings and prior attempts. No opt-in is requi
 The existing session-history format is unchanged; snapshots share its session ID.
 
 Selecting the same phrase again, including after opening its saved session,
-restores the last attempt for that phrase text, speaker, context and pack.
+restores the last attempt for that session, phrase ID, text, speaker and pack.
+Changes to earlier dialogue or the rolling summary do not generate a new
+answer for the same phrase; use “Новый вариант” when a fresh answer is needed.
 Interrupted attempts restore their available opening without generating again.
 Use “Новый вариант” to explicitly generate another attempt, or
 “Экспорт ответов сессии (JSON)” to export every stage and attempt in the session.

@@ -17,7 +17,8 @@ export type MeetingCardSnapshot = {
   progress: string; timings: { openingMs?: number; answerMs?: number };
 };
 export function meetingCardKey(i: MeetingCardIdentity): string {
-  return JSON.stringify([i.sessionId, i.phraseId, i.text, i.speaker, i.context, i.packId, ...(i.summary ? [i.summary] : [])]);
+  // Context and the rolling summary can change after this phrase was answered.
+  return JSON.stringify([i.sessionId, i.phraseId, i.text, i.speaker, i.packId]);
 }
 const string = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
 export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnapshot {
