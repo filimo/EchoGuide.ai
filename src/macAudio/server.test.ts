@@ -79,8 +79,8 @@ describe("Mac audio local bridge", () => {
     const idleResponse = response();
     await bridge.middleware(request("standby", { microphone: "usb" }), idleResponse as unknown as ServerResponse, vi.fn());
     expect(spawned).toHaveBeenCalledWith(["--virtual-output"]);
-    output.line({ type: "ready" });
     expect(spawned).toHaveBeenCalledWith(["--stream-microphone", "usb"]);
+    output.line({ type: "ready" });
     microphone.line({ type: "ready" });
     expect(idleResponse.body).toContain('{"type":"ready"}');
     const chunks: Buffer[] = [];
@@ -135,10 +135,22 @@ describe("Mac audio local bridge", () => {
       reason: "queue_start", outputStage: "queue_start", elapsedMs: 100
     });
     expect(events.find(event => event.type === "mac_audio.standby_ready")).toMatchObject({
-      outputStartupMs: 250, microphoneStartupMs: 550, connectionMs: 800
+      outputStartupMs: 250, microphoneStartupMs: 800, connectionMs: 800
     });
     expect(res.body).toContain('{"type":"ready"}');
     expect(JSON.stringify(events)).not.toContain("usb");
+    res.emit("close");
+  });
+  it("waits for BlackHole when the microphone starts first", async () => {
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "usb" }));
+    test.helper.line({ type: "ready" });
+    test.helper.line({ type: "audio", audio: Buffer.alloc(480).toString("base64") });
+    expect(res.body).not.toContain('{"type":"ready"}');
+    expect(test.outputHelper.stdin.writableLength).toBe(0);
+    test.outputHelper.line({ type: "ready" });
+    expect(res.body).toContain('{"type":"ready"}');
+    expect(test.diagnostic.mock.calls.filter(([event]) => event.type === "mac_audio.standby_ready")).toHaveLength(1);
     res.emit("close");
   });
   it("records the BlackHole stage when output startup exceeds twenty seconds", async () => {

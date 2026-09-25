@@ -65,7 +65,8 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   microphone-only route. EchoGuide's source attribution and two transcription
   sessions stay separate; a BlackHole failure leaves meeting capture running
   and reports an error in the toolbar. Closing EchoGuide or its local server
-  stops the idle route.
+  stops the idle route. The output and microphone start together, and EchoGuide
+  reports readiness when both are available.
 - BlackHole playback keeps a short bounded buffer. If macOS output pauses, older
   queued samples are discarded so the route can resume near the current speech.
   This can skip audio during an output stall; ChatGPT Voice can add its own delay.

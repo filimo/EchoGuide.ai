@@ -142,6 +142,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       let microphone: ChildProcessWithoutNullStreams | undefined;
       let outputReady = false;
       let microphoneReady = false;
+      let readySent = false;
       let outputStage = "process_start";
       let microphoneStage = "permission";
       let stopped = false;
@@ -161,7 +162,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           elapsedMs: Math.round(performance.now() - routeStartedAt), outputStage, microphoneStage,
           outputStartupMs: outputReadyAt ? Math.round(outputReadyAt - routeStartedAt) : -1,
           microphoneStartupMs: microphoneReadyAt ? Math.round(microphoneReadyAt - microphoneStartedAt) : -1,
-          connectionMs: microphoneReadyAt ? Math.round(microphoneReadyAt - routeStartedAt) : -1,
+          connectionMs: outputReadyAt && microphoneReadyAt
+            ? Math.round(Math.max(outputReadyAt, microphoneReadyAt) - routeStartedAt) : -1,
           microphoneChunks,
           microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1,
           outputPendingBytes: output.stdin.writableLength, outputBackpressureWrites, maxOutputPendingBytes };
@@ -182,7 +184,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (stopped) return;
         stopped = true;
         diagnostic("mac_audio.standby_stopped", reason);
-        clearTimeout(timeout);
+        clearTimeout(outputTimeout);
+        clearTimeout(microphoneTimeout);
         clearInterval(heartbeat);
         output.kill();
         microphone?.kill();
@@ -198,10 +201,19 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (!stopped && !res.destroyed) res.write(`${JSON.stringify({ type: "error", message })}\n`);
         stop("error");
       };
-      let timeout = setTimeout(() => {
+      const maybeReady = () => {
+        if (stopped || !outputReady || !microphoneReady || readySent) return;
+        readySent = true;
+        diagnostic("mac_audio.standby_ready");
+        res.write('{"type":"ready"}\n');
+      };
+      const outputTimeout = setTimeout(() => {
         diagnostic("mac_audio.standby_output_error", "startup_timeout");
         fail("BlackHole 2ch did not start. Check the macOS audio device.");
       }, 20_000);
+      const microphoneTimeout = setTimeout(() => fail(microphoneStage === "device_lookup"
+        ? "Выбранный микрофон не отвечает. Переподключи его или выбери другой, затем повтори."
+        : "Selected microphone did not start. Check the macOS audio device."), 30_000);
       res.on("close", stop);
       output.on("error", () => fail("Could not start BlackHole 2ch."));
       output.on("close", () => fail("BlackHole 2ch stopped."));
@@ -229,54 +241,49 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             outputStage = "ready";
             outputReadyAt = performance.now();
             diagnostic("mac_audio.standby_output_ready");
-            clearTimeout(timeout);
-            timeout = setTimeout(() => fail(microphoneStage === "device_lookup"
-              ? "Выбранный микрофон не отвечает. Переподключи его или выбери другой, затем повтори."
-              : "Selected microphone did not start. Check the macOS audio device."), 30_000);
-            microphoneStartedAt = performance.now();
-            microphone = child(["--stream-microphone", options.microphone as string]);
-            microphone.on("error", () => fail("Could not start the selected microphone."));
-            microphone.on("close", () => fail("The selected microphone stopped."));
-            microphone.stdout.on("data", data => {
-              pendingMicrophone += data.toString();
-              if (pendingMicrophone.length > 262_144) return fail("Microphone delivery fell behind.");
-              let boundary: number;
-              while ((boundary = pendingMicrophone.indexOf("\n")) >= 0 && !stopped) {
-                const micLine = pendingMicrophone.slice(0, boundary);
-                pendingMicrophone = pendingMicrophone.slice(boundary + 1);
-                try {
-                  const micEvent = JSON.parse(micLine);
-                  if (micEvent.type === "stage" && ["process_entry", "main_actor", "permission", "device_lookup", "input_creation", "session_start"].includes(micEvent.name)) {
-                    microphoneStage = micEvent.name;
-                    diagnostic("mac_audio.standby_microphone_stage", microphoneStage);
-                  } else if (micEvent.type === "ready") {
-                    microphoneReady = true;
-                    microphoneReadyAt = performance.now();
-                    if (outputReady) {
-                      clearTimeout(timeout);
-                      diagnostic("mac_audio.standby_ready");
-                      res.write('{"type":"ready"}\n');
-                    }
-                  } else if (micEvent.type === "audio" && typeof micEvent.audio === "string") {
-                    if (!microphoneReady) continue;
-                    const pcm = Buffer.from(micEvent.audio, "base64");
-                    if (!pcm.length || pcm.length % 2 || pcm.length > 192_000) return fail("Could not read the selected microphone.");
-                    const receivedAt = performance.now();
-                    if (lastMicrophoneChunkAt && receivedAt - lastMicrophoneChunkAt > 1000) {
-                      diagnostic("mac_audio.standby_microphone_gap", String(Math.round(receivedAt - lastMicrophoneChunkAt)));
-                    }
-                    lastMicrophoneChunkAt = receivedAt;
-                    microphoneChunks += 1;
-                    const stereo = mixStereo(pcm, Buffer.alloc(0));
-                    const pendingBytes = output.stdin.writableLength + stereo.length;
-                    maxOutputPendingBytes = Math.max(maxOutputPendingBytes, pendingBytes);
-                    if (pendingBytes > 1_000_000) return fail("BlackHole audio delivery fell behind.");
-                    if (!output.stdin.write(stereo)) outputBackpressureWrites += 1;
-                  } else fail("Could not read the selected microphone.");
-                } catch { fail("Could not read the selected microphone."); }
-              }
-            });
+            clearTimeout(outputTimeout);
+            maybeReady();
           } catch { fail("Invalid BlackHole response."); }
+        }
+      });
+      microphoneStartedAt = performance.now();
+      microphone = child(["--stream-microphone", options.microphone as string]);
+      microphone.on("error", () => fail("Could not start the selected microphone."));
+      microphone.on("close", () => fail("The selected microphone stopped."));
+      microphone.stdout.on("data", data => {
+        pendingMicrophone += data.toString();
+        if (pendingMicrophone.length > 262_144) return fail("Microphone delivery fell behind.");
+        let boundary: number;
+        while ((boundary = pendingMicrophone.indexOf("\n")) >= 0 && !stopped) {
+          const micLine = pendingMicrophone.slice(0, boundary);
+          pendingMicrophone = pendingMicrophone.slice(boundary + 1);
+          try {
+            const micEvent = JSON.parse(micLine);
+            if (micEvent.type === "stage" && ["process_entry", "main_actor", "permission", "device_lookup", "input_creation", "session_start"].includes(micEvent.name)) {
+              microphoneStage = micEvent.name;
+              diagnostic("mac_audio.standby_microphone_stage", microphoneStage);
+            } else if (micEvent.type === "ready") {
+              microphoneReady = true;
+              microphoneReadyAt = performance.now();
+              clearTimeout(microphoneTimeout);
+              maybeReady();
+            } else if (micEvent.type === "audio" && typeof micEvent.audio === "string") {
+              if (!readySent) continue;
+              const pcm = Buffer.from(micEvent.audio, "base64");
+              if (!pcm.length || pcm.length % 2 || pcm.length > 192_000) return fail("Could not read the selected microphone.");
+              const receivedAt = performance.now();
+              if (lastMicrophoneChunkAt && receivedAt - lastMicrophoneChunkAt > 1000) {
+                diagnostic("mac_audio.standby_microphone_gap", String(Math.round(receivedAt - lastMicrophoneChunkAt)));
+              }
+              lastMicrophoneChunkAt = receivedAt;
+              microphoneChunks += 1;
+              const stereo = mixStereo(pcm, Buffer.alloc(0));
+              const pendingBytes = output.stdin.writableLength + stereo.length;
+              maxOutputPendingBytes = Math.max(maxOutputPendingBytes, pendingBytes);
+              if (pendingBytes > 1_000_000) return fail("BlackHole audio delivery fell behind.");
+              if (!output.stdin.write(stereo)) outputBackpressureWrites += 1;
+            } else fail("Could not read the selected microphone.");
+          } catch { fail("Could not read the selected microphone."); }
         }
       });
       return;
