@@ -103,6 +103,11 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   are recorded in `.echoguide/diagnostics/realtime-YYYY-MM-DD.jsonl` with a capture
   session ID. Reasons distinguish queue overflow, sender clock stalls, upstream
   errors/disconnects, native exit, browser backpressure and client/server shutdown.
+  BlackHole output reports its own readiness, failure reason, pending bytes and
+  backpressure count. Idle routing uses a separate route ID and reports aggregate
+  microphone/output counters every 30 seconds. A microphone packet gap over one
+  second is logged for either mode. These events contain no audio, transcript,
+  microphone ID or application name.
 - Raw audio and transcripts are not written to diagnostic logs. Existing local session
   history still saves text, roles and optional source/timestamp metadata under `.echoguide/`.
 - The Node server also saves a mixed stereo WAV: both voices in both channels.

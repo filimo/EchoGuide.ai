@@ -69,6 +69,18 @@ export type MacAudioServerDependencies = {
   diagnostic?: (event: Record<string, string | number>) => void;
 };
 
+function virtualOutputErrorReason(message: unknown): string {
+  switch (message) {
+    case "BlackHole 2ch is unavailable as an output device.": return "device_unavailable";
+    case "Could not create the BlackHole audio queue.": return "queue_creation";
+    case "Could not read the BlackHole device ID.": return "device_id";
+    case "Could not route audio to BlackHole 2ch.": return "device_selection";
+    case "Could not allocate BlackHole audio buffers.": return "buffer_allocation";
+    case "Could not start BlackHole output.": return "queue_start";
+    default: return "native_error";
+  }
+}
+
 export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) {
   const children = new Set<ChildProcessWithoutNullStreams>();
   let active = false;
@@ -132,8 +144,17 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       let stopped = false;
       let pendingOutput = "";
       let pendingMicrophone = "";
+      const routeId = randomUUID();
+      const routeStartedAt = performance.now();
+      let microphoneChunks = 0;
+      let lastMicrophoneChunkAt = 0;
+      let outputBackpressureWrites = 0;
+      let maxOutputPendingBytes = 0;
       const diagnostic = (type: string, reason = "") => {
-        const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, reason };
+        const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, routeId, reason,
+          elapsedMs: Math.round(performance.now() - routeStartedAt), microphoneStage, microphoneChunks,
+          microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1,
+          outputPendingBytes: output.stdin.writableLength, outputBackpressureWrites, maxOutputPendingBytes };
         try {
           if (deps.diagnostic) deps.diagnostic(event);
           else {
@@ -144,11 +165,15 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         } catch { /* Diagnostics must not interrupt audio routing. */ }
       };
       diagnostic("mac_audio.standby_started");
+      const heartbeat = setInterval(() => {
+        if (microphoneReady && !stopped) diagnostic("mac_audio.standby_stats");
+      }, 30_000);
       const stop = (reason = "client_disconnected") => {
         if (stopped) return;
         stopped = true;
         diagnostic("mac_audio.standby_stopped", reason);
         clearTimeout(timeout);
+        clearInterval(heartbeat);
         output.kill();
         microphone?.kill();
         active = false;
@@ -177,7 +202,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           pendingOutput = pendingOutput.slice(end + 1);
           try {
             const event = JSON.parse(line);
-            if (event.type !== "ready") return fail("BlackHole 2ch could not start.");
+            if (event.type !== "ready") {
+              diagnostic("mac_audio.standby_output_error", event.type === "error"
+                ? virtualOutputErrorReason(event.message) : "invalid_response");
+              return fail("BlackHole 2ch could not start.");
+            }
             outputReady = true;
             diagnostic("mac_audio.standby_output_ready");
             clearTimeout(timeout);
@@ -210,9 +239,17 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                     if (!microphoneReady) continue;
                     const pcm = Buffer.from(micEvent.audio, "base64");
                     if (!pcm.length || pcm.length % 2 || pcm.length > 192_000) return fail("Could not read the selected microphone.");
+                    const receivedAt = performance.now();
+                    if (lastMicrophoneChunkAt && receivedAt - lastMicrophoneChunkAt > 1000) {
+                      diagnostic("mac_audio.standby_microphone_gap", String(Math.round(receivedAt - lastMicrophoneChunkAt)));
+                    }
+                    lastMicrophoneChunkAt = receivedAt;
+                    microphoneChunks += 1;
                     const stereo = mixStereo(pcm, Buffer.alloc(0));
-                    if (output.stdin.writableLength + stereo.length > 1_000_000) return fail("BlackHole audio delivery fell behind.");
-                    output.stdin.write(stereo);
+                    const pendingBytes = output.stdin.writableLength + stereo.length;
+                    maxOutputPendingBytes = Math.max(maxOutputPendingBytes, pendingBytes);
+                    if (pendingBytes > 1_000_000) return fail("BlackHole audio delivery fell behind.");
+                    if (!output.stdin.write(stereo)) outputBackpressureWrites += 1;
                   } else fail("Could not read the selected microphone.");
                 } catch { fail("Could not read the selected microphone."); }
               }
@@ -358,13 +395,20 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     const recordings = deps.recordings ?? recordingStore;
     let recording: Recording | undefined;
     const startedAt = performance.now();
+    let outputHelper: ChildProcessWithoutNullStreams | undefined;
+    let outputBackpressureWrites = 0;
+    let maxOutputPendingBytes = 0;
+    let lastMicrophoneChunkAt = 0;
     const diagnostic = (type: string, reason = "") => {
       const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, sessionId, reason,
         elapsedMs: Math.round(performance.now() - startedAt),
         microphoneQueueBytes: audioQueues.get("microphone")?.length ?? 0,
         applicationQueueBytes: audioQueues.get("application")?.length ?? 0,
         microphoneChunks: frames.get("microphone")?.chunks ?? 0,
-        applicationChunks: frames.get("application")?.chunks ?? 0 };
+        applicationChunks: frames.get("application")?.chunks ?? 0,
+        microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1,
+        outputPendingBytes: outputHelper?.stdin.writableLength ?? 0,
+        outputBackpressureWrites, maxOutputPendingBytes };
       try {
         if (deps.diagnostic) deps.diagnostic(event);
         else {
@@ -380,8 +424,8 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     const turns = new Map<string, number>();
     const completed = new Set<string>();
     let helper: ChildProcessWithoutNullStreams | undefined;
-    let outputHelper: ChildProcessWithoutNullStreams | undefined;
     let outputReady = false;
+    let failVirtualOutput: ((reason: string) => void) | undefined;
     let outputTimeout: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -509,8 +553,12 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
                   if (outputReady && outputHelper && recordingChannels.length === 2) {
                     const mixed = mixStereo(recordingChannels[0], recordingChannels[1]);
                     try {
-                      if (!outputHelper.stdin.write(mixed)) outputHelper.kill();
-                    } catch { outputHelper.kill(); }
+                      const pendingBytes = outputHelper.stdin.writableLength + mixed.length;
+                      maxOutputPendingBytes = Math.max(maxOutputPendingBytes, pendingBytes);
+                      if (pendingBytes > 1_000_000) {
+                        failVirtualOutput?.("delivery_backpressure");
+                      } else if (!outputHelper.stdin.write(mixed)) outputBackpressureWrites += 1;
+                    } catch { failVirtualOutput?.("delivery_error"); }
                   }
                 }
               }, 100);
@@ -524,6 +572,13 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             const stats = frames.get(event.source) ?? { chunks: 0, lastLevel: 0 };
             stats.chunks += 1;
             frames.set(event.source, stats);
+            if (event.source === "microphone") {
+              const receivedAt = performance.now();
+              if (lastMicrophoneChunkAt && receivedAt - lastMicrophoneChunkAt > 1000) {
+                diagnostic("mac_audio.microphone_gap", String(Math.round(receivedAt - lastMicrophoneChunkAt)));
+              }
+              lastMicrophoneChunkAt = receivedAt;
+            }
             const queued = audioQueues.get(event.source)!;
             if (queued.length + pcm.length > maxNativeAudioQueueBytes) { fail("Native audio delivery fell behind. Restart live mode.", "native_queue_overflow"); break; }
             audioQueues.set(event.source, Buffer.concat([queued, pcm]));
@@ -550,26 +605,28 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       outputHelper = child(["--virtual-output"]);
       let outputBuffer = "";
       let settled = false;
-      const outputFailed = () => {
+      const outputFailed = (reason: string) => {
         if (stopped) return;
         clearTimeout(outputTimeout);
         const wasReady = outputReady;
         if (settled && !wasReady) return;
         settled = true;
         outputReady = false;
+        diagnostic("mac_audio.virtual_output_error", reason);
         send({ type: "virtual-output", status: "error", message: wasReady
           ? "BlackHole output stopped. EchoGuide capture continues."
           : "BlackHole 2ch could not start. EchoGuide capture continues." });
         outputHelper?.kill();
         if (!wasReady) launchCapture();
       };
-      outputHelper.on("error", outputFailed);
-      outputHelper.on("close", outputFailed);
-      outputHelper.stdin.on("error", outputFailed);
-      outputTimeout = setTimeout(outputFailed, 5000);
+      failVirtualOutput = outputFailed;
+      outputHelper.on("error", () => outputFailed("process_error"));
+      outputHelper.on("close", () => outputFailed("process_closed"));
+      outputHelper.stdin.on("error", () => outputFailed("delivery_error"));
+      outputTimeout = setTimeout(() => outputFailed("startup_timeout"), 10_000);
       outputHelper.stdout.on("data", chunk => {
         outputBuffer += chunk.toString();
-        if (outputBuffer.length > 4096) { outputFailed(); return; }
+        if (outputBuffer.length > 4096) { outputFailed("invalid_response"); return; }
         let end: number;
         while ((end = outputBuffer.indexOf("\n")) >= 0) {
           const line = outputBuffer.slice(0, end);
@@ -580,10 +637,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
               settled = true;
               clearTimeout(outputTimeout);
               outputReady = true;
+              diagnostic("mac_audio.virtual_output_ready");
               send({ type: "virtual-output", status: "ready" });
               launchCapture();
-            } else if (event.type === "error") outputFailed();
-          } catch { outputFailed(); }
+            } else if (event.type === "error") outputFailed(virtualOutputErrorReason(event.message));
+          } catch { outputFailed("invalid_response"); }
         }
       });
     }

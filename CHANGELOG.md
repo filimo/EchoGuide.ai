@@ -21,6 +21,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Keep the BlackHole live output running when its pipe briefly applies
+  backpressure. Correlate standby attempts and log output pressure and
+  microphone delivery gaps without storing audio or device identifiers.
 - Ignore native call audio received before capture is ready, allow a short
   startup burst, and give a slow microphone lookup more time before reporting
   a BlackHole routing error.

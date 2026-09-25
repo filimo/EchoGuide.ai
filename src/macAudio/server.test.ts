@@ -70,6 +70,7 @@ describe("Mac audio local bridge", () => {
     const spawned = vi.fn((args: string[]) => (args[0] === "--virtual-output" ? output :
       args[0] === "--stream-microphone" ? microphone : capture) as unknown as ChildProcessWithoutNullStreams);
     const bridge = createMacAudioMiddleware({ platform: "darwin", helperExists: () => true,
+      diagnostic: vi.fn(),
       spawnHelper: spawned, readEnv: () => "OPENAI_API_KEY=test-only",
       connectSocket: () => { const socket = new Socket(); queueMicrotask(() => {
         socket.emit("open"); socket.message({ type: "session.updated" });
@@ -107,6 +108,15 @@ describe("Mac audio local bridge", () => {
     expect(res.status).toBe(400);
     expect(test.spawnHelper).not.toHaveBeenCalled();
   });
+  it("classifies a native BlackHole startup error without storing its message", async () => {
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "usb" }));
+    test.outputHelper.line({ type: "error", message: "Could not route audio to BlackHole 2ch." });
+    expect(res.body).toContain("BlackHole 2ch could not start.");
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.standby_output_error", reason: "device_selection"
+    }));
+  });
   it("records a standby routing failure without storing microphone audio", async () => {
     const test = setup();
     const res = await test.run(request("standby", { microphone: "usb" }));
@@ -118,6 +128,42 @@ describe("Mac audio local bridge", () => {
       type: "mac_audio.standby_error", reason: "The selected microphone stopped."
     }));
     expect(JSON.stringify(test.diagnostic.mock.calls)).not.toContain("usb");
+  });
+  it("correlates standby events and records a microphone delivery gap without device identifiers", async () => {
+    let clock = 1;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const test = setup();
+    const res = await test.run(request("standby", { microphone: "usb" }));
+    test.outputHelper.line({ type: "ready" });
+    test.helper.line({ type: "ready" });
+    const audio = { type: "audio", audio: Buffer.alloc(480).toString("base64") };
+    clock = 10;
+    test.helper.line(audio);
+    clock = 1510;
+    test.helper.line(audio);
+    res.emit("close");
+    const events = test.diagnostic.mock.calls.map(([event]) => event);
+    expect(events.find(event => event.type === "mac_audio.standby_microphone_gap")).toMatchObject({
+      reason: "1500", microphoneChunks: 1
+    });
+    expect(new Set(events.map(event => event.routeId)).size).toBe(1);
+    expect(JSON.stringify(events)).not.toContain("usb");
+  });
+  it("records aggregate standby health after thirty seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      const res = await test.run(request("standby", { microphone: "usb" }));
+      test.outputHelper.line({ type: "ready" });
+      test.helper.line({ type: "ready" });
+      test.helper.line({ type: "audio", audio: Buffer.alloc(480).toString("base64") });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+        type: "mac_audio.standby_stats", microphoneChunks: 1,
+        outputPendingBytes: expect.any(Number)
+      }));
+      res.emit("close");
+    } finally { vi.useRealTimers(); }
   });
   it("identifies a selected microphone that stops responding during startup", async () => {
     vi.useFakeTimers();
@@ -159,6 +205,38 @@ describe("Mac audio local bridge", () => {
     res.emit("close");
     expect(test.outputHelper.kill).toHaveBeenCalled();
   });
+  it("keeps BlackHole live output running when the write buffer applies normal backpressure", async () => {
+    const test = setup();
+    const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
+      virtualOutput: true }));
+    test.ready();
+    test.outputHelper.line({ type: "ready" });
+    const write = vi.spyOn(test.outputHelper.stdin, "write").mockReturnValue(false);
+    test.helper.line({ type: "ready" });
+    await vi.waitFor(() => expect(write).toHaveBeenCalled());
+    expect(test.outputHelper.kill).not.toHaveBeenCalled();
+    expect(res.body).not.toContain('"status":"error"');
+    res.emit("close");
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.stopped", outputBackpressureWrites: expect.any(Number),
+      maxOutputPendingBytes: expect.any(Number)
+    }));
+  });
+  it("records the BlackHole failure reason while keeping meeting capture running", async () => {
+    const test = setup();
+    const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
+      virtualOutput: true }));
+    test.ready();
+    test.outputHelper.line({ type: "ready" });
+    test.helper.line({ type: "ready" });
+    test.outputHelper.emit("close");
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.virtual_output_error", reason: "process_closed"
+    }));
+    expect(res.body).toContain('"type":"virtual-output","status":"error"');
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    res.emit("close");
+  });
   it("requires an explicit physical microphone when virtual output is enabled", async () => {
     const test = setup();
     const res = await test.run(request("session", { pid: 123, microphone: "default", language: "english",
@@ -171,10 +249,13 @@ describe("Mac audio local bridge", () => {
     const res = await test.run(request("session", { pid: 123, microphone: "usb", language: "english",
       virtualOutput: true }));
     test.ready();
-    test.outputHelper.line({ type: "error", message: "Device missing" });
+    test.outputHelper.line({ type: "error", message: "Could not create the BlackHole audio queue." });
     expect(test.spawnHelper).toHaveBeenCalledWith(["--capture", "123", "usb"]);
     test.helper.line({ type: "ready" });
     expect(res.body).toContain('"type":"virtual-output","status":"error"');
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mac_audio.virtual_output_error", reason: "queue_creation"
+    }));
     expect(res.body).toContain('{"type":"ready"}\n');
   });
   it("streams microphone test levels without recording or connecting to OpenAI", async () => {
