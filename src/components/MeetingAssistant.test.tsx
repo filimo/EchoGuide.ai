@@ -17,16 +17,48 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); });
 const packs = { activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-19", filenames: ["notes.md"], sectionCount: 1 }] };
 const selection = { id: "one", text: "What is the plan?", speaker: "Heard", context: ["Heard: Let's discuss the pilot."] };
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; }
 function mockRoutes() {
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
 }
 describe("manual meeting assistance", () => {
+  it("requests the paired general option and retrieval in parallel", async () => {
+    const search = deferred<{ ticket: string; found: number }>();
+    const pair = { opening: { mode: "start", english: "I would define the goal.", russian: "Я бы определил цель." },
+      continuation: { english: "Then I would test one case.", russian: "Затем я бы проверил один случай." } };
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? search.promise :
+      path === "general" ? pair : meetingFallback);
+    render(<MeetingAssistant sessionId="session-one" selection={selection} />);
+    await screen.findByText("Then I would test one case.");
+    expect(meetingRequest).toHaveBeenCalledWith("general", { transcript: selection.text,
+      recentContext: selection.context, speakerLabel: selection.speaker }, expect.any(AbortSignal));
+    expect(meetingRequest).toHaveBeenCalledWith("search", expect.anything(), expect.any(AbortSignal));
+    expect(vi.mocked(meetingRequest).mock.calls.some(c => c[0] === "answer")).toBe(false);
+    await act(async () => search.resolve({ ticket: "t", found: 1 }));
+    await screen.findByText(meetingFallback.english);
+    expect(snapshots.at(-1)?.general).toEqual(pair);
+    expect(meetingRequest).toHaveBeenCalledWith("answer", { packId: "a", ticket: "t", opening: pair.opening }, expect.any(AbortSignal));
+  });
+  it("keeps a general continuation visible when the material search fails", async () => {
+    const search = deferred<never>();
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? search.promise : meetingFallback);
+    const general = vi.fn().mockResolvedValue({ opening: { mode: "start", english: "I would first define the goal.", russian: "Сначала я бы определил цель." },
+      continuation: { english: "Then I would test one small case and compare the results.", russian: "Затем я бы проверил один небольшой случай и сравнил результаты." } });
+    render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={general} />);
+    await screen.findByText("I would first define the goal.");
+    expect(meetingRequest).toHaveBeenCalledWith("search", expect.anything(), expect.any(AbortSignal));
+    expect(screen.getByText("Then I would test one small case and compare the results.")).toBeInTheDocument();
+    await act(async () => search.reject(new Error("search unavailable")));
+    await screen.findByText(meetingFallback.english);
+    expect(screen.getByText("Then I would test one small case and compare the results.")).toBeInTheDocument();
+    expect(snapshots.at(-1)?.general?.continuation?.english).toContain("test one small case");
+  });
   it("shows and saves why the full answer fell back after an opening", async () => {
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search"
       ? { ticket: "t", found: 2 } : meetingFallbackFor("model_no_answer", 2));
     render(<MeetingAssistant sessionId="session-one" selection={selection}
-      quickStart={async () => ({ mode: "start", english: "I would compare both options.", russian: "Я бы сравнил оба варианта." })} />);
+      generalAnswer={async () => ({ mode: "start", english: "I would compare both options.", russian: "Я бы сравнил оба варианта." })} />);
     await screen.findByText(meetingFallback.english);
     fireEvent.click(screen.getByText("Диагностика ответа"));
     expect(screen.getByText(/model_no_answer/)).toHaveTextContent("Найдено разделов: 2");
@@ -37,7 +69,7 @@ describe("manual meeting assistance", () => {
       if (path === "packs") return packs;
       throw new Error("synthetic search failure");
     });
-    render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={async () => null} />);
+    render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={async () => null} />);
     await screen.findByText(meetingFallback.english);
     fireEvent.click(screen.getByText("Диагностика ответа"));
     expect(screen.getByText(/search_error/)).toHaveTextContent("Найдено разделов: неизвестно");
@@ -49,7 +81,7 @@ describe("manual meeting assistance", () => {
       sessionId="session-one"
       selection={selection}
       russianMeaning="Каков план?"
-      quickStart={async () => null}
+      generalAnswer={async () => null}
     />);
     await screen.findByText(meetingFallback.english);
     const question = screen.getByText("Каков план?").closest(".meeting-question");
@@ -61,13 +93,13 @@ describe("manual meeting assistance", () => {
 
   it("waits for selection and does not regenerate the same selected phrase", async () => {
     mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "start", english: "Opening", russian: "Начало" });
-    const { rerender } = render(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);
+    const { rerender } = render(<MeetingAssistant sessionId="session-one" selection={null} generalAnswer={quick} />);
     await waitFor(() => expect(meetingRequest).toHaveBeenCalled());
     expect(quick).not.toHaveBeenCalled();
-    rerender(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+    rerender(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
     await screen.findByText(meetingFallback.english);
     const opening = screen.getByText("Opening");
-    rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection }} quickStart={quick} />);
+    rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection }} generalAnswer={quick} />);
     expect(quick).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Opening")).toBe(opening);
     expect(quick).toHaveBeenCalledWith(selection.text, selection.context, "Heard", expect.any(AbortSignal));
@@ -77,16 +109,16 @@ describe("manual meeting assistance", () => {
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const first = deferred<any>(); const answer = deferred<any>();
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : answer.promise);
-    render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={() => first.promise} />);
+    render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={() => first.promise} />);
     await waitFor(() => expect(meetingRequest).toHaveBeenCalledWith("search", expect.anything(), expect.any(AbortSignal)));
     now = 1350;
     await act(async () => first.resolve({ mode: "start", english: "Opening", russian: "Начало" }));
-    expect(screen.getByText("Начало: 1.3 с")).toBeInTheDocument();
+    expect(screen.getByText("Начало и общий вариант: 1.3 с")).toBeInTheDocument();
     expect(screen.queryByText(/Поиск и полный ответ:/)).not.toBeInTheDocument();
     const opening = screen.getByText("Opening");
     now = 4600;
     await act(async () => answer.resolve(meetingFallback));
-    expect(screen.getByText("Начало: 1.3 с")).toBeInTheDocument();
+    expect(screen.getByText("Начало и общий вариант: 1.3 с")).toBeInTheDocument();
     expect(screen.getByText("Поиск и полный ответ: 4.5 с")).toBeInTheDocument();
     expect(screen.getByText("Opening")).toBe(opening);
     expect(screen.getByText(meetingFallback.english)).toBeInTheDocument();
@@ -94,7 +126,7 @@ describe("manual meeting assistance", () => {
   it("lets evidence answer when the fast opening asks for clarification", async () => {
     const grounded = { status: "grounded", english: "I test ideas on real tasks.", russian: "Я проверяю идеи на реальных задачах.", sources: [] };
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : grounded);
-    render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={async () => ({ mode: "clarify", english: "Which role?", russian: "Какая роль?" })} />);
+    render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={async () => ({ mode: "clarify", english: "Which role?", russian: "Какая роль?" })} />);
     await screen.findByText(grounded.english);
     expect(screen.queryByText("Which role?")).not.toBeInTheDocument();
     expect(screen.getByText("Ответ")).toBeInTheDocument();
@@ -102,7 +134,7 @@ describe("manual meeting assistance", () => {
   });
   it("honors explicit selection even when the opening model chooses wait", async () => {
     mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "wait", english: "", russian: "" });
-    render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, speaker: "Me" }} quickStart={quick} />);
+    render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, speaker: "Me" }} generalAnswer={quick} />);
     await screen.findByText(meetingFallback.english);
     expect(screen.queryByText("Начни так")).not.toBeInTheDocument();
   });
@@ -111,9 +143,9 @@ describe("manual meeting assistance", () => {
     vi.mocked(meetingRequest).mockImplementation(async (path, body: any) => path === "packs" ? packs : path === "search" ?
       (body.transcript === selection.text ? old.promise : { ticket: "new", found: 1 }) : meetingFallback);
     const quick = vi.fn().mockResolvedValue(null);
-    const { rerender } = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+    const { rerender } = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
     await waitFor(() => expect(quick).toHaveBeenCalledTimes(1));
-    rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection, id: "two", text: "Who owns it?" }} quickStart={quick} />);
+    rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection, id: "two", text: "Who owns it?" }} generalAnswer={quick} />);
     await screen.findByText(meetingFallback.english);
     await act(async () => old.resolve({ ticket: "old", found: 1 }));
     expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "answer")).toHaveLength(1);
@@ -124,26 +156,26 @@ describe("manual meeting assistance", () => {
 
 it("restores a persisted pair after switching away and remounting without generation", async () => {
   mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "start", english: "Saved opening", russian: "Начало" });
-  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
   expect(snapshots.some(r => r.phase === "opening" && !r.answer)).toBe(true);
-  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);
-  view.rerender(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} generalAnswer={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText("Saved opening");
   expect(quick).toHaveBeenCalledTimes(1);
   view.unmount();
-  render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
   expect(quick).toHaveBeenCalledTimes(1);
   expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "search")).toHaveLength(1);
 });
 it("restores the same phrase when its earlier context and summary have changed", async () => {
   mockRoutes(); const quick = vi.fn().mockResolvedValue({ mode: "start", english: "Saved opening", russian: "Начало" });
-  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
-  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} generalAnswer={quick} />);
   view.rerender(<MeetingAssistant sessionId="session-one" selection={{ ...selection,
-    context: ["Heard: Earlier dialogue was summarized."], summary: "A later rolling summary." }} quickStart={quick} />);
+    context: ["Heard: Earlier dialogue was summarized."], summary: "A later rolling summary." }} generalAnswer={quick} />);
   await screen.findByText("Saved opening");
   expect(screen.getByText(meetingFallback.english)).toBeInTheDocument();
   expect(quick).toHaveBeenCalledTimes(1);
@@ -153,12 +185,12 @@ it("restores an interrupted opening and preserves old attempts on explicit regen
   const pendingAnswer = deferred<any>();
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : pendingAnswer.promise);
   const quick = vi.fn().mockResolvedValue({ mode: "start", english: "First opening", russian: "Первое начало" });
-  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText("First opening");
   const originalAttempt = snapshots.at(-1)!.attemptId;
-  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={null} generalAnswer={quick} />);
   await act(async () => pendingAnswer.resolve(meetingFallback));
-  view.rerender(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText("First opening");
   expect(screen.queryByText(meetingFallback.english)).not.toBeInTheDocument();
   expect(quick).toHaveBeenCalledTimes(1);
@@ -170,18 +202,18 @@ it("restores an interrupted opening and preserves old attempts on explicit regen
 });
 it("isolates session and edited question caches", async () => {
   mockRoutes(); const quick = vi.fn().mockResolvedValue(null);
-  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
-  view.rerender(<MeetingAssistant sessionId="session-two" selection={selection} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-two" selection={selection} generalAnswer={quick} />);
   await waitFor(() => expect(quick).toHaveBeenCalledTimes(2));
   await screen.findByText(meetingFallback.english);
-  view.rerender(<MeetingAssistant sessionId="session-two" selection={{ ...selection, text: "Edited question?" }} quickStart={quick} />);
+  view.rerender(<MeetingAssistant sessionId="session-two" selection={{ ...selection, text: "Edited question?" }} generalAnswer={quick} />);
   await waitFor(() => expect(quick).toHaveBeenCalledTimes(3));
 });
 it("does not generate when history cannot be read", async () => {
   mockRoutes(); vi.mocked(meetingHistoryClient.load).mockRejectedValue(new Error("offline"));
   const quick = vi.fn();
-  render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(/Не удалось прочитать историю/);
   expect(quick).not.toHaveBeenCalled();
 });
@@ -190,7 +222,7 @@ it("sends the same focused question to opening and retrieval, retaining raw inpu
   mockRoutes(); const quick = vi.fn().mockResolvedValue(null);
   const text = "Хорошо объяснил прежнюю тему. А теперь следующий вопрос: How would you measure total effort?";
   const raw = { ...selection, text, context: [`Me: ${englishRealtimeTranscriptionPrompt}`, "Me: We discussed review time."] };
-  render(<MeetingAssistant sessionId="session-one" selection={raw} quickStart={quick} />);
+  render(<MeetingAssistant sessionId="session-one" selection={raw} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
   expect(quick).toHaveBeenCalledWith("How would you measure total effort?", ["Me: We discussed review time."], "Heard", expect.any(AbortSignal));
   expect(meetingRequest).toHaveBeenCalledWith("search", { packId: "a", transcript: "How would you measure total effort?", recentContext: ["Me: We discussed review time."] }, expect.any(AbortSignal));
@@ -200,7 +232,7 @@ it("sends the same focused question to opening and retrieval, retaining raw inpu
 });
 it("does not send a prompt-only selected turn to either generator", async () => {
   mockRoutes(); const quick = vi.fn();
-  render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, text: englishRealtimeTranscriptionPrompt }} quickStart={quick} />);
+  render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, text: englishRealtimeTranscriptionPrompt }} generalAnswer={quick} />);
   await screen.findByText(/Это служебный текст распознавания/);
   expect(quick).not.toHaveBeenCalled();
   expect(vi.mocked(meetingRequest).mock.calls.some(c => c[0] === "search")).toBe(false);
@@ -208,13 +240,13 @@ it("does not send a prompt-only selected turn to either generator", async () => 
 });
 it("restores legacy snapshots unchanged until explicit regeneration", async () => {
   mockRoutes(); const quick = vi.fn().mockResolvedValue(null);
-  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  const view = render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(meetingFallback.english);
   view.unmount();
   snapshots = snapshots.map(({ generationInput: _ignored, ...legacy }) => legacy);
   const old = structuredClone(snapshots);
   quick.mockClear();
-  render(<MeetingAssistant sessionId="session-one" selection={selection} quickStart={quick} />);
+  render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(/До фильтрации входа/);
   expect(quick).not.toHaveBeenCalled();
   expect(snapshots).toEqual(old);

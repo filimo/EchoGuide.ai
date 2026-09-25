@@ -15,6 +15,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Prepare a source-independent spoken continuation together with the meeting
+  opening while document retrieval runs. Show it as a separate option below the
+  source-backed answer and restore both options from local session history.
 - Show the reason behind a meeting-answer fallback in the card and save its
   reason code and retrieved-section count in session answer exports.
 - Use a ten-minute conversation window in meeting mode and summarize older

@@ -9,6 +9,7 @@ import { spokenProductQuestion } from "./spokenProduct";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
 import type { QuickStart } from "../realtime/quickStart";
 import { maxMeetingSummaryCharacters } from "./conversationContext";
+import { buildMeetingGeneralRequest, isMeetingGeneralAnswer } from "./generalAnswer";
 
 type StoredPack = MeetingPack & { storeId?: string; batchId?: string; fileIds: string[]; sections: MeetingSection[]; fileMap: Record<string, string> };
 type StoredState = { packs: StoredPack[]; activePackId: string | null };
@@ -133,6 +134,17 @@ export class MeetingService {
     const summary = JSON.parse(output ?? "null")?.summary;
     if (typeof summary !== "string" || !summary.trim() || summary.length > maxMeetingSummaryCharacters) throw new Error("Invalid summary output");
     return summary.trim();
+  }
+  async general(transcript: string, recentContext: string[], speakerLabel: string) {
+    const result = await this.api("/responses", "POST", buildMeetingGeneralRequest(
+      transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel
+    ), 6000);
+    if (result.status === "incomplete") throw new Error("General answer incomplete");
+    const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? [])
+      .find((part: any) => part.type === "output_text")?.text;
+    const answer: unknown = JSON.parse(output ?? "null");
+    if (!isMeetingGeneralAnswer(answer)) throw new Error("Invalid general answer");
+    return answer;
   }
   async search(packId: string, transcript: string, recentContext: string[], summary = "") {
     const prepared = prepareGenerationInput(transcript, recentContext);

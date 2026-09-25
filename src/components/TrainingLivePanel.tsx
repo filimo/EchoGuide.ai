@@ -3631,7 +3631,7 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} conversationContextWarning={meetingSummaryError} quickStart={generateQuickStart} /> : <>
+          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} conversationContextWarning={meetingSummaryError} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>

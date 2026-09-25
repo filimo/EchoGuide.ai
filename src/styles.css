@@ -1654,10 +1654,11 @@ textarea {
 .meeting-packs { list-style: none; padding: 0; max-height: 360px; overflow-y: auto; }
 .meeting-packs li { padding: .8rem 0; border-bottom: 1px solid #cbd5e1; overflow-wrap: anywhere; }
 .meeting-packs p { margin: .4rem 0; }
-.meeting-opening, .meeting-answer { margin-top: 1rem; padding: 1rem; border-radius: 12px; background: #f0f7ff; color: #17202f; }
+.meeting-opening, .meeting-answer, .meeting-general { margin-top: 1rem; padding: 1rem; border-radius: 12px; background: #f0f7ff; color: #17202f; }
 .meeting-answer { background: #edf8f2; }
-.meeting-opening p[lang=en], .meeting-answer p[lang=en] { font-size: 1.15rem; line-height: 1.55; }
-.meeting-opening p[lang=ru], .meeting-answer p[lang=ru] { color: #475569; }
+.meeting-general { background: #fff7ed; }
+.meeting-opening p[lang=en], .meeting-answer p[lang=en], .meeting-general p[lang=en] { font-size: 1.15rem; line-height: 1.55; }
+.meeting-opening p[lang=ru], .meeting-answer p[lang=ru], .meeting-general p[lang=ru] { color: #475569; }
 .meeting-question { border-left: 3px solid #94a3b8; padding-left: .7rem; }
 .meeting-question > p { margin: 0; }
 .meeting-question details { margin-top: .35rem; color: #475569; }
@@ -1763,11 +1764,11 @@ textarea {
 .desktop-workspace .meeting-assistant > .hint { font-size: 12px; margin: 7px 0; }
 .desktop-workspace .meeting-question { font-size: 13px; line-height: 1.4; margin: 8px 0; }
 .desktop-workspace .meeting-assistant > p[role=status] { font-size: 12px; color: #526176; margin: 6px 0; }
-.desktop-workspace .meeting-opening, .desktop-workspace .meeting-answer { padding: 10px; margin-top: 8px; border-radius: 7px; }
-.desktop-workspace .meeting-opening h3, .desktop-workspace .meeting-answer h3 { font-size: 12px; margin: 0 0 6px; }
-.desktop-workspace .meeting-opening p, .desktop-workspace .meeting-answer p { margin: 6px 0; line-height: 1.45; }
-.desktop-workspace .meeting-opening p[lang=en], .desktop-workspace .meeting-answer p[lang=en] { font-size: 17px; }
-.desktop-workspace .meeting-opening p[lang=ru], .desktop-workspace .meeting-answer p[lang=ru] { font-size: 14px; }
+.desktop-workspace .meeting-opening, .desktop-workspace .meeting-answer, .desktop-workspace .meeting-general { padding: 10px; margin-top: 8px; border-radius: 7px; }
+.desktop-workspace .meeting-opening h3, .desktop-workspace .meeting-answer h3, .desktop-workspace .meeting-general h3 { font-size: 12px; margin: 0 0 6px; }
+.desktop-workspace .meeting-opening p, .desktop-workspace .meeting-answer p, .desktop-workspace .meeting-general p { margin: 6px 0; line-height: 1.45; }
+.desktop-workspace .meeting-opening p[lang=en], .desktop-workspace .meeting-answer p[lang=en], .desktop-workspace .meeting-general p[lang=en] { font-size: 17px; }
+.desktop-workspace .meeting-opening p[lang=ru], .desktop-workspace .meeting-answer p[lang=ru], .desktop-workspace .meeting-general p[lang=ru] { font-size: 14px; }
 @media (min-width: 701px) {
   .desktop-workspace { height: 100dvh; min-height: 620px; display: flex; flex-direction: column; gap: 6px; }
   .desktop-workspace > * { flex-shrink: 0; }

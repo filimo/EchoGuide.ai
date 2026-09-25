@@ -203,28 +203,31 @@ describe("Training Live Panel", () => {
     const pageScrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? {
       activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-09-20", filenames: ["x.md"], sectionCount: 1 }]
-    } : path === "history/read" ? { snapshots: [] } : path === "history/save" ? { saved: true } : path === "search" ? { ticket: "t", found: 1 } : {
+    } : path === "history/read" ? { snapshots: [] } : path === "history/save" ? { saved: true } : path === "search" ? { ticket: "t", found: 1 } : path === "general" ? {
+      opening: { mode: "start", english: "I would check the query pattern.", russian: "Я бы проверил характер запросов." },
+      continuation: { english: "Then I would compare the options.", russian: "Затем я бы сравнил варианты." }
+    } : {
       status: "grounded", english: "Pinned response", russian: "Ответ", sources: []
     });
     const { say, generateQuickStart, analyzePhrase } = await setupQuickStart();
     await userEvent.click(screen.getByLabelText("Режим встречи с материалами"));
     await say("Why this database?");
-    expect(generateQuickStart).toHaveBeenCalledTimes(1);
+    expect(generateQuickStart).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Heard Why this database?" }));
     await screen.findByText("Pinned response");
     await say("I chose it because of our queries.");
     await say("It supports our workload.");
     await userEvent.click(screen.getByRole("button", { name: "Heard Why this database?" }));
-    expect(generateQuickStart).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "general")).toHaveLength(1);
     expect(analyzePhrase).not.toHaveBeenCalled();
     expect(screen.getByText("Pinned response")).toBeInTheDocument();
     const latestButton = screen.getByRole("button", { name: "К последней записи" });
     expect(latestButton).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(latestButton);
     expect(latestButton).toHaveAttribute("aria-pressed", "true");
-    expect(generateQuickStart).toHaveBeenLastCalledWith("It supports our workload.", expect.any(Array), "Heard", expect.any(AbortSignal));
     await say("What is next?");
-    expect(generateQuickStart).toHaveBeenLastCalledWith("What is next?", expect.any(Array), "Heard", expect.any(AbortSignal));
+    expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "general")).toHaveLength(3);
+    expect(vi.mocked(meetingRequest).mock.calls.filter(c => c[0] === "general").at(-1)?.[1]).toMatchObject({ transcript: "What is next?" });
     pageScrollTo.mockRestore();
 
   });

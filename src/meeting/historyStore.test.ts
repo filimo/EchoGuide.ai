@@ -35,6 +35,15 @@ describe("permanent meeting card snapshots", () => {
     expect(store.read()[0].answer?.diagnostics).toEqual({ reason: "model_no_answer", found: 2 });
     expect(store.read()[1].answer?.diagnostics).toBeUndefined();
   });
+  it("persists a separate general continuation alongside the source-backed answer", () => {
+    const { store } = setup();
+    const general = { opening: snapshot.opening!, continuation: { english: "Then I would compare the effort.", russian: "Затем я бы сравнил затраты." } };
+    store.save({ ...snapshot, general });
+    store.save({ ...snapshot, sequence: 2, phase: "complete", general,
+      answer: { status: "grounded", english: "The pilot is proposed.", russian: "Пилот предложен.", sources: [] } });
+    expect(store.read().at(-1)?.general).toEqual(general);
+    expect(store.read().at(-1)?.answer?.english).toBe("The pilot is proposed.");
+  });
   it("retains out-of-order earlier stages without replacing later snapshots; retries are idempotent", () => {
     const { store } = setup(); store.save({ ...snapshot, sequence: 2 }); store.save(snapshot); store.save(snapshot);
     expect(store.read()).toHaveLength(2);

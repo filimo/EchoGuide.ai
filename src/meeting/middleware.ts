@@ -49,6 +49,14 @@ export function createMeetingMiddleware(service?: MeetingService, history = new 
           body.turns.join("\n").length > 16000) return send(400, { error: "Некорректный контекст." });
         return send(200, { summary: await api.summarize(body.previousSummary, body.turns) });
       }
+      if (path === "/api/meeting/general") {
+        if (typeof body.transcript !== "string" || !body.transcript.trim() || body.transcript.length > 4000 ||
+          !Array.isArray(body.recentContext) || body.recentContext.length > 120 ||
+          body.recentContext.some((s: unknown) => typeof s !== "string" || s.length > 2000) ||
+          body.recentContext.join("\n").length > 12000 ||
+          typeof body.speakerLabel !== "string" || body.speakerLabel.length > 100) return send(400, { error: "Некорректный вопрос." });
+        return send(200, await api.general(body.transcript, body.recentContext, body.speakerLabel));
+      }
       if (typeof body.packId !== "string") return send(400, { error: "Выберите набор." });
       if (path === "/api/meeting/delete") return send(200, await api.remove(body.packId));
       if (path === "/api/meeting/search") {

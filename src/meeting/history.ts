@@ -1,6 +1,7 @@
 import type { GenerationInput } from "../realtime/generationInput";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import type { MeetingAnswer } from "./types";
+import { isMeetingGeneralAnswer, type MeetingGeneralAnswer } from "./generalAnswer";
 
 const answerReasons = new Set(["grounded", "no_hits", "model_no_answer", "conflict", "invalid_answer", "search_error", "answer_error"]);
 
@@ -13,6 +14,7 @@ export type MeetingCardSnapshot = {
   generationInput?: GenerationInput;
   savedAt: string; packName: string; packCreatedAt: string;
   opening: QuickStart | null; answer: MeetingAnswer | null;
+  general?: MeetingGeneralAnswer | null;
   phase: "started" | "opening" | "complete" | "error";
   progress: string; timings: { openingMs?: number; answerMs?: number };
 };
@@ -33,6 +35,7 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
     !["started", "opening", "complete", "error"].includes(r.phase) || !string(r.progress, 500) ||
     (r.opening !== null && !isQuickStart(r.opening)) || !r.timings ||
     Object.values(r.timings).some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0)) return false;
+  if (r.general !== undefined && r.general !== null && !isMeetingGeneralAnswer(r.general)) return false;
   if (r.generationInput !== undefined && (!r.generationInput || r.generationInput.version !== 1 ||
     !string(r.generationInput.transcript, 4000) || !Array.isArray(r.generationInput.recentContext) ||
     r.generationInput.recentContext.length > 120 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;

@@ -6,6 +6,7 @@ import { meetingHistoryClient } from "../meeting/historyClient";
 import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "../meeting/history";
 import { meetingRequest } from "../meeting/client";
 import { meetingFallbackFor, type MeetingAnswer, type MeetingAnswerReason, type MeetingPackState, type MeetingDocument } from "../meeting/types";
+import { isMeetingGeneralAnswer, type MeetingGeneralAnswer } from "../meeting/generalAnswer";
 
 export type MeetingSelection = { id: string; text: string; speaker: string; context: string[]; summary?: string };
 type Props = {
@@ -13,7 +14,7 @@ type Props = {
   selection: MeetingSelection | null;
   russianMeaning?: string;
   conversationContextWarning?: boolean;
-  quickStart: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<QuickStart | null>;
+  generalAnswer?: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<MeetingGeneralAnswer | QuickStart | null>;
 };
 const statuses = { uploading: "Загружается", indexing: "Индексируется", ready: "Готов", failed: "Ошибка" };
 const diagnosticReasons: Record<MeetingAnswerReason, string> = {
@@ -22,7 +23,7 @@ const diagnosticReasons: Record<MeetingAnswerReason, string> = {
   conflict: "В найденных разделах есть противоречие", invalid_answer: "Ответ не прошёл проверку формата или источников",
   search_error: "Запрос поиска завершился ошибкой", answer_error: "Подготовка полного ответа завершилась ошибкой"
 };
-export function MeetingAssistant({ sessionId, selection, russianMeaning = "", conversationContextWarning = false, quickStart }: Props) {
+export function MeetingAssistant({ sessionId, selection, russianMeaning = "", conversationContextWarning = false, generalAnswer }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
@@ -30,6 +31,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
   const [error, setError] = useState("");
   const [opening, setOpening] = useState<QuickStart | null>(null);
   const [answer, setAnswer] = useState<MeetingAnswer | null>(null);
+  const [general, setGeneral] = useState<MeetingGeneralAnswer | null>(null);
   const [timings, setTimings] = useState<{ openingMs?: number; answerMs?: number }>({});
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState("");
@@ -45,7 +47,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
   const stateRevision = useRef(0);
   const fileRevision = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  const quickRef = useRef(quickStart); quickRef.current = quickStart;
+  const generalRef = useRef(generalAnswer); generalRef.current = generalAnswer;
   const active = state.packs.find(p => p.id === state.activePackId && p.status === "ready");
   const selected = JSON.stringify(selection);
 
@@ -93,7 +95,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
   useEffect(() => {
     request.current?.abort();
     const revision = ++generation.current;
-    setOpening(null); setAnswer(null); setTimings({}); setQuestion(""); setProgress("");
+    setOpening(null); setAnswer(null); setGeneral(null); setTimings({}); setQuestion(""); setProgress("");
     setGenerating(false); setHistoryLoading(false);
     if (!active || !selection) return;
     const last = JSON.parse(selected) as MeetingSelection;
@@ -116,7 +118,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       const matching = records.filter(r => meetingCardKey(r.identity) === key);
       const cached = latestMeetingCard(matching);
       if (cached && !force) {
-        setOpening(cached.opening); setAnswer(cached.answer); setTimings(cached.timings);
+        setOpening(cached.opening); setAnswer(cached.answer); setGeneral(cached.general ?? null); setTimings(cached.timings);
         setQuestion(cached.generationInput?.transcript ?? identity.text);
         setProgress(cached.phase === "complete" || cached.phase === "error" ? `Сохранённый ответ · ${new Date(cached.savedAt).toLocaleString("ru-RU")}${cached.generationInput ? "" : " · До фильтрации входа; для обновления нажми «Новый вариант»."}` : "Сохранено начало или незавершённая попытка. Для нового ответа нажми «Новый вариант».");
         return;
@@ -131,11 +133,11 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       const started = performance.now();
       let snapshot: MeetingCardSnapshot = { version: 1, identity, attemptId: crypto.randomUUID(), sequence: 0,
         generationInput, savedAt: new Date().toISOString(), packName: active.name, packCreatedAt: active.createdAt,
-        opening: null, answer: null, phase: "started", progress: "Готовлю начало и ищу основания…", timings: {} };
+        opening: null, answer: null, general: null, phase: "started", progress: "Готовлю варианты и ищу основания…", timings: {} };
       function publish(changes: Partial<MeetingCardSnapshot>) {
         if (!current()) return;
         snapshot = { ...snapshot, ...changes, sequence: snapshot.sequence + 1, savedAt: new Date().toISOString() };
-        setOpening(snapshot.opening); setAnswer(snapshot.answer); setTimings(snapshot.timings); setProgress(snapshot.progress);
+        setOpening(snapshot.opening); setAnswer(snapshot.answer); setGeneral(snapshot.general ?? null); setTimings(snapshot.timings); setProgress(snapshot.progress);
         // Do not abort this write on selection change: this is text already delivered to the screen.
         void meetingHistoryClient.save(snapshot).catch(() => {
           if (mounted.current) setHistoryError("Карточка показана, но не сохранена на диск. Нажми «Повторить сохранение» до закрытия страницы.");
@@ -145,11 +147,18 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       const search = meetingRequest<{ ticket: string; found: number }>("search", { packId: active.id, transcript: generationInput.transcript,
         recentContext: generationInput.recentContext, ...(last.summary ? { summary: last.summary } : {}) }, controller.signal)
         .then(value => ({ value, error: false as const })).catch(() => ({ error: true as const }));
-      const firstPiece = await quickRef.current(generationInput.transcript, generationInput.recentContext, last.speaker,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(4000)])).catch(() => null);
+      const generated = await (generalRef.current
+        ? generalRef.current(generationInput.transcript, generationInput.recentContext, last.speaker,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(6500)]))
+        : meetingRequest<MeetingGeneralAnswer>("general", { transcript: generationInput.transcript,
+          recentContext: generationInput.recentContext, speakerLabel: last.speaker },
+          AbortSignal.any([controller.signal, AbortSignal.timeout(6500)]))).catch(() => null);
       if (!current()) return;
+      const pair = isMeetingGeneralAnswer(generated) ? generated :
+        isQuickStart(generated) ? { opening: generated, continuation: null } : null;
+      const firstPiece = pair?.opening;
       if (isQuickStart(firstPiece) && firstPiece.mode !== "wait") {
-        publish({ opening: firstPiece, phase: "opening", timings: { openingMs: performance.now() - started }, progress: "Ищу подтверждённые сведения…" });
+        publish({ opening: firstPiece, general: pair, phase: "opening", timings: { openingMs: performance.now() - started }, progress: "Ищу подтверждённые сведения…" });
       }
       const found = await search;
       if (!current()) return;
@@ -227,7 +236,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
     <div className="meeting-answer-meta">
     {progress && progress !== "Готово" && <p role="status">{progress}</p>}
     {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">
-      {timings.openingMs !== undefined && <span>Начало: {(timings.openingMs / 1000).toFixed(1)} с</span>}
+      {timings.openingMs !== undefined && <span>Начало и общий вариант: {(timings.openingMs / 1000).toFixed(1)} с</span>}
       {timings.openingMs !== undefined && timings.answerMs !== undefined && " · "}
       {timings.answerMs !== undefined && <span>Поиск и полный ответ: {(timings.answerMs / 1000).toFixed(1)} с</span>}
     </p>}
@@ -243,6 +252,10 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
         <p>{Object.entries(source.metadata).filter(([key]) => !["source_hash", "pack_id"].includes(key)).map(([key,value]) => `${key}: ${value}`).join(" · ")}</p>
         <pre>{source.text}</pre>
       </div>)}</details>}
+    </section>}
+    {general?.continuation && <section className="meeting-general"><h3>Общий вариант · продолжи</h3>
+      <p lang="en">{general.continuation.english}</p><p lang="ru">{general.continuation.russian}</p>
+      <p className="hint">Рассуждение по вопросу, без проверки по материалам.</p>
     </section>}
   </div>;
 }

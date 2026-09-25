@@ -5,7 +5,7 @@ import { createMeetingMiddleware } from "./middleware";
 import type { MeetingService } from "./service";
 
 async function request(path: string, body: unknown, origin = "https://localhost:5173", http2 = false) {
-  const api = { search: vi.fn(), answer: vi.fn(), refresh: vi.fn() };
+  const api = { search: vi.fn(), answer: vi.fn(), general: vi.fn(), refresh: vi.fn() };
   const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
     url: `/api/meeting/${path}`, method: "POST", headers: { ...(http2 ? { ":authority": "localhost:5173" } : { host: "localhost:5173" }), origin }
   });
@@ -21,6 +21,13 @@ describe("meeting API boundary", () => {
   it("rejects unbounded conversation before calling OpenAI", async () => {
     const { api, res } = await request("search", { packId: "p", transcript: "q", recentContext: ["x".repeat(2001)] });
     expect(res.statusCode).toBe(400); expect(api.search).not.toHaveBeenCalled();
+  });
+  it("validates the independent general-answer request", async () => {
+    const invalid = await request("general", { transcript: "Question?", recentContext: [], speakerLabel: "x".repeat(101) });
+    expect(invalid.res.statusCode).toBe(400); expect(invalid.api.general).not.toHaveBeenCalled();
+    const valid = await request("general", { transcript: "Question?", recentContext: [], speakerLabel: "Interviewer" });
+    expect(valid.res.statusCode).toBe(200);
+    expect(valid.api.general).toHaveBeenCalledWith("Question?", [], "Interviewer");
   });
   it("does not accept client evidence instead of a server search ticket", async () => {
     const { api, res } = await request("answer", { packId: "p", evidence: ["fake"] });

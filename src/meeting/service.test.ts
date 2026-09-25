@@ -24,7 +24,10 @@ function setup(reasoningEffort?: () => string) {
     else if (path.endsWith("/search")) value = { data: state.empty ? [] : files[path.split("/")[2]].map(file_id => ({ file_id })) };
     else if (path === "/responses") value = body.text?.format?.name === "meeting_conversation_summary"
       ? { output_text: JSON.stringify({ summary: "Собеседник предложил проверить процесс; решение не принято." }) }
-      : { output_text: JSON.stringify({ status: state.responseStatus, english: state.english, russian: state.russian, sourceIds: state.sourceIds }) };
+      : body.text?.format?.name === "meeting_general_answer"
+        ? { output_text: JSON.stringify({ opening: { mode: "start", english: "I would compare both options.", russian: "Я бы сравнил оба варианта." },
+          continuation: { english: "Then I would check the total effort.", russian: "Затем я бы проверил общие затраты." } }) }
+        : { output_text: JSON.stringify({ status: state.responseStatus, english: state.english, russian: state.russian, sourceIds: state.sourceIds }) };
     return new Response(JSON.stringify(value), { status: 200 });
   }) as unknown as typeof fetch;
   const service = new MeetingService({ directory, apiKey: () => "test-only", reasoningEffort, fetchImpl });
@@ -37,6 +40,18 @@ function setup(reasoningEffort?: () => string) {
   return { service, state, ready, fetchImpl, directory };
 }
 describe("meeting pack lifecycle and grounding", () => {
+  it("generates a paired general opening and continuation without document evidence", async () => {
+    const { service, fetchImpl } = setup();
+    const result = await service.general("How would you compare the options?", ["Me: We should include review time."], "Interviewer");
+    expect(result.continuation?.english).toBe("Then I would check the total effort.");
+    const call = vi.mocked(fetchImpl).mock.calls.find(c => String(c[0]).endsWith("/responses"))!;
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.store).toBe(false);
+    expect(body.text.format.name).toBe("meeting_general_answer");
+    expect(JSON.parse(body.input)).toEqual({ transcript: "How would you compare the options?",
+      recentContext: ["Me: We should include review time."], speakerLabel: "Interviewer" });
+    expect(vi.mocked(fetchImpl).mock.calls.some(c => String(c[0]).endsWith("/search"))).toBe(false);
+  });
   it("summarizes older dialogue separately and treats it as conversational context", async () => {
     const { service, fetchImpl, ready } = setup();
     const summary = await service.summarize("", ["Interviewer: Could we try it?", "Me: I would test one task."]);
