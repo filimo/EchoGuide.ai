@@ -7,7 +7,7 @@ import { BilingualSentences } from "./BilingualSentences";
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
-import { connectMacAudio, routeStandbyMicrophone } from "../macAudio/client";
+import { connectMacAudio } from "../macAudio/client";
 import { sourceSpeaker, type MacAudioSource } from "../macAudio/protocol";
 import { levelMeter } from "../macAudio/levelMeter";
 import { MicrophonePicker } from "./MicrophonePicker";
@@ -603,17 +603,6 @@ export function TrainingLivePanel({
   meetingModeRef.current = meetingMode;
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
   const [connection, setConnection] = useState<RealtimeTranscriptionConnection | null>(null);
-  useEffect(() => {
-    if (audioMode !== "mac" || !virtualOutputEnabled || realtimeStatus === "connecting" ||
-        realtimeStatus === "connected" || connection != null) return;
-    const microphone = standbyMicrophone;
-    if (microphone === "default") return;
-    setVirtualOutputStatus({ kind: "connecting" });
-    const route = routeStandbyMicrophone(microphone,
-      () => setVirtualOutputStatus({ kind: "microphone" }),
-      message => setVirtualOutputStatus({ kind: "error", detail: message }));
-    return () => route.stop();
-  }, [audioMode, virtualOutputEnabled, realtimeStatus, connection, standbyMicrophone]);
   const [translationConnection, setTranslationConnection] =
     useState<RealtimeTranslationConnection | null>(null);
   const [streamingTranslationStatus, setStreamingTranslationStatus] =
@@ -2966,13 +2955,13 @@ export function TrainingLivePanel({
           title={!virtualOutputEnabled ? "Включить передачу звука в BlackHole 2ch" :
             standbyMicrophone === "default" ? "Выбери конкретный микрофон в настройках звука" :
             virtualOutputStatus.kind === "error" ? virtualOutputStatus.detail :
-            "До встречи: микрофон. Во время встречи: микрофон и звук приложения."}
+            "Передача микрофона и звука приложения начнётся после запуска встречи."}
           disabled={connection != null || realtimeStatus === "connecting"}
           onClick={() => { const enabled = !virtualOutputEnabled; setVirtualOutputEnabled(enabled);
             saveVirtualOutputPreference(enabled); if (!enabled) setVirtualOutputStatus({ kind: "idle" }); }}>
           BlackHole · {!virtualOutputEnabled ? "выкл" : standbyMicrophone === "default" ? "выбери микрофон" :
             virtualOutputStatus.kind === "microphone" ? "микрофон" : virtualOutputStatus.kind === "mix" ? "микс" :
-            virtualOutputStatus.kind === "error" ? "ошибка" : "подключение…"}
+            virtualOutputStatus.kind === "error" ? "ошибка" : virtualOutputStatus.kind === "idle" ? "готов к встрече" : "подключение…"}
         </button>}
         {audioMode !== "mac" && microphoneError && <p role="alert">{microphoneError}</p>}
         <section className="training-status-row" aria-label="Training Mode status">

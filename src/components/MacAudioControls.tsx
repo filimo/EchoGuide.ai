@@ -14,11 +14,13 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
   const popoverId = useId();
   const [sources, setSources] = useState<MacAudioSources>({ applications: [], microphones: [] });
   const [loading, setLoading] = useState(false);
+  const [sourcesRequested, setSourcesRequested] = useState(false);
   const [error, setError] = useState("");
   const [preference, setPreference] = useState(loadMacAudioPreference);
   const [inputVolume, setInputVolume] = useState<MacInputVolume | null>(null);
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const [volumeSaving, setVolumeSaving] = useState(false);
+  const [volumeRequested, setVolumeRequested] = useState(false);
   const [volumeError, setVolumeError] = useState("");
   const [monitorState, setMonitorState] = useState<"idle" | "starting" | "active">("idle");
   const [monitorLevel, setMonitorLevel] = useState<{ level: number; peak: number } | null>(null);
@@ -35,6 +37,7 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    setSourcesRequested(true);
     setLoading(true); setError("");
     onChange(null);
     try {
@@ -52,7 +55,7 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
       if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not list sources.");
     } finally { if (!controller.signal.aborted) setLoading(false); }
   }, [onChange]);
-  useEffect(() => { void refresh(); return () => request.current?.abort(); }, [refresh]);
+  useEffect(() => () => request.current?.abort(), []);
   useEffect(() => () => monitorRef.current?.stop(), []);
   useEffect(() => {
     if (disabled && monitorRef.current) {
@@ -63,13 +66,14 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
     }
   }, [disabled]);
   useEffect(() => {
+    if (!volumeRequested || loading) return;
     const controller = new AbortController();
     setInputVolume(null); setVolumeDraft(null); setVolumeError("");
     void macInputVolume(preference.microphone, undefined, controller.signal)
       .then(result => { if (!controller.signal.aborted) { setInputVolume(result); setVolumeDraft(result.value ?? null); } })
       .catch(error => { if (!controller.signal.aborted) setVolumeError(error instanceof Error ? error.message : "Could not read input volume."); });
     return () => controller.abort();
-  }, [preference.microphone]);
+  }, [preference.microphone, volumeRequested, loading]);
   async function applyInputVolume() {
     if (!inputVolume?.available || volumeDraft == null || volumeDraft === inputVolume.value || volumeSaving) return;
     setVolumeSaving(true); setVolumeError("");
@@ -108,6 +112,7 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
     loud: "громко", clipping: "перегруз" }[preview.zone];
   return <section className="mac-audio-controls" aria-label="MacBook audio sources">
     <button type="button" className="mac-sources-trigger" popoverTarget={popoverId}
+      disabled={disabled} onClick={() => { if (!sourcesRequested) void refresh(); }}
       title={selection ? `Источники звука: ${applicationName} и ${microphoneName}. Нажми, чтобы изменить.` :
         "Выбери приложение звонка и микрофон для EchoGuide"}>
       <span aria-hidden="true">⚙</span> {loading ? "Loading sources…" : selection ? `${applicationName} + ${microphoneName}` : "Настроить источники"}
@@ -134,7 +139,7 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
         <option value="">Select an application</option>
         {sources.applications.map(app => <option key={app.pid} value={app.pid}>{app.name} ({app.pid})</option>)}
       </select></label>
-      <label>Mac microphone <select title="Микрофон для EchoGuide и передачи в BlackHole"
+      <label>Mac microphone <select title="Микрофон для EchoGuide"
         disabled={disabled || loading || monitorState !== "idle"} value={preference.microphone}
         onChange={event => {
           remember({ ...preference, microphone: event.target.value });
@@ -149,7 +154,9 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
         <option value="default">System default microphone</option>
         {sources.microphones.map(mic => <option key={mic.id} value={mic.id}>{mic.name}</option>)}
       </select></label>
+      <small>Используется системный микрофон. Выбери UGREEN в Системных настройках → Звук → Вход; для раздельных сторон не выбирай смешанный вход Loopback.</small>
       <div className="mac-input-volume">
+        <button type="button" disabled={disabled || loading} onClick={() => setVolumeRequested(true)}>Показать системный уровень входа</button>
         <label htmlFor={`${popoverId}-input-volume`}>Чувствительность микрофона · системный уровень входа</label>
         <button type="button" className="mac-monitor-button" disabled={disabled || loading || !microphoneAvailable}
           onClick={monitorState === "idle" ? startMonitor : stopMonitor}>
@@ -175,7 +182,7 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
             onBlur={() => void applyInputVolume()} />
           <output>{volumeDraft}%</output>
         </div> : <small>{volumeError ? "Не удалось прочитать системный уровень входа." : inputVolume === null ?
-          "Проверяем настройку устройства…" :
+          volumeRequested ? "Проверяем настройку устройства…" : "Уровень входа читается только по кнопке выше." :
           "У этого микрофона нет доступного системного регулятора. Проверь Системные настройки → Звук → Вход или настройку на самом устройстве."}</small>}
         <small>Меняет уровень входа выбранного устройства в macOS, в том числе для других приложений. EchoGuide не усиливает запись отдельно.</small>
         {inputVolume?.available && inputVolume.value === 100 &&

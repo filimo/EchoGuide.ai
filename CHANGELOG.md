@@ -13,6 +13,8 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Avoid native microphone enumeration when opening Mac source settings; use the macOS default input and read system input volume only on request.
+
 ### Added
 
 - Add question-mark explanations beside meeting card headings, including the
@@ -41,6 +43,15 @@ Until the first versioned release, changes are grouped by date.
   distinguish conversational context from document evidence.
 
 ### Fixed
+
+- Keep native audio idle when loading or reloading EchoGuide, even with saved
+  Mac mode and BlackHole preferences. Load source settings only on demand and
+  route BlackHole audio only during an explicitly started meeting.
+
+- Start Mac meeting capture without waiting for BlackHole output. A stalled
+  virtual output no longer delays capture or transcription by up to 20 seconds.
+  Initialize the virtual output only after capture is ready to avoid concurrent
+  device startup, and log safe native capture stages for startup diagnostics.
 
 - Show one clarification block when the fast and general requests both ask
   for clarification, retaining both responses in saved history.

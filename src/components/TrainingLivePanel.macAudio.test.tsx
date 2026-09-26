@@ -2,7 +2,7 @@ import { flushSync } from "react-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrainingLivePanel } from "./TrainingLivePanel";
-import { routeStandbyMicrophone, type MacAudioOptions } from "../macAudio/client";
+import { listMacAudioSources, macInputVolume, routeStandbyMicrophone, type MacAudioOptions } from "../macAudio/client";
 import type { MacAudioEvent } from "../macAudio/protocol";
 import type { SessionHistoryEntry, SessionHistoryEntryDraft } from "../domain/sessionHistory";
 
@@ -44,6 +44,7 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
   expect(screen.getByLabelText("Audio source")).toHaveAttribute("title", expect.stringContaining("Источник звука"));
   expect(screen.queryByText("Audio source")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Audio source"), { target: { value: "mac" } });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
   if (virtualOutput) {
@@ -61,17 +62,43 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
 }
 
 describe("Mac audio in Training Mode", () => {
+  it("does not open native audio after reload with Mac mode and BlackHole saved", async () => {
+    localStorage.setItem("echoguide.audioMode.v1", "mac");
+    localStorage.setItem("echoguide.macAudio.virtualOutput.v1", "true");
+    localStorage.setItem("echoguide.macAudio.v1", JSON.stringify({
+      application: { name: "Call app", bundleId: "test.app" }, microphone: "usb"
+    }));
+    vi.mocked(listMacAudioSources).mockClear();
+    vi.mocked(macInputVolume).mockClear();
+    vi.mocked(routeStandbyMicrophone).mockClear();
+    const connect = vi.fn();
+    const renderPanel = () => render(<TrainingLivePanel stream={null} notes=""
+      connectMacAudioClient={connect}
+      sessionHistoryClient={{ loadSessions: async () => [],
+        saveCurrentSession: vi.fn(), deleteSession: async () => [] }} />);
+    const first = renderPanel();
+    await act(async () => {});
+    first.unmount();
+    const second = renderPanel();
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "BlackHole · готов к встрече" })).toBeInTheDocument();
+    expect(listMacAudioSources).not.toHaveBeenCalled();
+    expect(macInputVolume).not.toHaveBeenCalled();
+    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    second.unmount();
+  });
   it("sends the optional BlackHole route with an explicitly selected microphone", async () => {
     vi.mocked(routeStandbyMicrophone).mockClear();
     const test = await setup(false, false, true);
-    expect(routeStandbyMicrophone).toHaveBeenCalledWith("usb", expect.any(Function), expect.any(Function));
-    const standbyCalls = vi.mocked(routeStandbyMicrophone).mock.calls.length;
+    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
     expect(test.options).toMatchObject({ microphone: "usb", virtualOutput: true });
     await test.emit({ type: "virtual-output", status: "ready" });
     expect(screen.getByRole("button", { name: "BlackHole · микс" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Остановить встречу" }));
     expect(screen.queryByRole("button", { name: "BlackHole · микс" })).not.toBeInTheDocument();
-    await waitFor(() => expect(vi.mocked(routeStandbyMicrophone).mock.calls.length).toBeGreaterThan(standbyCalls));
+    expect(screen.getByRole("button", { name: "BlackHole · готов к встрече" })).toBeInTheDocument();
+    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
   });
   it("uses the same dBFS scale for both source meters and reports peak overload", async () => {
     const test = await setup();

@@ -14,6 +14,21 @@ function Harness() {
 }
 const app = { pid: 10, name: "Call", bundleId: "com.test.call" };
 const microphones = [{ id: "usb", name: "USB mic" }];
+it("does not access native audio on mount even with saved sources", async () => {
+  saveMacAudioPreference({ application: app, microphone: "usb" });
+  vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
+  const view = render(<Harness />);
+  await act(async () => {});
+  expect(listMacAudioSources).not.toHaveBeenCalled();
+  expect(macInputVolume).not.toHaveBeenCalled();
+  expect(monitorMacMicrophone).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Настроить источники/ }));
+  await screen.findByRole("option", { name: "USB mic" });
+  expect(listMacAudioSources).toHaveBeenCalledOnce();
+  expect(macInputVolume).not.toHaveBeenCalled();
+  view.unmount();
+  expect(monitorMacMicrophone).not.toHaveBeenCalled();
+});
 it("previews the selected microphone and stops monitoring when requested", async () => {
   saveMacAudioPreference({ application: app, microphone: "usb" });
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
@@ -24,6 +39,7 @@ it("previews the selected microphone and stops monitoring when requested", async
     return { stop };
   });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "USB mic" });
   expect(screen.getByRole("button", { name: /Call \+ USB mic/ })).toHaveAttribute("title", expect.stringContaining("Источники звука"));
   expect(screen.getByLabelText("Call application")).toHaveAttribute("title", expect.stringContaining("Звук выбранного приложения"));
@@ -48,7 +64,10 @@ it("shows and changes the selected microphone's system input volume", async () =
   vi.mocked(macInputVolume).mockResolvedValueOnce({ available: true, value: 42 })
     .mockResolvedValueOnce({ available: true, value: 55 });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "Call (10)" });
+  expect(macInputVolume).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Показать системный уровень входа" }));
   const slider = await screen.findByRole("slider", { name: /Чувствительность микрофона/ });
   expect(slider).toHaveValue("42");
   fireEvent.change(slider, { target: { value: "55" } });
@@ -59,6 +78,7 @@ it("shows and changes the selected microphone's system input volume", async () =
 it("restores the app by bundle ID with a new PID after remount, ignoring a reused old PID", async () => {
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones });
   const view = render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "Call (10)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "10" } });
   fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "usb" } });
@@ -68,6 +88,7 @@ it("restores the app by bundle ID with a new PID after remount, ignoring a reuse
     { ...app, pid: 99 }, { pid: 10, name: "Unrelated", bundleId: "other" }
   ], microphones });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await waitFor(() => expect(screen.getByTestId("selection")).toHaveTextContent('{"pid":99,"microphone":"usb"}'));
   expect(screen.getByLabelText("Call application")).toHaveValue("99");
 });
@@ -75,6 +96,7 @@ it("preserves an unavailable app preference and restores it after refresh", asyn
   saveMacAudioPreference({ application: app, microphone: "default" });
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [], microphones: [] });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("not running");
   expect(screen.getByTestId("selection")).toHaveTextContent("null");
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [{ ...app, pid: 55 }], microphones });
@@ -85,6 +107,7 @@ it("does not silently replace a missing microphone", async () => {
   saveMacAudioPreference({ application: app, microphone: "usb" });
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app], microphones: [] });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("microphone is unavailable");
   expect(screen.getByTestId("selection")).toHaveTextContent("null");
   await act(async () => {
@@ -96,6 +119,7 @@ it("requires explicit selection for duplicate bundle IDs", async () => {
   saveMacAudioPreference({ application: app, microphone: "default" });
   vi.mocked(listMacAudioSources).mockResolvedValue({ applications: [app, { ...app, pid: 20 }], microphones });
   render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Multiple instances");
   expect(screen.getByTestId("selection")).toHaveTextContent("null");
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "20" } });

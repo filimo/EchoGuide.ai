@@ -58,21 +58,28 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         config.width = 2
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-        config.capturesAudio = true
+        config.capturesAudio = !CommandLine.arguments.contains("--diagnose-microphone-only")
         config.excludesCurrentProcessAudio = true
         config.sampleRate = 48000
         config.channelCount = 2
-        config.captureMicrophone = true
-        if let microphone, microphone != "default" {
+        config.captureMicrophone = !CommandLine.arguments.contains("--diagnose-application-only")
+        if config.captureMicrophone, let microphone, microphone != "default" {
+            emit(["type": "stage", "name": "device_lookup"])
             guard AVCaptureDevice(uniqueID: microphone) != nil else {
                 fail("The selected microphone is no longer available. Refresh sources.")
             }
             config.microphoneCaptureDeviceID = microphone
         }
+        emit(["type": "stage", "name": "stream_creation"])
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         self.stream = stream
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-        try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
+        if config.capturesAudio {
+            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+        }
+        if config.captureMicrophone {
+            try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
+        }
+        emit(["type": "stage", "name": "stream_start"])
         try await stream.startCapture()
         queue.sync { emit(["type": "ready"]) }
     }
@@ -286,7 +293,7 @@ if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--input-volu
     inputVolume(); exit(0)
 }
 guard #available(macOS 15.0, *) else { fail("Mac audio requires macOS 15 or later.") }
-if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--stream-microphone" {
+if CommandLine.arguments.count >= 2 && ["--stream-microphone", "--capture"].contains(CommandLine.arguments[1]) {
     emit(["type": "stage", "name": "process_entry"])
 }
 let app = NSApplication.shared
@@ -296,6 +303,8 @@ var microphoneMonitor: MicrophoneMonitor?
 var capturedPID: Int32?
 Task { @MainActor in
     do {
+        let isCapture = CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--capture"
+        if isCapture { emit(["type": "stage", "name": "main_actor"]) }
         if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--monitor-microphone" {
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
@@ -315,18 +324,21 @@ Task { @MainActor in
             try monitor.start(identifier: CommandLine.arguments[2])
             return
         }
+        if isCapture { emit(["type": "stage", "name": "shareable_content"]) }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         if CommandLine.arguments.contains("--list") {
             let regularPIDs = Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map { $0.processIdentifier })
             let applications = content.applications.filter { regularPIDs.contains($0.processID) && !$0.applicationName.isEmpty && $0.processID != getpid() }
                 .sorted { $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName) == .orderedAscending }
                 .map { ["pid": $0.processID, "name": $0.applicationName, "bundleId": $0.bundleIdentifier] as [String: Any] }
-            let microphones = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices.map { ["id": $0.uniqueID, "name": $0.localizedName] }
+            // Avoid initializing every HAL driver just to open source settings.
+            let microphones: [[String: String]] = []
             emit(["type": "sources", "applications": applications, "microphones": microphones])
             exit(0)
         }
         guard CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--capture",
               let pid = Int32(CommandLine.arguments[2]) else { fail("Select a call application first.") }
+        emit(["type": "stage", "name": "permission"])
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
         guard granted else { fail("Allow microphone access for EchoGuide Audio in macOS System Settings.") }
         capturedPID = pid
