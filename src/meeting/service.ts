@@ -6,6 +6,7 @@ import { prepareSections, validateDocuments } from "./markdown";
 import { meetingFallbackFor, type MeetingPack, type MeetingPackState, type MeetingSection, type MeetingEvidence, type MeetingAnswer } from "./types";
 import { defaultBilingualModel } from "../realtime/bilingualAnalysis";
 import { spokenProductQuestion } from "./spokenProduct";
+import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
 import type { QuickStart } from "../realtime/quickStart";
 import { maxMeetingSummaryCharacters } from "./conversationContext";
@@ -183,6 +184,7 @@ export class MeetingService {
     const requestBody = {
       model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: this.options.reasoningEffort?.() || "none" }, store: false, max_output_tokens: 700,
       instructions: [
+        spokenReplyStyle,
         "Compare total working time for the two approaches, counting review and rework once in each total. Time saved is the difference between those totals; do not compare time saved with total effort or subtract rework twice. Assess required quality separately. Higher quality can be necessary even when it takes longer: never claim it is worthwhile only if it reduces effort. Do not assume quality criteria have already been agreed unless the evidence or explicit hypothetical premise says so. For a request for diplomatic wording, give a short sentence the participant can say directly, not a description such as I would frame it as balancing or not overruling someone. Prefer worth the extra time to justifies when equivalent; keep necessary technical terms.",
         "Help a Russian-speaking participant answer a work meeting question in simple spoken English. Return ONE concise answer in simple A2/B1 English and its natural Russian meaning. Use 1-3 short sentences, at most 45 English words, one idea per sentence. Prefer everyday verbs over abstract nouns and long lists. Preserve negation and uncertainty; simplify wording, never facts.",
         "For a decision made with limited evidence, distinguish the provisional status of the decision from uncertainty in the evidence or conclusion. Do not describe the decision itself as unreliable. If the opening already says the decision is provisional, continue with a supported way to check it or explain the risk instead of repeating the caution. Keep the same distinction in Russian.",

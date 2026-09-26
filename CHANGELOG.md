@@ -15,6 +15,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Display each reply sentence in larger English text with its smaller Russian
+  translation directly underneath, including meeting answers and quick openings.
 - Prepare a source-independent spoken continuation together with the meeting
   opening while document retrieval runs. Show it as a separate option below the
   source-backed answer and restore both options from local session history.
@@ -26,6 +28,8 @@ Until the first versioned release, changes are grouped by date.
 
 ### Fixed
 
+- Make generated reply cards sound like a calm live conversation, with direct
+  points, specific clarifications and grounded next steps across all reply paths.
 - Start BlackHole output and the selected microphone together, allow a slow
   output twenty seconds to start, and log each startup stage and duration.
 - Keep BlackHole output close to live speech by reading its input independently

@@ -1,5 +1,6 @@
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "./generationInput.ts";
 import type { QuickStart } from "./quickStart";
+import { spokenReplyStyle } from "./replyStyle.ts";
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
@@ -64,6 +65,7 @@ const bilingualAnalysisInstructions = [
   "The transcript can contain English or Russian speech. Treat other-language-looking fragments as transcription noise unless they clearly give useful context.",
   "The user reads English at A2/B1 level, so use clear, natural spoken English with common words and active voice. Return only compact JSON.",
   "Main goal: help the user answer interview questions with short, complete answers that sound like something a real person would say aloud.",
+  spokenReplyStyle,
   "Classify the active transcript speakerRole as interviewer, me, or unknown. Use interviewer for the person asking or clarifying interview questions. Use me for the candidate describing their work, experience, decisions, or results. Use unknown when the text is too short, ambiguous, or noise.",
   "Recent context labels can be Heard, Interviewer, or Me; Heard means the role was not confirmed yet.",
   "Build each card for the freshest coherent thought, not blindly for the last audio fragment. The active transcript is the newest completed phrase. Recent transcript context is only for understanding whether the active transcript continues a nearby thought.",

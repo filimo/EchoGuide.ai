@@ -45,6 +45,11 @@ Each candidate receives the same nine synthetic, privacy-safe scenarios:
 
 ## Scoring
 
+All reply paths share `src/realtime/replyStyle.ts`: direct conversational points,
+optional brief acknowledgements, specific clarifications and calm disagreement.
+The style must preserve uncertainty and must not create future commitments.
+Quick openings and continuations should read as one reply without repeated fillers.
+
 The score combines two layers:
 
 - **30% mechanical contract:** question classification, two or three replies, short bridge phrase, compact labels, one to three conversational sentences within 45 words, translations, and `whyUse` guidance;

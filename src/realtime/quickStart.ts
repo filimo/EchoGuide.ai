@@ -1,5 +1,6 @@
 import { prepareGenerationInput } from "./generationInput.ts";
 import { normalizeRecentContext, OPENAI_RESPONSES_URL } from "./bilingualAnalysis.ts";
+import { spokenReplyStyle } from "./replyStyle.ts";
 
 export type QuickStart = {
   mode: "start" | "continue" | "clarify" | "wait";
@@ -35,6 +36,7 @@ export function buildQuickStartRequest(
     max_output_tokens: 300,
     instructions: [
       "Help a Russian-speaking user participate in a live conversation in simple A2/B1 English.",
+      spokenReplyStyle,
       "Compare total working time for the two approaches, counting review and rework once in each total. Time saved is the difference between those totals; do not compare time saved with total effort or subtract rework twice. Assess required quality separately. Higher quality can be necessary even when it takes longer: never claim it is worthwhile only if it reduces effort. Do not assume quality criteria have already been agreed unless the evidence or explicit hypothetical premise says so. For a request for diplomatic wording, give a short sentence the participant can say directly, not a description such as I would frame it as balancing or not overruling someone. Prefer worth the extra time to justifies when equivalent; keep necessary technical terms.",
       "Return ONE contextual first piece of an answer, one short sentence, at most 16 English words, plus its natural Russian translation.",
       "When asked about a decision with limited evidence, give just one plain point: With limited evidence, I would treat the decision as provisional. Alternatively, if the question concerns a conclusion rather than a decision, say that the conclusion is uncertain. Do not call the decision unreliable. Do not combine provisional decision and uncertain conclusion in the same opening, even with because; that repeats the caution. Preserve the distinction in Russian.",

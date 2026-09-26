@@ -3,6 +3,7 @@ import { loadAudioMode, saveAudioMode, loadMacAudioPreference, loadVirtualOutput
 import { startBrowserRecording, recordingPath, type BrowserRecording, type RecordingStatus } from "../recordings/client";
 import { recordingHeaders, type Recording } from "../recordings/types";
 import { SessionAudio } from "./SessionAudio";
+import { BilingualSentences } from "./BilingualSentences";
 import { prepareGenerationInput, withoutTranscriptionPrompt } from "../realtime/generationInput";
 import { meetingHistoryClient } from "../meeting/historyClient";
 import { MacAudioControls, type MacAudioSelection } from "./MacAudioControls";
@@ -3659,8 +3660,7 @@ export function TrainingLivePanel({
             <h3>{visibleQuickStart?.mode === "continue" ? "Продолжи мысль" :
               visibleQuickStart?.mode === "clarify" ? "Уточни" : "Начни так"}</h3>
             {visibleQuickStart ? <>
-              <p className="quick-start-english" lang="en">{visibleQuickStart.english}</p>
-              <p className="quick-start-russian" lang="ru">{visibleQuickStart.russian}</p>
+              <BilingualSentences english={visibleQuickStart.english} russian={visibleQuickStart.russian} />
               <button type="button" onClick={() => setFollowLiveMode(false)}>Оставить на экране</button>
               {selectedPhraseCardId && pendingAnalysisIds.has(selectedPhraseCardId)
                 ? <p className="hint">Продолжение готовится…</p> : null}
@@ -3771,10 +3771,10 @@ export function TrainingLivePanel({
                 ))}
                 {selectedReplyIndex != null ? (
                   <div className="reply-full">
-                    <p>{visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentence}</p>
-                    <p className="reply-full-translation">
-                      {visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentenceTranslation}
-                    </p>
+                    <BilingualSentences
+                      english={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentence ?? ""}
+                      russian={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentenceTranslation ?? ""}
+                    />
                     {(visibleAnalysis.suggestedReplies[selectedReplyIndex]?.whyUse ?? "").length > 0 ? (
                       <p className="reply-why-use">
                         {visibleAnalysis.suggestedReplies[selectedReplyIndex]?.whyUse}

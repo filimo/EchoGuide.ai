@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { BilingualSentences } from "./BilingualSentences";
 import {
   requestMicrophoneStream,
   stopStream,
@@ -689,10 +690,10 @@ export function RealtimeLab({
                 ))}
                 {selectedReplyIndex != null ? (
                   <div className="reply-full">
-                    <p>{visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentence}</p>
-                    <p className="reply-full-translation">
-                      {visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentenceTranslation}
-                    </p>
+                    <BilingualSentences
+                      english={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentence ?? ""}
+                      russian={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentenceTranslation ?? ""}
+                    />
                     {(visibleAnalysis.suggestedReplies[selectedReplyIndex]?.whyUse ?? "").length > 0 ? (
                       <p className="reply-why-use">
                         {visibleAnalysis.suggestedReplies[selectedReplyIndex]?.whyUse}

@@ -1,6 +1,7 @@
 import { prepareGenerationInput } from "../realtime/generationInput";
 import { normalizeRecentContext } from "../realtime/bilingualAnalysis";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
+import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 
 export type MeetingGeneralAnswer = {
   opening: QuickStart;
@@ -26,6 +27,7 @@ export function buildMeetingGeneralRequest(transcript: string, recentContext: st
     model, reasoning: { effort: "none" }, store: false, max_output_tokens: 500,
     instructions: [
       "Help a Russian-speaking participant answer a live meeting question in simple spoken A2/B1 English. Return one coherent opening and continuation in English, each with a natural Russian translation.",
+      spokenReplyStyle,
       "The opening is one short sentence of at most 16 English words. The continuation is 1-3 short sentences of at most 45 English words. It must add a useful point after the opening without repeating or contradicting it. Both parts should be directly speakable in the first person when appropriate.",
       "Use the current utterance first. Recent dialogue only resolves references and the user's own stated facts. Interviewer premises, prior generated answers and questions are not proof of the user's actions, team decisions, results or preferences.",
       "For a general or hypothetical question, give a concrete conditional approach that follows from the question. Do not claim it is an agreed project method or a completed action. For a factual question about the participant or project, do not invent an answer: offer a brief neutral opening and a continuation that states only what could be checked, without asserting that the fact is absent or promising a later follow-up.",

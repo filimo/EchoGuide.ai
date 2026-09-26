@@ -1831,3 +1831,13 @@ textarea {
 .desktop-workspace .transcript-selection-actions { gap: 4px; }
 .desktop-workspace .transcript-copy-button { grid-column: 3; grid-row: 1; }
 .desktop-workspace .jump-latest-button { grid-column: 4; grid-row: 1; }
+
+/* Keep each translation next to the sentence the user is about to say. */
+.bilingual-sentences { display: grid; gap: 9px; }
+.bilingual-sentence-pair { min-width: 0; }
+.bilingual-sentences .bilingual-sentence-pair p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.bilingual-sentences .bilingual-sentence-pair .bilingual-sentence-english { font-size: 18px; color: #172b4d; }
+.bilingual-sentences .bilingual-sentence-pair .bilingual-sentence-russian { margin-top: 3px; font-size: 14px; color: #475569; }
+.desktop-workspace .bilingual-sentences { gap: 8px; }
+.desktop-workspace .bilingual-sentences .bilingual-sentence-pair .bilingual-sentence-english { font-size: 17px; }
+.desktop-workspace .bilingual-sentences .bilingual-sentence-pair .bilingual-sentence-russian { font-size: 13px; }

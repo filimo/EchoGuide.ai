@@ -2826,9 +2826,12 @@ describe("Training Live Panel", () => {
     );
     expect(
       await screen.findByText(
-        "The prototype took longer because I used the standard mode. The generation mode is about 50% faster."
+        "The prototype took longer because I used the standard mode."
       )
     ).toBeInTheDocument();
+    expect(screen.getByText("The generation mode is about 50% faster.")).toBeInTheDocument();
+    expect(screen.getByText("The generation mode is about 50% faster.").nextElementSibling)
+      .toHaveTextContent("Режим генерации примерно на 50% быстрее.");
     await waitFor(() => {
       expect(savedSessions[0]?.phraseCards[0]?.answerHint).toBe(answerHint);
     });

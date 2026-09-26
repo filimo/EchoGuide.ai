@@ -101,6 +101,10 @@ describe("meeting pack lifecycle and grounding", () => {
     expect(result.english).toBe("The pilot is still a proposal.");
     expect(result.russian).toBe("Пилот пока предложен.");
     expect(result.status).toBe("grounded"); expect(result.sources[0].filename).toBe("status.md");
+    const answerCall = vi.mocked(fetchImpl).mock.calls.find(c => String(c[0]).endsWith("/responses"))!;
+    const answerRequest = JSON.parse(answerCall[1]!.body as string);
+    expect(answerRequest.instructions).toContain("sound like a calm colleague");
+    expect(answerRequest.instructions).toContain("Do not invent commitments");
     const call = vi.mocked(fetchImpl).mock.calls.find(c => String(c[0]).endsWith("/search"))!;
     expect(JSON.parse(call[1]!.body as string).filters.value).toBe(id);
     state.sourceIds = ["invented"];

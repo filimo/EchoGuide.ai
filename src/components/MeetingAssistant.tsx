@@ -1,4 +1,5 @@
 import { RotateCw } from "lucide-react";
+import { BilingualSentences } from "./BilingualSentences";
 import { prepareGenerationInput } from "../realtime/generationInput";
 import { useEffect, useRef, useState } from "react";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
@@ -241,9 +242,9 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       {timings.answerMs !== undefined && <span>Поиск и полный ответ: {(timings.answerMs / 1000).toFixed(1)} с</span>}
     </p>}
     </div>
-    {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><p lang="en">{opening.english}</p><p lang="ru">{opening.russian}</p></section>}
+    {opening && <section className="meeting-opening"><h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3><BilingualSentences english={opening.english} russian={opening.russian} /></section>}
     {answer && <section className="meeting-answer"><h3>{answer.status === "grounded" ? (opening ? "Продолжи" : "Ответ") : "Возьми время на проверку"}</h3>
-      <p lang="en">{answer.english}</p><p lang="ru">{answer.russian}</p>
+      <BilingualSentences english={answer.english} russian={answer.russian} />
       {answer.status !== "grounded" && <details><summary>Диагностика ответа</summary><p>{answer.diagnostics
         ? `${diagnosticReasons[answer.diagnostics.reason]} (${answer.diagnostics.reason}) · Найдено разделов: ${answer.diagnostics.found ?? "неизвестно"}`
         : "Причина не сохранена в этой старой карточке. Для новой проверки нажми «Новый вариант»."}</p></details>}
@@ -254,7 +255,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       </div>)}</details>}
     </section>}
     {general?.continuation && <section className="meeting-general"><h3>Общий вариант · продолжи</h3>
-      <p lang="en">{general.continuation.english}</p><p lang="ru">{general.continuation.russian}</p>
+      <BilingualSentences english={general.continuation.english} russian={general.continuation.russian} />
       <p className="hint">Рассуждение по вопросу, без проверки по материалам.</p>
     </section>}
   </div>;
