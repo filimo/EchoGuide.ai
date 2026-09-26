@@ -15,6 +15,16 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Generate the fast opening, standalone general answer and document retrieval in
+  parallel, with distinct card labels and independent result delivery.
+
+- Compact meeting cards with a Russian gist, question intent, an editable reply
+  point, copy buttons, and optional details, clarification and vocabulary. Move
+  regeneration into an inline input toolbar and restore the reply point from saved
+  cards. Keep continuation and evidence expanded, use icon copy controls and
+  hover, focus or click explanations, and place vocabulary last. Reduce block
+  spacing and identify the general option with a small provenance caption.
+
 - Display each reply sentence in larger English text with its smaller Russian
   translation directly underneath, including meeting answers and quick openings.
 - Prepare a source-independent spoken continuation together with the meeting
@@ -27,6 +37,9 @@ Until the first versioned release, changes are grouped by date.
   distinguish conversational context from document evidence.
 
 ### Fixed
+
+- Preserve a displayed fast clarification when document evidence arrives, and
+  distinguish an unclear question from a clear question with unavailable facts.
 
 - Make generated reply cards sound like a calm live conversation, with direct
   points, specific clarifications and grounded next steps across all reply paths.

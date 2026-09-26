@@ -15,6 +15,7 @@ export type MeetingCardSnapshot = {
   savedAt: string; packName: string; packCreatedAt: string;
   opening: QuickStart | null; answer: MeetingAnswer | null;
   general?: MeetingGeneralAnswer | null;
+  answerHint?: string;
   phase: "started" | "opening" | "complete" | "error";
   progress: string; timings: { openingMs?: number; answerMs?: number };
 };
@@ -36,6 +37,7 @@ export function isMeetingCardSnapshot(value: unknown): value is MeetingCardSnaps
     (r.opening !== null && !isQuickStart(r.opening)) || !r.timings ||
     Object.values(r.timings).some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0)) return false;
   if (r.general !== undefined && r.general !== null && !isMeetingGeneralAnswer(r.general)) return false;
+  if (r.answerHint !== undefined && !string(r.answerHint, 1200)) return false;
   if (r.generationInput !== undefined && (!r.generationInput || r.generationInput.version !== 1 ||
     !string(r.generationInput.transcript, 4000) || !Array.isArray(r.generationInput.recentContext) ||
     r.generationInput.recentContext.length > 120 || !r.generationInput.recentContext.every(t => string(t, 2000)))) return false;

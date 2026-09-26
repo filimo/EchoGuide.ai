@@ -27,7 +27,7 @@ describe("meeting API boundary", () => {
     expect(invalid.res.statusCode).toBe(400); expect(invalid.api.general).not.toHaveBeenCalled();
     const valid = await request("general", { transcript: "Question?", recentContext: [], speakerLabel: "Interviewer" });
     expect(valid.res.statusCode).toBe(200);
-    expect(valid.api.general).toHaveBeenCalledWith("Question?", [], "Interviewer");
+    expect(valid.api.general).toHaveBeenCalledWith("Question?", [], "Interviewer", undefined);
   });
   it("does not accept client evidence instead of a server search ticket", async () => {
     const { api, res } = await request("answer", { packId: "p", evidence: ["fake"] });

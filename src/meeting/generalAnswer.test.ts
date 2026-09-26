@@ -19,3 +19,13 @@ describe("meeting general answer contract", () => {
     expect(request.text.format.name).toBe("meeting_general_answer");
   });
 });
+
+
+it("keeps a user point separate from conversational evidence and accepts saved legacy cards", () => {
+  const request = buildMeetingGeneralRequest("What should we try?", [], "Interviewer", "synthetic-model", "Начать с одной задачи");
+  expect(JSON.parse(request.input)).toEqual({ transcript: "What should we try?", recentContext: [], speakerLabel: "Interviewer", answerHint: "Начать с одной задачи" });
+  const presentation = { gist: "Обсуждают первый шаг.", intent: "Предложить эксперимент.", clarification: null, vocabulary: [] };
+  expect(isMeetingGeneralAnswer({ ...pair, presentation })).toBe(true);
+  expect(isMeetingGeneralAnswer({ ...pair, presentation: { ...presentation, vocabulary: Array(4).fill({ english: "task", russian: "задача" }) } })).toBe(false);
+  expect(isMeetingGeneralAnswer(pair)).toBe(true);
+});

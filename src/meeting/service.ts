@@ -8,7 +8,7 @@ import { defaultBilingualModel } from "../realtime/bilingualAnalysis";
 import { spokenProductQuestion } from "./spokenProduct";
 import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
-import type { QuickStart } from "../realtime/quickStart";
+import { buildQuickStartRequest, isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { maxMeetingSummaryCharacters } from "./conversationContext";
 import { buildMeetingGeneralRequest, isMeetingGeneralAnswer } from "./generalAnswer";
 
@@ -136,10 +136,23 @@ export class MeetingService {
     if (typeof summary !== "string" || !summary.trim() || summary.length > maxMeetingSummaryCharacters) throw new Error("Invalid summary output");
     return summary.trim();
   }
-  async general(transcript: string, recentContext: string[], speakerLabel: string) {
+  async opening(transcript: string, recentContext: string[], speakerLabel: string, answerHint = "") {
+    const request = buildQuickStartRequest(transcript, recentContext, speakerLabel);
+    if (answerHint.trim()) {
+      request.input = JSON.stringify({ ...JSON.parse(request.input), answerHint });
+      request.instructions += " answerHint is the participant's explicit intended point. Give one short first sentence expressing it, even if the interviewer has not finished. It is not document evidence.";
+    }
+    const result = await this.api("/responses", "POST", request, 3500);
+    if (result.status === "incomplete") throw new Error("Opening incomplete");
+    const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? []).find((part: any) => part.type === "output_text")?.text;
+    const answer: unknown = JSON.parse(output ?? "null");
+    if (!isQuickStart(answer)) throw new Error("Invalid opening");
+    return answer;
+  }
+  async general(transcript: string, recentContext: string[], speakerLabel: string, answerHint = "") {
     const result = await this.api("/responses", "POST", buildMeetingGeneralRequest(
-      transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel
-    ), 6000);
+      transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel, answerHint
+    ), 9000);
     if (result.status === "incomplete") throw new Error("General answer incomplete");
     const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? [])
       .find((part: any) => part.type === "output_text")?.text;
