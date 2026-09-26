@@ -222,6 +222,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       <button type="button" onClick={async () => { try { await meetingHistoryClient.retry(); setHistoryError(""); setRequestVersion(v => v + 1); } catch { setHistoryError("Не удалось сохранить историю. Не закрывай страницу и повтори попытку."); } }}>Повторить сохранение / загрузку</button>
     </div>}
 
+    <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="О материалах встречи"><p>Выбранный набор документов для поиска. Здесь можно загрузить файлы или сменить набор; общий ответ готовится без этих материалов.</p></CardInfo></div>
     <details className="meeting-materials" open={!active}>
       <summary>Материалы встречи{active ? `: ${active.name}` : " — выбери или загрузи набор"}</summary>
       <p className="hint">MD-файлы загружаются в OpenAI. Поиск использует только выбранный набор.</p>
@@ -254,6 +255,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       </li>)}</ul>
       {active && <button type="button" disabled={busy} onClick={() => void activate(null)}>Убрать активный набор</button>}
     </details>
+    </div>
     {error && <p role="alert" className="error-text">{error}</p>}
     {!question && <p className="hint">Выбери реплику в разговоре, чтобы подготовить ответ.</p>}
     {active && selection && <div className="meeting-point">
@@ -281,30 +283,30 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       <p className="meeting-reply-caption">{opening.mode === "clarify" ? "Уточнение" : "Быстрое начало · без поиска по материалам"}</p>
     </section>}
     {general?.continuation && <details className="meeting-general meeting-reply-block" open><summary>Общий ответ · без поиска</summary>
-      <div className="meeting-block-tools"><button className="meeting-icon" aria-label="Скопировать весь ответ" title="Скопировать весь ответ" type="button" onClick={() => void copyReply(true)}><Copy size={15} aria-hidden="true" /></button></div>
+      <div className="meeting-block-tools"><CardInfo label="Об общем ответе"><p>Самостоятельный вариант по вопросу и контексту разговора, без поиска в документах. Он готовится отдельно от быстрого начала и может не содержать фактов из базы. «Моя мысль» задаёт направление этого ответа.</p></CardInfo><button className="meeting-icon" aria-label="Скопировать весь ответ" title="Скопировать весь ответ" type="button" onClick={() => void copyReply(true)}><Copy size={15} aria-hidden="true" /></button></div>
       <BilingualSentences english={`${general.opening.english} ${general.continuation.english}`} russian={`${general.opening.russian} ${general.continuation.russian}`} />
     </details>}
-    {general?.presentation?.clarification && <details className="meeting-extra"><summary>Уточнить у собеседника</summary>
+    {general?.presentation?.clarification && opening?.mode !== "clarify" && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="Об уточнении"><p>Короткий вопрос собеседнику, если для ответа не хватает важной детали. Можно произнести английскую фразу; русский текст передаёт её смысл.</p></CardInfo></div><details className="meeting-extra" open><summary>Уточнить у собеседника</summary>
       <BilingualSentences {...general.presentation.clarification} />
-    </details>}
+    </details></div>}
     {answer && <details className="meeting-answer meeting-reply-block" open><summary>Ответ по материалам</summary>
       <div className="meeting-block-tools">
         <CardInfo label="Об ответе по материалам"><p>{answer.status === "grounded" ? "Ответ подтверждён материалами выбранного набора. Общий вариант выше подготовлен отдельно." : "В материалах не удалось подтвердить ответ. Причина доступна в диагностике."}</p></CardInfo>
         {answer.status === "grounded" && <button className="meeting-icon" aria-label="Скопировать ответ по материалам" title="Скопировать ответ по материалам" type="button" onClick={() => void copyReply(false, true)}><Copy size={15} aria-hidden="true" /></button>}
       </div>
       {answer.status === "grounded" && <BilingualSentences english={answer.english} russian={answer.russian} />}
-      {answer.status !== "grounded" && <details><summary>Диагностика ответа</summary><p>{answer.diagnostics
+      {answer.status !== "grounded" && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="О диагностике ответа"><p>Причина, по которой ответ по материалам не получен: отсутствие подходящих разделов, недостаточно оснований или ошибка запроса.</p></CardInfo></div><details><summary>Диагностика ответа</summary><p>{answer.diagnostics
         ? `${diagnosticReasons[answer.diagnostics.reason]} (${answer.diagnostics.reason}) · Найдено разделов: ${answer.diagnostics.found ?? "неизвестно"}`
-        : "Причина не сохранена в этой старой карточке. Для новой проверки нажми «Новый вариант»."}</p></details>}
-      {answer.sources.length > 0 && <details><summary>Основания ответа</summary>{answer.sources.map(source => <div key={source.id}>
+        : "Причина не сохранена в этой старой карточке. Для новой проверки нажми «Новый вариант»."}</p></details></div>}
+      {answer.sources.length > 0 && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="Об основаниях ответа"><p>Найденные фрагменты документов: файл, раздел и исходный текст. По ним можно проверить, на чём основан зелёный ответ.</p></CardInfo></div><details><summary>Основания ответа</summary>{answer.sources.map(source => <div key={source.id}>
         <strong>{source.filename} → {source.heading}</strong>
         <p>{Object.entries(source.metadata).filter(([key]) => !["source_hash", "pack_id"].includes(key)).map(([key,value]) => `${key}: ${value}`).join(" · ")}</p>
         <pre>{source.text}</pre>
-      </div>)}</details>}
+      </div>)}</details></div>}
     </details>}
-    {!!general?.presentation?.vocabulary.length && <details className="meeting-extra" open><summary>Опорные слова</summary>
+    {!!general?.presentation?.vocabulary.length && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="Об опорных словах"><p>До трёх полезных английских слов или выражений из общего ответа с коротким русским смыслом. Подсказка для чтения и разговора.</p></CardInfo></div><details className="meeting-extra" open><summary>Опорные слова</summary>
       <ul>{general.presentation.vocabulary.map((word, index) => <li key={index}><strong>{word.english}</strong> — {word.russian}</li>)}</ul>
-    </details>}
+    </details></div>}
     {copyStatus && <p role="status" className="hint">{copyStatus}</p>}
     <div className="meeting-answer-meta">
     {(timings.openingMs !== undefined || timings.answerMs !== undefined) && <p className="hint" aria-label="Время подготовки ответа" title="От запуска запросов: полный ответ включает поиск по материалам и подготовку текста.">

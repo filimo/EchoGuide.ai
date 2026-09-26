@@ -1884,3 +1884,8 @@ textarea {
 
 .meeting-opening.meeting-reply-block > .bilingual-sentences { padding-right: 0; }
 .meeting-opening.meeting-reply-block > h3 { font-size: 12px; margin: 0 0 3px; }
+
+.meeting-help-row { position: relative; }
+.meeting-help-row > details > summary { padding-right: 38px; }
+.meeting-help-row > .meeting-block-tools { z-index: 2; top: 0; }
+.meeting-help-row:has(> .meeting-extra) > .meeting-block-tools { top: 2px; }

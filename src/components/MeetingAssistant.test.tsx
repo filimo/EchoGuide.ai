@@ -260,7 +260,7 @@ it("restores legacy snapshots unchanged until explicit regeneration", async () =
 it("submits an explicit point only on click and restores it with reading aids", async () => {
   const pair = { opening: { mode: "start", english: "I would start small.", russian: "Я бы начал с малого." },
     continuation: { english: "Then I would compare the results.", russian: "Затем я бы сравнил результаты." },
-    presentation: { gist: "Обсуждают план пилота.", intent: "Предложить первый шаг.", clarification: null,
+    presentation: { gist: "Обсуждают план пилота.", intent: "Предложить первый шаг.", clarification: { english: "Which task should we start with?", russian: "С какой задачи начнём?" },
       vocabulary: [{ english: "results", russian: "результаты" }] } };
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : path === "general" ? pair : path === "opening" ? pair.opening : meetingFallback);
   const view = render(<MeetingAssistant sessionId="session-one" selection={selection} />);
@@ -283,6 +283,10 @@ it("submits an explicit point only on click and restores it with reading aids", 
   expect(screen.getByText("Обсуждают план пилота.")).toBeInTheDocument();
   expect(screen.getByText("Предложить первый шаг.")).toBeInTheDocument();
   expect(screen.getByText("Опорные слова").closest("details")).toHaveAttribute("open");
+  expect(screen.getByText("Уточнить у собеседника").closest("details")).toHaveAttribute("open");
+  expect(screen.getByLabelText("Об опорных словах")).toBeInTheDocument();
+  expect(screen.getByLabelText("Об общем ответе")).toBeInTheDocument();
+  expect(screen.getByLabelText("О материалах встречи")).toBeInTheDocument();
   expect(vi.mocked(meetingRequest).mock.calls.slice(calls).every(c => c[0] === "packs")).toBe(true);
 });
 
@@ -312,4 +316,17 @@ it("delivers the fast opening and material answer while the independent general 
   await screen.findByText("A separate general point.");
   expect(screen.getByText("Fast first point.")).toBeInTheDocument();
   await waitFor(() => expect(snapshots.at(-1)?.phase).toBe("complete"));
+});
+
+
+it("shows only the fast clarification when both independent requests ask to clarify", async () => {
+  const pair = { opening: { mode: "clarify", english: "Which options do you mean?", russian: "Какие варианты ты имеешь в виду?" }, continuation: null,
+    presentation: { gist: "Нужно выбрать вариант.", intent: "Варианты не названы.", vocabulary: [], clarification: { english: "Which options do you mean?", russian: "Какие варианты ты имеешь в виду?" } } };
+  vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "opening" ? { mode: "clarify", english: "Which two options are you comparing?", russian: "Какие два варианта вы сравниваете?" } : path === "general" ? pair : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
+  render(<MeetingAssistant sessionId="session-one" selection={selection} />);
+  await screen.findByText("Which two options are you comparing?");
+  await waitFor(() => expect(snapshots.at(-1)?.phase).toBe("complete"));
+  expect(screen.queryByText("Уточнить у собеседника")).not.toBeInTheDocument();
+  expect(screen.queryByText("Which options do you mean?")).not.toBeInTheDocument();
+  expect(snapshots.at(-1)?.general).toEqual(pair);
 });

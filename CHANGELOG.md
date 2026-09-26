@@ -15,6 +15,10 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Add question-mark explanations beside meeting card headings, including the
+  general answer, documents, sources, clarification, diagnostics and vocabulary.
+  Keep the optional clarification expanded by default.
+
 - Generate the fast opening, standalone general answer and document retrieval in
   parallel, with distinct card labels and independent result delivery.
 
@@ -37,6 +41,9 @@ Until the first versioned release, changes are grouped by date.
   distinguish conversational context from document evidence.
 
 ### Fixed
+
+- Show one clarification block when the fast and general requests both ask
+  for clarification, retaining both responses in saved history.
 
 - Preserve a displayed fast clarification when document evidence arrives, and
   distinguish an unclear question from a clear question with unavailable facts.
