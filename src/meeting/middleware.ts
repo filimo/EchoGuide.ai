@@ -1,3 +1,4 @@
+import { maxMeetingContextCharacters, maxMeetingContextTurns } from "./conversationContext";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { MeetingHistoryStore } from "./historyStore";
@@ -51,9 +52,9 @@ export function createMeetingMiddleware(service?: MeetingService, history = new 
       }
       if (path === "/api/meeting/general" || path === "/api/meeting/opening") {
         if (typeof body.transcript !== "string" || !body.transcript.trim() || body.transcript.length > 4000 ||
-          !Array.isArray(body.recentContext) || body.recentContext.length > 120 ||
+          !Array.isArray(body.recentContext) || body.recentContext.length > maxMeetingContextTurns ||
           body.recentContext.some((s: unknown) => typeof s !== "string" || s.length > 2000) ||
-          body.recentContext.join("\n").length > 12000 ||
+          body.recentContext.join("\n").length > maxMeetingContextCharacters ||
           typeof body.speakerLabel !== "string" || body.speakerLabel.length > 100 ||
           (body.answerHint !== undefined && (typeof body.answerHint !== "string" || body.answerHint.length > 1200))) return send(400, { error: "Некорректный вопрос." });
         return send(200, await (path.endsWith("/opening") ? api.opening(body.transcript, body.recentContext, body.speakerLabel, body.answerHint) : api.general(body.transcript, body.recentContext, body.speakerLabel, body.answerHint)));
@@ -62,9 +63,9 @@ export function createMeetingMiddleware(service?: MeetingService, history = new 
       if (path === "/api/meeting/delete") return send(200, await api.remove(body.packId));
       if (path === "/api/meeting/search") {
         if (typeof body.transcript !== "string" || !body.transcript.trim() || body.transcript.length > 4000 ||
-          !Array.isArray(body.recentContext) || body.recentContext.length > 120 ||
+          !Array.isArray(body.recentContext) || body.recentContext.length > maxMeetingContextTurns ||
           body.recentContext.some((s: unknown) => typeof s !== "string" || s.length > 2000) ||
-          body.recentContext.join("\n").length > 12000 ||
+          body.recentContext.join("\n").length > maxMeetingContextCharacters ||
           (body.summary !== undefined && (typeof body.summary !== "string" || body.summary.length > 2400))) return send(400, { error: "Некорректный вопрос." });
         return send(200, await api.search(body.packId, body.transcript, body.recentContext,
           ...(body.summary ? [body.summary] : [])));

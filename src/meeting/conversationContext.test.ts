@@ -6,14 +6,14 @@ const turn = (id: string, offset: number, text = id) => ({ id, text, speakerLabe
   capturedAt: base + offset });
 
 describe("meeting conversation context", () => {
-  it("uses ten minutes of timed turns and retains older turns until summarized", () => {
-    const turns = [turn("old", 0), turn("middle", 2 * 60_000), turn("recent", 11 * 60_000), turn("active", 12 * 60_000)];
+  it("uses twenty minutes of timed turns and retains older turns until summarized", () => {
+    const turns = [turn("old", 0), turn("middle", 2 * 60_000), turn("recent", 21 * 60_000), turn("active", 22 * 60_000)];
     expect(expiredMeetingTurns(turns, turns[3].capturedAt).map(t => t.id)).toEqual(["old"]);
     expect(meetingContextBefore(turns, "active", new Set(["old"]))).toEqual([
       "Interviewer: middle", "Interviewer: recent"
     ]);
     expect(meetingContextBefore(turns, "active")).toContain("Interviewer: old");
-    expect(meetingContextWindowMs).toBe(600_000);
+    expect(meetingContextWindowMs).toBe(1_200_000);
   });
 
   it("never includes future turns when an older transcript turn is selected", () => {
@@ -27,7 +27,7 @@ describe("meeting conversation context", () => {
   });
 
   it("bounds a rapid exchange to the server's turn limit", () => {
-    const turns = Array.from({ length: 180 }, (_, i) => turn(String(i), i * 1000));
-    expect(meetingContextBefore(turns, "179")).toHaveLength(120);
+    const turns = Array.from({ length: 300 }, (_, i) => turn(String(i), i * 1000));
+    expect(meetingContextBefore(turns, "299")).toHaveLength(240);
   });
 });

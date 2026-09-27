@@ -11,7 +11,7 @@ Changing sessions or leaving meeting mode clears the selection.
 ## Conversation window
 
 New meeting turns carry capture times. A selected turn receives preceding speech
-from the prior ten minutes, bounded to 12,000 characters. Older session turns
+from the prior twenty minutes, bounded to 24,000 characters. Older session turns
 without capture times retain the previous seven-turn behavior. The full local
 transcript can retain up to 500 turns in meeting mode.
 
@@ -28,7 +28,7 @@ references in later questions but never establishes a project fact. Document
 sections remain the evidence for grounded answers.
 
 Quick openings continue to use the smaller low-latency context. The full
-meeting answer and material search receive the ten-minute context and summary.
+meeting answer and material search receive the twenty-minute context and summary.
 Selecting a historical turn excludes any summary that may contain later speech.
 
 The opening and retrieval start concurrently on selection. The

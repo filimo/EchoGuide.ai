@@ -1,8 +1,9 @@
 import type { SessionHistoryTranscriptTurn } from "../domain/sessionHistory";
 import { withoutTranscriptionPrompt } from "../realtime/generationInput";
 
-export const meetingContextWindowMs = 10 * 60 * 1000;
-export const maxMeetingContextCharacters = 12000;
+export const meetingContextWindowMs = 20 * 60 * 1000;
+export const maxMeetingContextCharacters = 24000;
+export const maxMeetingContextTurns = 240;
 export const maxMeetingSummaryCharacters = 2400;
 
 export function meetingContextBefore(turns: SessionHistoryTranscriptTurn[], activeId: string,
@@ -21,7 +22,7 @@ export function meetingContextBefore(turns: SessionHistoryTranscriptTurn[], acti
     const text = withoutTranscriptionPrompt(turn.text).slice(0, 1800);
     return text ? `${turn.speakerLabel}: ${text}` : "";
   }).filter(Boolean);
-  while (lines.length > 1 && (lines.length > 120 || lines.join("\n").length > maxMeetingContextCharacters)) lines.shift();
+  while (lines.length > 1 && (lines.length > maxMeetingContextTurns || lines.join("\n").length > maxMeetingContextCharacters)) lines.shift();
   if (lines.join("\n").length > maxMeetingContextCharacters) return [lines[0].slice(-maxMeetingContextCharacters)];
   return lines;
 }
