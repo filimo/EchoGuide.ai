@@ -6,7 +6,6 @@ export type MacAudioSources = {
 export type MacAudioEvent =
   | { type: "recording"; status: "recording" | "saved" | "error"; id?: string; message?: string }
   | { type: "transcription-error"; message: string }
-  | { type: "virtual-output"; status: "ready" | "error"; message?: string }
   | { type: "ready" }
   | { type: "error"; message: string }
   | { type: "level"; source: MacAudioSource; level: number; peak: number; chunks: number }

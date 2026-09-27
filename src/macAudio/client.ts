@@ -27,63 +27,6 @@ export type MacMicrophoneMonitorEvent =
   | { type: "ready" }
   | { type: "level"; level: number; peak: number };
 
-export function routeStandbyMicrophone(microphone: string,
-  onReady: () => void, onError: (message: string) => void,
-  fetchImpl: typeof fetch = fetch
-): { stop: () => void } {
-  const controller = new AbortController();
-  void (async () => {
-    try {
-      let response: Response;
-      for (let attempt = 0; ; attempt++) {
-        response = await fetchImpl("/api/mac-audio/standby", {
-          method: "POST", headers: macAudioHeaders, body: JSON.stringify({ microphone }), signal: controller.signal
-        });
-        if (controller.signal.aborted) return;
-        if (response.status !== 409 || attempt === 19) break;
-        await response.body?.cancel();
-        await new Promise<void>(resolve => {
-          const finish = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", finish); resolve(); };
-          const timer = setTimeout(finish, 250);
-          controller.signal.addEventListener("abort", finish, { once: true });
-        });
-        if (controller.signal.aborted) return;
-      }
-      if (controller.signal.aborted) return;
-      if (!response.ok) {
-        const payload = await response.json();
-        throw new Error(payload.error || "Could not route the microphone to BlackHole.");
-      }
-      if (!response.body) throw new Error("BlackHole status streaming is unavailable.");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let pending = "";
-      try {
-        while (!controller.signal.aborted) {
-          const { value, done } = await reader.read();
-          if (controller.signal.aborted) break;
-          if (done) break;
-          pending += decoder.decode(value, { stream: true });
-          if (pending.length > 4096) throw new Error("Invalid BlackHole status response.");
-          let end: number;
-          while ((end = pending.indexOf("\n")) >= 0) {
-            const line = pending.slice(0, end);
-            pending = pending.slice(end + 1);
-            if (!line.trim()) continue;
-            const event = JSON.parse(line);
-            if (event.type === "ready") onReady();
-            else if (event.type === "error") throw new Error(event.message || "BlackHole routing stopped.");
-          }
-        }
-      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      if (!controller.signal.aborted) throw new Error("BlackHole microphone routing stopped.");
-    } catch (error) {
-      if (!controller.signal.aborted) onError(error instanceof Error ? error.message : "BlackHole routing failed.");
-    }
-  })();
-  return { stop: () => controller.abort() };
-}
-
 export function monitorMacMicrophone(microphone: string,
   onEvent: (event: MacMicrophoneMonitorEvent) => void,
   onError: (message: string) => void,
@@ -131,7 +74,6 @@ export function monitorMacMicrophone(microphone: string,
 export type MacAudioOptions = {
   sessionId?: string;
   recordingOnly?: boolean;
-  virtualOutput?: boolean;
   pid: number;
   microphone: string;
   language: RealtimeSpeechLanguage;
@@ -141,7 +83,7 @@ export type MacAudioOptions = {
   fetchImpl?: typeof fetch;
 };
 
-export async function connectMacAudio({ pid, microphone, language, sessionId, recordingOnly = false, virtualOutput = false, signal, onEvent, onError,
+export async function connectMacAudio({ pid, microphone, language, sessionId, recordingOnly = false, signal, onEvent, onError,
   fetchImpl = fetch }: MacAudioOptions): Promise<RealtimeTranscriptionConnection> {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -160,7 +102,7 @@ export async function connectMacAudio({ pid, microphone, language, sessionId, re
   void (async () => {
     try {
       const response = await fetchImpl("/api/mac-audio/session", {
-        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ pid, microphone, language, sessionId, recordingOnly, virtualOutput }), signal: controller.signal
+        method: "POST", headers: macAudioHeaders, body: JSON.stringify({ pid, microphone, language, sessionId, recordingOnly }), signal: controller.signal
       });
       if (!response.ok) {
         const payload = await response.json();

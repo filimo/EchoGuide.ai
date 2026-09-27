@@ -1,37 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { connectMacAudio, monitorMacMicrophone, routeStandbyMicrophone } from "./client";
+import { connectMacAudio, monitorMacMicrophone } from "./client";
 
 describe("Mac audio streamed client", () => {
-  it("starts idle microphone routing and stops it on request", async () => {
-    const onReady = vi.fn();
-    const onError = vi.fn();
-    const body = new ReadableStream<Uint8Array>({ start(controller) {
-      controller.enqueue(new TextEncoder().encode('{"type":"ready"}\n'));
-    } });
-    const fetchImpl = vi.fn(async () => new Response(body));
-    const route = routeStandbyMicrophone("usb", onReady, onError, fetchImpl);
-    await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
-    expect(fetchImpl).toHaveBeenCalledWith("/api/mac-audio/standby",
-      expect.objectContaining({ body: JSON.stringify({ microphone: "usb" }) }));
-    route.stop();
-    expect(onError).not.toHaveBeenCalled();
-  });
-  it("waits for the live session to release Mac audio before restoring BlackHole", async () => {
-    const onReady = vi.fn();
-    const onError = vi.fn();
-    const body = new ReadableStream<Uint8Array>({ start(controller) {
-      controller.enqueue(new TextEncoder().encode('{"type":"ready"}\n'));
-    } });
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Mac audio is already running." }), { status: 409 }))
-      .mockResolvedValueOnce(new Response(body));
-    const route = routeStandbyMicrophone("usb", onReady, onError, fetchImpl);
-    await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(onError).not.toHaveBeenCalled();
-    route.stop();
-  });
   it("reads microphone monitor levels and stops without sending audio", async () => {
     const onEvent = vi.fn();
     const onError = vi.fn();

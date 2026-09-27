@@ -7,9 +7,8 @@ import { loadMacAudioPreference, saveMacAudioPreference, type MacAudioPreference
 
 export type MacAudioSelection = { pid: number; microphone: string };
 
-export function MacAudioControls({ disabled, selection, onChange, onMicrophoneChange }: {
+export function MacAudioControls({ disabled, selection, onChange }: {
   disabled: boolean; selection: MacAudioSelection | null; onChange: (value: MacAudioSelection | null) => void;
-  onMicrophoneChange?: (microphone: string) => void;
 }) {
   const popoverId = useId();
   const [sources, setSources] = useState<MacAudioSources>({ applications: [], microphones: [] });
@@ -143,7 +142,6 @@ export function MacAudioControls({ disabled, selection, onChange, onMicrophoneCh
         disabled={disabled || loading || monitorState !== "idle"} value={preference.microphone}
         onChange={event => {
           remember({ ...preference, microphone: event.target.value });
-          onMicrophoneChange?.(event.target.value);
           const matches = sources.applications.filter(app => app.bundleId === preference.application?.bundleId);
           const pid = selection?.pid ?? (matches.length === 1 ? matches[0].pid : null);
           onChange(pid == null ? null : { pid, microphone: event.target.value });

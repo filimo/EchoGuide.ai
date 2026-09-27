@@ -287,8 +287,7 @@ func inputVolume() {
     emit(["type": "input-volume", "available": true, "value": Int((value * 100).rounded())])
 }
 
-if CommandLine.arguments.contains("--self-test") { selfTest(); virtualOutputSelfTest(); exit(0) }
-if CommandLine.arguments.contains("--virtual-output") { runVirtualOutput() }
+if CommandLine.arguments.contains("--self-test") { selfTest(); exit(0) }
 if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--input-volume" {
     inputVolume(); exit(0)
 }

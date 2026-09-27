@@ -2,7 +2,7 @@ import { flushSync } from "react-dom";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrainingLivePanel } from "./TrainingLivePanel";
-import { listMacAudioSources, macInputVolume, routeStandbyMicrophone, type MacAudioOptions } from "../macAudio/client";
+import { listMacAudioSources, macInputVolume, type MacAudioOptions } from "../macAudio/client";
 import type { MacAudioEvent } from "../macAudio/protocol";
 import type { SessionHistoryEntry, SessionHistoryEntryDraft } from "../domain/sessionHistory";
 
@@ -17,12 +17,11 @@ vi.mock("../macAudio/client", async importOriginal => ({
   ...await importOriginal<typeof import("../macAudio/client")>(),
   listMacAudioSources: vi.fn(async () => ({ applications: [{ pid: 123, name: "Call app", bundleId: "test.app" }],
     microphones: [{ id: "usb", name: "UGREEN" }] })),
-  macInputVolume: vi.fn(async () => ({ available: false })),
-  routeStandbyMicrophone: vi.fn(() => ({ stop: vi.fn() }))
+  macInputVolume: vi.fn(async () => ({ available: false }))
 }));
 afterEach(() => { window.localStorage.clear(); vi.restoreAllMocks(); });
 
-async function setup(pending = false, recordingOnly = false, virtualOutput = false) {
+async function setup(pending = false, recordingOnly = false) {
   let options: MacAudioOptions | undefined;
   let finish: () => void = () => {};
   const transport = { disconnect: vi.fn(), sendEvent: () => false, clearAudio: () => false,
@@ -47,10 +46,6 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
   fireEvent.click(screen.getByRole("button", { name: "Refresh Mac sources" }));
   await screen.findByRole("option", { name: "Call app (123)" });
   fireEvent.change(screen.getByLabelText("Call application"), { target: { value: "123" } });
-  if (virtualOutput) {
-    fireEvent.click(screen.getByRole("button", { name: "BlackHole · выкл" }));
-    fireEvent.change(screen.getByLabelText("Mac microphone"), { target: { value: "usb" } });
-  }
   if (recordingOnly) {
     fireEvent.click(screen.getByRole("button", { name: "Начать встречу ▾" }));
     fireEvent.click(screen.getByRole("button", { name: "Только записать аудио" }));
@@ -62,7 +57,7 @@ async function setup(pending = false, recordingOnly = false, virtualOutput = fal
 }
 
 describe("Mac audio in Training Mode", () => {
-  it("does not open native audio after reload with Mac mode and BlackHole saved", async () => {
+  it("ignores obsolete routing preferences without opening native audio on reload", async () => {
     localStorage.setItem("echoguide.audioMode.v1", "mac");
     localStorage.setItem("echoguide.macAudio.virtualOutput.v1", "true");
     localStorage.setItem("echoguide.macAudio.v1", JSON.stringify({
@@ -70,7 +65,6 @@ describe("Mac audio in Training Mode", () => {
     }));
     vi.mocked(listMacAudioSources).mockClear();
     vi.mocked(macInputVolume).mockClear();
-    vi.mocked(routeStandbyMicrophone).mockClear();
     const connect = vi.fn();
     const renderPanel = () => render(<TrainingLivePanel stream={null} notes=""
       connectMacAudioClient={connect}
@@ -81,24 +75,19 @@ describe("Mac audio in Training Mode", () => {
     first.unmount();
     const second = renderPanel();
     await act(async () => {});
-    expect(screen.getByRole("button", { name: "BlackHole · готов к встрече" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /BlackHole/ })).not.toBeInTheDocument();
     expect(listMacAudioSources).not.toHaveBeenCalled();
     expect(macInputVolume).not.toHaveBeenCalled();
-    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
     expect(connect).not.toHaveBeenCalled();
     second.unmount();
   });
-  it("sends the optional BlackHole route with an explicitly selected microphone", async () => {
-    vi.mocked(routeStandbyMicrophone).mockClear();
-    const test = await setup(false, false, true);
-    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
-    expect(test.options).toMatchObject({ microphone: "usb", virtualOutput: true });
-    await test.emit({ type: "virtual-output", status: "ready" });
-    expect(screen.getByRole("button", { name: "BlackHole · микс" })).toHaveAttribute("aria-pressed", "true");
+  it("starts a meeting with the default microphone without an output route", async () => {
+    const test = await setup();
+    expect(test.options.microphone).toBe("default");
+    expect(test.options).not.toHaveProperty("virtualOutput");
+    expect(screen.queryByRole("button", { name: /BlackHole/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Остановить встречу" }));
-    expect(screen.queryByRole("button", { name: "BlackHole · микс" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "BlackHole · готов к встрече" })).toBeInTheDocument();
-    expect(routeStandbyMicrophone).not.toHaveBeenCalled();
+    expect(test.options.signal.aborted).toBe(true);
   });
   it("uses the same dBFS scale for both source meters and reports peak overload", async () => {
     const test = await setup();

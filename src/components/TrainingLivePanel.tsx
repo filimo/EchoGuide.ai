@@ -1,5 +1,5 @@
 import { loadMeetingMode, saveMeetingMode } from "../meeting/preferences";
-import { loadAudioMode, saveAudioMode, loadMacAudioPreference, loadVirtualOutputPreference, saveVirtualOutputPreference } from "../macAudio/preferences";
+import { loadAudioMode, saveAudioMode } from "../macAudio/preferences";
 import { startBrowserRecording, recordingPath, type BrowserRecording, type RecordingStatus } from "../recordings/client";
 import { recordingHeaders, type Recording } from "../recordings/types";
 import { SessionAudio } from "./SessionAudio";
@@ -557,11 +557,6 @@ export function TrainingLivePanel({
 }: TrainingLivePanelProps) {
   const [audioMode, setAudioMode] = useState(() => loadAudioMode(initialAudioMode));
   const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
-  const [standbyMicrophone, setStandbyMicrophone] = useState(() => loadMacAudioPreference().microphone);
-  const [virtualOutputEnabled, setVirtualOutputEnabled] = useState(loadVirtualOutputPreference);
-  const [virtualOutputStatus, setVirtualOutputStatus] = useState<{
-    kind: "idle" | "connecting" | "microphone" | "mix" | "error"; detail?: string;
-  }>({ kind: "idle" });
   const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; peak: number; chunks: number; seenAt: number }>>>({});
   const [macClock, setMacClock] = useState(Date.now());
   const macAbortRef = useRef<AbortController | null>(null);
@@ -1785,7 +1780,6 @@ export function TrainingLivePanel({
     lastOwnSpeechAtRef.current = 0;
     setFollowLiveMode(true);
     setMacLevels({});
-    setVirtualOutputStatus({ kind: virtualOutputEnabled ? "connecting" : "idle" });
     setErrorMessage("");
     realtimeStatusRef.current = "connecting";
     setRealtimeStatus("connecting");
@@ -1809,7 +1803,7 @@ export function TrainingLivePanel({
       }
       if (controller.signal.aborted || macAbortRef.current !== controller) return;
       const transport = await connectMacAudioClient({
-        ...macSelection, sessionId: recordingSessionId, recordingOnly, virtualOutput: virtualOutputEnabled,
+        ...macSelection, sessionId: recordingSessionId, recordingOnly,
         language: speechLanguage, signal: controller.signal,
         onEvent: event => {
           if (controller.signal.aborted || macAbortRef.current !== controller) return;
@@ -1821,8 +1815,6 @@ export function TrainingLivePanel({
             if (event.status === "recording") { setRecordingStartedAt(Date.now()); setRecordingClock(Date.now()); }
           }
           if (event.type === "transcription-error") setErrorMessage(event.message);
-          if (event.type === "virtual-output") setVirtualOutputStatus(event.status === "ready"
-            ? { kind: "mix" } : { kind: "error", detail: event.message ?? "BlackHole недоступен" });
           if (event.type === "level") setMacLevels(current => ({ ...current,
             [event.source]: { level: event.level, peak: event.peak, chunks: event.chunks, seenAt: Date.now() }
           }));
@@ -2064,7 +2056,6 @@ export function TrainingLivePanel({
     macAbortRef.current?.abort();
     macAbortRef.current = null;
     setMacLevels({});
-    setVirtualOutputStatus({ kind: "idle" });
     flushPendingAutomaticAnalysis();
     quickStartControllersRef.current.forEach((controller) => controller.abort());
     const liveConnection = connectionRef.current;
@@ -2886,7 +2877,7 @@ export function TrainingLivePanel({
             {connection == null && !recordingOnlyActive ? (
               <div className="start-meeting-menu">
                 <button type="button" aria-expanded={startMenuOpen} aria-controls="start-meeting-options"
-                  disabled={recordingStatus === "saving" || microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null || virtualOutputEnabled && macSelection.microphone === "default" : stream == null && onRequestMicrophone == null)}
+                  disabled={recordingStatus === "saving" || microphoneRequesting || realtimeStatus === "connecting" || (audioMode === "mac" ? macSelection == null : stream == null && onRequestMicrophone == null)}
                   onClick={() => setStartMenuOpen(open => !open)}>
                   {recordingOnlyStarting ? "Подготовка записи…" : "Начать встречу ▾"}
                 </button>
@@ -2952,21 +2943,7 @@ export function TrainingLivePanel({
           <option value="mac">MacBook: microphone + call application</option>
         </select>
         {audioMode === "mac" && <MacAudioControls disabled={connection != null || realtimeStatus === "connecting"}
-          selection={macSelection} onChange={setMacSelection} onMicrophoneChange={setStandbyMicrophone} />}
-        {audioMode === "mac" && <button type="button" className="blackhole-route-button"
-          data-state={!virtualOutputEnabled ? "off" : standbyMicrophone === "default" ? "warning" : virtualOutputStatus.kind}
-          aria-pressed={virtualOutputEnabled}
-          title={!virtualOutputEnabled ? "Включить передачу звука в BlackHole 2ch" :
-            standbyMicrophone === "default" ? "Выбери конкретный микрофон в настройках звука" :
-            virtualOutputStatus.kind === "error" ? virtualOutputStatus.detail :
-            "Передача микрофона и звука приложения начнётся после запуска встречи."}
-          disabled={connection != null || realtimeStatus === "connecting"}
-          onClick={() => { const enabled = !virtualOutputEnabled; setVirtualOutputEnabled(enabled);
-            saveVirtualOutputPreference(enabled); if (!enabled) setVirtualOutputStatus({ kind: "idle" }); }}>
-          BlackHole · {!virtualOutputEnabled ? "выкл" : standbyMicrophone === "default" ? "выбери микрофон" :
-            virtualOutputStatus.kind === "microphone" ? "микрофон" : virtualOutputStatus.kind === "mix" ? "микс" :
-            virtualOutputStatus.kind === "error" ? "ошибка" : virtualOutputStatus.kind === "idle" ? "готов к встрече" : "подключение…"}
-        </button>}
+          selection={macSelection} onChange={setMacSelection} />}
         {audioMode !== "mac" && microphoneError && <p role="alert">{microphoneError}</p>}
         <section className="training-status-row" aria-label="Training Mode status">
             {audioMode !== "mac" && onMicrophoneDeviceChange && <MicrophonePicker

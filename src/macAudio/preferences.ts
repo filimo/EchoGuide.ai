@@ -5,13 +5,6 @@ export type MacAudioPreference = {
 };
 const modeKey = "echoguide.audioMode.v1";
 const sourcesKey = "echoguide.macAudio.v1";
-const virtualOutputKey = "echoguide.macAudio.virtualOutput.v1";
-export function loadVirtualOutputPreference(): boolean {
-  try { return localStorage.getItem(virtualOutputKey) === "true"; } catch { return false; }
-}
-export function saveVirtualOutputPreference(value: boolean) {
-  try { localStorage.setItem(virtualOutputKey, String(value)); } catch { /* Storage is optional. */ }
-}
 export function loadAudioMode(fallback: AudioMode): AudioMode {
   try {
     const value = localStorage.getItem(modeKey);

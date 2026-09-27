@@ -32,11 +32,6 @@ It does not start capture automatically. The normal setup screen also links here
    To set input volume first, click **Проверить микрофон** in the source popover,
    speak normally, then click **Показать системный уровень входа** if you need the
    system input-volume slider. Stop the test when done.
-   To share audio with the ChatGPT macOS app, select a named physical microphone
-   rather than `Default`, then click **BlackHole · выкл**. The button shows
-   `готов к встрече` while idle, `микс` during a meeting, or an error state.
-   Enabling this option prepares the next meeting; it does not open audio devices.
-   BlackHole 2ch must already be installed. EchoGuide does not change the Mac's default output.
 4. Select the speech language; use **English + Russian** for bilingual conversation.
 5. Click **Начать встречу** and choose **С подсказками и расшифровкой** to start capture, transcription and local audio recording, or **Только записать аудио** for local capture without OpenAI transcription. Allow microphone access if macOS requests it.
 6. Check both source meters. Completed turns appear with their source labels;
@@ -64,24 +59,10 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   discarded. Buffers remain bounded; a queue backlog over three seconds or an
   overloaded transport stops rather than silently dropping speech.
 - Loading or reloading the page does not query native audio devices or start
-  capture, including when Mac mode and BlackHole were saved previously. Open
+  capture, including when Mac mode was saved previously. Open
   the source settings or click **Refresh Mac sources** to load devices and input
   volume. Source listing only enumerates applications; system volume is read
   separately via **Показать системный уровень входа**. **Проверить микрофон** starts the explicit preview test.
-- BlackHole output is active only during a meeting started explicitly. Native
-  capture starts first; its readiness then starts BlackHole initialization.
-  The live mix is forwarded only after output is ready. The 20-second output
-  startup timeout does not delay capture or transcription. Stopping the meeting
-  stops the output and does not restore any idle microphone route. EchoGuide's
-  source attribution and two transcription sessions stay separate; an output
-  failure reports an error in the toolbar while capture continues.
-- BlackHole playback keeps a short bounded buffer. If macOS output pauses, older
-  queued samples are discarded so the route can resume near the current speech.
-  This can skip audio during an output stall; ChatGPT Voice can add its own delay.
-- In ChatGPT Voice, select BlackHole 2ch as the microphone if that control is
-  available. Otherwise select BlackHole as the macOS system input for the Voice
-  session. Keep EchoGuide's own microphone set to the named physical device.
-  ChatGPT receives a single mixed input and cannot infer EchoGuide's source labels.
 - The source meters use the same dBFS scale for microphone and application RMS.
   Green is a working speech range, amber is loud, and red warns when a sample peak
   is close to clipping. Hover over a meter to see RMS and peak separately. A low
@@ -115,15 +96,10 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   are recorded in `.echoguide/diagnostics/realtime-YYYY-MM-DD.jsonl` with a capture
   session ID. Reasons distinguish queue overflow, sender clock stalls, upstream
   errors/disconnects, native exit, browser backpressure and client/server shutdown.
-  BlackHole output reports its own readiness, failure reason, pending bytes and
-  backpressure count. Startup events record BlackHole stages, output and microphone
-  startup durations, and total connection time; timeouts retain the last stage.
-  Native meeting capture also reports safe stages: process entry, main actor,
+  Native meeting capture reports safe stages: process entry, main actor,
   shareable content, microphone permission/device lookup and stream creation/start.
-  Idle routing uses a separate route ID and reports aggregate microphone/output
-  counters every 30 seconds. A microphone packet gap over one
-  second is logged for either mode. These events contain no audio, transcript,
-  microphone ID or application name.
+  A microphone packet gap over one second is logged. These events contain no audio,
+  transcript, microphone ID or application name.
 - Raw audio and transcripts are not written to diagnostic logs. Existing local session
   history still saves text, roles and optional source/timestamp metadata under `.echoguide/`.
 - The Node server also saves a mixed stereo WAV: both voices in both channels.
@@ -145,7 +121,7 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 ## Verification
 
 ```bash
-npm run mac-audio:build  # compiles/signs, checks PCM conversion and BlackHole buffering
+npm run mac-audio:build  # compiles/signs, checks PCM conversion
 npm run lint
 npm run test
 npm run build
