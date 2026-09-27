@@ -17,6 +17,9 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Add a bilingual bridge phrase for asking for time to prepare an answer.
+- Clarify that checking details for an accurate answer means replying later.
+
 - Add question-mark explanations beside meeting card headings, including the
   general answer, documents, sources, clarification, diagnostics and vocabulary.
   Keep the optional clarification expanded by default.

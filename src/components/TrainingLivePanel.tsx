@@ -126,8 +126,12 @@ const localBridgePhrases = [
     russian: "Дайте мне свериться с деталями проекта."
   },
   {
-    english: "I want to get the details right.",
-    russian: "Хочу ответить точно, поэтому уточню детали."
+    english: "I want to give you an accurate answer, so I'll check the details and get back to you.",
+    russian: "Хочу ответить точно, поэтому уточню детали и отвечу позже."
+  },
+  {
+    english: "I'll need some time to prepare an answer to this question.",
+    russian: "Мне потребуется некоторое время, чтобы подготовить ответ на этот вопрос."
   }
 ];
 

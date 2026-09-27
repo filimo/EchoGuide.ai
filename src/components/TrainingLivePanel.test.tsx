@@ -846,11 +846,17 @@ describe("Training Live Panel", () => {
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("button", { name: "I want to get the details right. Хочу ответить точно, поэтому уточню детали." })
+      screen.getByRole("button", { name: "I want to give you an accurate answer, so I'll check the details and get back to you. Хочу ответить точно, поэтому уточню детали и отвечу позже." })
+    );
+    await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
+    expect(copyText).toHaveBeenCalledWith("I want to give you an accurate answer, so I'll check the details and get back to you.");
+
+    await user.click(
+      screen.getByRole("button", { name: "I'll need some time to prepare an answer to this question. Мне потребуется некоторое время, чтобы подготовить ответ на этот вопрос." })
     );
     await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
 
-    expect(copyText).toHaveBeenCalledWith("I want to get the details right.");
+    expect(copyText).toHaveBeenCalledWith("I'll need some time to prepare an answer to this question.");
     expect(screen.getByText("Bridge phrase copied.")).toBeInTheDocument();
   });
 
