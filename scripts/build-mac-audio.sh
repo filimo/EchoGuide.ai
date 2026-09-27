@@ -13,4 +13,5 @@ xcrun swiftc -swift-version 5 -O -module-cache-path "$PWD/.echoguide/native/modu
   -o "$bundle/Contents/MacOS/EchoGuideAudio"
 codesign --force --sign - --identifier ai.echoguide.audio.local "$bundle"
 "$bundle/Contents/MacOS/EchoGuideAudio" --self-test
+node scripts/test-mac-audio-watchdog.mjs "$bundle/Contents/MacOS/EchoGuideAudio"
 echo "Built EchoGuide Audio. Open EchoGuide on localhost and select MacBook audio."

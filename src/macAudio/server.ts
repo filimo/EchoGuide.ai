@@ -17,6 +17,8 @@ const prefix = "/api/mac-audio/";
 const helperPath = ".echoguide/native/EchoGuide Audio.app/Contents/MacOS/EchoGuideAudio";
 const sources: MacAudioSource[] = ["microphone", "application"];
 const maxNativeAudioQueueBytes = 144_000;
+const helperTerminationGraceMs = 2000;
+const nativeAudioTimeoutMs = 10_000;
 const captureStages = new Set(["process_entry", "main_actor", "shareable_content", "permission",
   "device_lookup", "stream_creation", "stream_start"]);
 
@@ -73,11 +75,14 @@ export type MacAudioServerDependencies = {
 
 export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) {
   const children = new Set<ChildProcessWithoutNullStreams>();
+  const terminating = new Map<ChildProcessWithoutNullStreams, ReturnType<typeof setTimeout>>();
+  let disposed = false;
   let active = false;
   let stopActive: ((reason?: string) => void) | undefined;
   const spawnHelper = deps.spawnHelper ?? ((args) => spawn(resolve(helperPath), args, {
     // The native helper needs no API credentials and opens no network port.
-    env: { PATH: "/usr/bin:/bin", HOME: process.env.HOME, TMPDIR: process.env.TMPDIR },
+    env: { PATH: "/usr/bin:/bin", HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
+      ECHOGUIDE_PARENT_PID: String(process.pid) },
     stdio: ["pipe", "pipe", "pipe"]
   }));
   const connectSocket = deps.connectSocket ?? ((key) => new WebSocket(
@@ -88,10 +93,35 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
   function child(args: string[]) {
     const process = spawnHelper(args);
     children.add(process);
-    process.once("close", () => children.delete(process));
+    process.once("close", () => {
+      clearTimeout(terminating.get(process));
+      terminating.delete(process);
+      children.delete(process);
+    });
     // Drain macOS stderr without persisting potentially sensitive native messages.
     process.stderr.resume();
     return process;
+  }
+
+  function terminateChild(helper: ChildProcessWithoutNullStreams) {
+    if (!children.has(helper) || terminating.has(helper)) return;
+    // Sending a signal is not proof of exit. Keep all new native work blocked
+    // until close, including if SIGKILL cannot immediately reap a stuck process.
+    const deadline = setTimeout(() => {
+      if (children.has(helper)) helper.kill("SIGKILL");
+    }, helperTerminationGraceMs);
+    deadline.unref();
+    terminating.set(helper, deadline);
+    helper.kill("SIGTERM");
+  }
+
+  function rejectUnavailableNativeWork(res: ServerResponse) {
+    if (disposed) { json(res, 503, { error: "Mac audio server is shutting down." }); return true; }
+    if (terminating.size) {
+      json(res, 409, { error: "Mac audio is still stopping. Wait for the previous helper to exit before retrying." });
+      return true;
+    }
+    return false;
   }
 
   async function middleware(req: IncomingMessage, res: ServerResponse, next: () => void) {
@@ -106,12 +136,13 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     if (![`${prefix}sources`, `${prefix}session`, `${prefix}input-volume`, `${prefix}microphone-monitor`].includes(path)) {
       return json(res, 404, { error: "Unknown Mac audio route." });
     }
+    if (rejectUnavailableNativeWork(res)) return;
     if (active && path !== `${prefix}input-volume`) {
       return json(res, 409, { error: "Mac audio is already running. Stop the other session first." });
     }
     let options: Record<string, unknown>;
     try { options = await readOptions(req); } catch { return json(res, 400, { error: "Invalid Mac audio options." }); }
-    if (res.destroyed) return;
+    if (res.destroyed || rejectUnavailableNativeWork(res)) return;
     if (active && path !== `${prefix}input-volume`) return json(res, 409, { error: "Mac audio is already running." });
 
     if (path === `${prefix}input-volume`) {
@@ -128,11 +159,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (finished) return;
         finished = true;
         clearTimeout(timeout);
-        helper.kill();
+        terminateChild(helper);
         if (!res.destroyed) json(res, status, value);
       };
       const timeout = setTimeout(() => finish(504, { error: "Microphone input volume timed out." }), 10_000);
-      res.on("close", () => { clearTimeout(timeout); helper.kill(); });
+      res.on("close", () => { clearTimeout(timeout); terminateChild(helper); });
       helper.on("error", () => finish(500, { error: "Could not read microphone input volume." }));
       helper.stdout.on("data", chunk => {
         output += chunk.toString();
@@ -163,7 +194,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (stopped) return;
         stopped = true;
         clearTimeout(timeout);
-        helper.kill();
+        terminateChild(helper);
         active = false;
         stopActive = undefined;
         if (!res.destroyed) res.end();
@@ -172,7 +203,13 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       const send = (event: { type: "ready" | "level" | "error"; level?: number; peak?: number; message?: string }) => {
         if (!stopped && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
       };
-      const timeout = setTimeout(() => { send({ type: "error", message: "Microphone test timed out." }); stop(); }, 30_000);
+      let timeout = setTimeout(() => { send({ type: "error", message: "Microphone test timed out." }); stop(); }, 30_000);
+      const receivedMeasurement = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          send({ type: "error", message: "Microphone measurements stopped arriving. Check the audio device." }); stop();
+        }, nativeAudioTimeoutMs);
+      };
       res.on("close", stop);
       helper.on("error", () => { send({ type: "error", message: "Could not start microphone test." }); stop(); });
       helper.on("close", () => { if (!stopped) { send({ type: "error", message: "Microphone test stopped." }); stop(); } });
@@ -185,9 +222,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
           pending = pending.slice(end + 1);
           try {
             const event = JSON.parse(line);
-            if (event.type === "ready") { clearTimeout(timeout); send({ type: "ready" }); }
+            if (event.type === "ready") { receivedMeasurement(); send({ type: "ready" }); }
             else if (event.type === "level" && Number.isFinite(event.level) && Number.isFinite(event.peak) &&
               event.level >= 0 && event.level <= 1 && event.peak >= 0 && event.peak <= 1) {
+              receivedMeasurement();
               send({ type: "level", level: event.level, peak: event.peak });
             } else if (event.type === "error") { send({ type: "error", message: String(event.message || "Microphone test failed.") }); stop(); }
           } catch { send({ type: "error", message: "Invalid microphone test response." }); stop(); }
@@ -204,11 +242,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         if (finished) return;
         finished = true;
         clearTimeout(timeout);
-        helper.kill();
+        terminateChild(helper);
         if (!res.destroyed) json(res, status, value);
       };
       const timeout = setTimeout(() => finish(504, { error: "Source selection timed out. Check macOS capture permissions and refresh sources." }), 90_000);
-      res.on("close", () => { clearTimeout(timeout); helper.kill(); });
+      res.on("close", () => { clearTimeout(timeout); terminateChild(helper); });
       helper.on("error", () => finish(500, { error: "Could not launch EchoGuide Audio. Rebuild the helper." }));
       helper.stdout.on("data", (chunk) => {
         text += chunk.toString();
@@ -247,7 +285,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
     const recordings = deps.recordings ?? recordingStore;
     let recording: Recording | undefined;
     const startedAt = performance.now();
-    let lastMicrophoneChunkAt = 0;
+    let lastMicrophoneChunkAt: number | undefined;
     const diagnostic = (type: string, reason = "") => {
       const event = { storedAt: new Date().toISOString(), source: "mac-audio", type, sessionId, reason,
         elapsedMs: Math.round(performance.now() - startedAt),
@@ -255,7 +293,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         applicationQueueBytes: audioQueues.get("application")?.length ?? 0,
         microphoneChunks: frames.get("microphone")?.chunks ?? 0,
         applicationChunks: frames.get("application")?.chunks ?? 0,
-        microphoneLastChunkAgeMs: lastMicrophoneChunkAt ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1 };
+        microphoneLastChunkAgeMs: lastMicrophoneChunkAt !== undefined ? Math.round(performance.now() - lastMicrophoneChunkAt) : -1 };
       try {
         if (deps.diagnostic) deps.diagnostic(event);
         else {
@@ -293,7 +331,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
         recording = undefined;
       }
       audioQueues.clear();
-      helper?.kill();
+      if (helper) terminateChild(helper);
       for (const socket of sockets.values()) socket.terminate();
       active = false;
       stopActive = undefined;
@@ -326,7 +364,10 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
       helper = child(["--capture", String(options.pid), String(options.microphone)]);
       let buffer = "";
       helper.on("error", () => fail("Could not launch EchoGuide Audio. Rebuild the helper."));
-      helper.on("close", () => { if (!stopped) fail("Mac audio capture stopped. Check permissions and restart live mode.", "native_closed"); });
+      helper.on("close", (code, signal) => {
+        diagnostic("mac_audio.helper_exited", signal ?? String(code));
+        if (!stopped) fail("Mac audio capture stopped. Check permissions and restart live mode.", "native_closed");
+      });
       helper.stdout.on("data", (chunk) => {
         if (stopped) return;
         buffer += chunk.toString();
@@ -363,6 +404,11 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
               audioPump = setInterval(() => {
                 // Timer callbacks can be late. Drain the elapsed audio duration rather than
                 // one fixed frame per callback, otherwise a small delay accumulates forever.
+                // A silent microphone still supplies PCM. Application playback may
+                // legitimately supply no packets, so do not watchdog that source.
+                if (performance.now() - (lastMicrophoneChunkAt ?? pumpStartedAt) >= nativeAudioTimeoutMs) {
+                  fail("Microphone audio stopped arriving. Check the audio device and restart live mode.", "native_audio_stalled"); return;
+                }
                 const dueFrames = Math.floor((performance.now() - pumpStartedAt) / 100) - sentFrames;
                 if (dueFrames > 10) {
                   fail("Audio processing paused for too long. Restart live mode.", "audio_clock_stalled"); return;
@@ -411,7 +457,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
             frames.set(event.source, stats);
             if (event.source === "microphone") {
               const receivedAt = performance.now();
-              if (lastMicrophoneChunkAt && receivedAt - lastMicrophoneChunkAt > 1000) {
+              if (lastMicrophoneChunkAt !== undefined && receivedAt - lastMicrophoneChunkAt > 1000) {
                 diagnostic("mac_audio.microphone_gap", String(Math.round(receivedAt - lastMicrophoneChunkAt)));
               }
               lastMicrophoneChunkAt = receivedAt;
@@ -486,7 +532,7 @@ export function createMacAudioMiddleware(deps: MacAudioServerDependencies = {}) 
   }
   return {
     middleware,
-    dispose() { stopActive?.("server_closed"); for (const process of children) process.kill(); }
+    dispose() { disposed = true; stopActive?.("server_closed"); for (const helper of children) terminateChild(helper); }
   };
 }
 

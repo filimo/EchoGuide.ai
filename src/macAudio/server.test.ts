@@ -42,7 +42,7 @@ function response() {
   return res;
 }
 const cleanups: (() => void)[] = [];
-afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
+afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); vi.useRealTimers(); });
 function setup(recordings?: RecordingStore) {
   const sockets: Socket[] = [];
   const helper = new Helper();
@@ -51,7 +51,7 @@ function setup(recordings?: RecordingStore) {
   const bridge = createMacAudioMiddleware({ recordings, diagnostic, platform: "darwin", helperExists: () => true, spawnHelper,
     connectSocket: () => { const socket = new Socket(); sockets.push(socket); return socket as unknown as WebSocket; },
     readEnv: () => "OPENAI_API_KEY=test-only" });
-  cleanups.push(bridge.dispose);
+  cleanups.push(() => { bridge.dispose(); helper.emit("close", 0, null); });
   const run = async (req = request()) => {
     const res = response();
     await bridge.middleware(req, res as unknown as ServerResponse, vi.fn());
@@ -268,6 +268,95 @@ describe("Mac audio local bridge", () => {
     expect(res.body).not.toContain('"type":"error"');
     const packets = test.sockets[0].send.mock.calls.filter(([message]) => JSON.parse(message).type === "input_audio_buffer.append");
     expect(packets.length).toBeGreaterThanOrEqual(1799);
+  });
+  it("holds ownership until helper exit, escalates a stuck helper and blocks every native route", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const first = await test.run(); test.ready();
+    first.emit("close");
+    expect(test.helper.kill).toHaveBeenCalledWith("SIGTERM");
+    for (const path of ["session", "sources", "microphone-monitor", "input-volume"]) {
+      expect((await test.run(request(path))).status).toBe(409);
+    }
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(test.helper.kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+    expect((await test.run()).status).toBe(409);
+    expect(test.spawnHelper).toHaveBeenCalledTimes(1);
+    test.helper.emit("close", null, "SIGKILL");
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: "mac_audio.helper_exited", reason: "SIGKILL" }));
+    expect((await test.run()).status).toBe(200);
+  });
+  it("cancels escalation after normal exit and rejects new work after disposal", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const first = await test.run(); test.ready(); first.emit("close");
+    test.helper.emit("close", null, "SIGTERM");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(test.helper.kill.mock.calls).toEqual([["SIGTERM"]]);
+    test.bridge.dispose();
+    expect((await test.run()).status).toBe(503);
+  });
+  it("keeps a timed-out volume helper quarantined until its confirmed exit", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const res = await test.run(request("input-volume", { microphone: "default" }));
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(res.status).toBe(504);
+    expect((await test.run()).status).toBe(409);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(test.helper.kill).toHaveBeenLastCalledWith("SIGKILL");
+    test.helper.emit("close", null, "SIGKILL");
+    expect((await test.run()).status).toBe(200);
+  });
+  it("stops stalled native audio even while application packets continue", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const res = await test.run(); test.ready(); test.helper.line({ type: "ready" });
+    for (let second = 0; second < 10; second++) {
+      test.helper.line({ type: "audio", source: "application", audio: Buffer.alloc(4800).toString("base64") });
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(res.body).toContain("Microphone audio stopped arriving");
+    expect(test.helper.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(test.sockets.every(socket => socket.terminate.mock.calls.length === 1)).toBe(true);
+    expect(test.diagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: "mac_audio.stopped", reason: "native_audio_stalled" }));
+  });
+  it("accepts silent microphone PCM and an idle application without a false stall", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const res = await test.run(); test.ready(); test.helper.line({ type: "ready" });
+    for (let second = 0; second < 20; second++) {
+      test.helper.line({ type: "audio", source: "microphone", audio: Buffer.alloc(4800).toString("base64") });
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    expect(res.body).not.toContain('"type":"error"');
+  });
+  it("finalizes an audio-only recording as interrupted when native PCM stalls", async () => {
+    vi.useFakeTimers();
+    const root = mkdtempSync(join(tmpdir(), "echoguide-stalled-recording-"));
+    const recordings = new RecordingStore(root);
+    const test = setup(recordings);
+    try {
+      await test.run(request("session", { pid: 123, microphone: "default", language: "english", sessionId: "stalled", recordingOnly: true }));
+      test.helper.line({ type: "ready" });
+      await vi.advanceTimersByTimeAsync(10000);
+      const record = recordings.list("stalled")[0];
+      expect(record.status).toBe("interrupted");
+      const bytes = record.bytes;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(recordings.list("stalled")[0].bytes).toBe(bytes);
+      expect(recordings.isActive("stalled")).toBe(false);
+      expect(test.sockets).toHaveLength(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it("times out a microphone preview without measurements but accepts silent levels", async () => {
+    vi.useFakeTimers();
+    const test = setup(); const res = await test.run(request("microphone-monitor", { microphone: "default" }));
+    test.helper.line({ type: "ready" });
+    for (let second = 0; second < 12; second++) {
+      test.helper.line({ type: "level", level: 0, peak: 0 });
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(test.helper.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(res.body).toContain("measurements stopped arriving");
+    expect(test.helper.kill).toHaveBeenCalledWith("SIGTERM");
   });
   it("fails invalid selection before opening sockets", async () => {
     const test = setup();

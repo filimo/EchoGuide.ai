@@ -3,6 +3,16 @@ import AVFoundation
 import ScreenCaptureKit
 import CoreAudio
 
+// Run before any audio/device calls, including the synchronous input-volume path.
+// A blocked main run loop must not keep an orphan capture helper alive.
+let ownerPID = ProcessInfo.processInfo.environment["ECHOGUIDE_PARENT_PID"].flatMap(Int32.init) ?? getppid()
+let ownerWatchdog = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "echoguide.owner-watchdog"))
+ownerWatchdog.schedule(deadline: .now(), repeating: .seconds(1))
+ownerWatchdog.setEventHandler {
+    if ownerPID <= 1 || getppid() != ownerPID { _exit(0) }
+}
+ownerWatchdog.resume()
+
 // Stdout is a private, in-memory NDJSON pipe owned by the local server.
 func emit(_ value: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
@@ -287,6 +297,11 @@ func inputVolume() {
     emit(["type": "input-volume", "available": true, "value": Int((value * 100).rounded())])
 }
 
+// Exercise owner death with a blocked main thread, without initializing capture.
+if CommandLine.arguments.contains("--self-test-owner-watchdog") {
+    emit(["type": "watchdog-test-ready"])
+    while true { Thread.sleep(forTimeInterval: 60) }
+}
 if CommandLine.arguments.contains("--self-test") { selfTest(); exit(0) }
 if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--input-volume" {
     inputVolume(); exit(0)
@@ -350,10 +365,8 @@ Task { @MainActor in
         fail("macOS capture failed (\(nativeError.domain), \(nativeError.code)). Allow Screen & System Audio Recording for EchoGuide Audio or the host app, then refresh sources and restart if requested.")
     }
 }
-// Exit if the owning server disappears, including an abrupt development-server restart.
-let parent = getppid()
+// Application availability is separate from the independent owner watchdog.
 Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-    if getppid() != parent { exit(0) }
     if let pid = capturedPID, kill(pid, 0) != 0 {
         capture?.queue.async { fail("The selected call application closed. Refresh sources before restarting.") }
     }

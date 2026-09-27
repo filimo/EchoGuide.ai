@@ -89,6 +89,20 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
   terminates the helper. A helper error also closes the whole capture session.
   After capture starts, an upstream error disables that transcription channel
   while local capture and recording continue until the meeting is stopped.
+- Stop/cancel sends SIGTERM to the helper and escalates to SIGKILL after two seconds
+  if it has not exited. New native requests receive a retryable conflict until
+  process closure is confirmed; sending a signal alone does not release ownership.
+  This also applies to timed-out source/volume requests and microphone previews.
+  `mac_audio.stopped` records the stop request; `mac_audio.helper_exited` confirms
+  capture-helper closure. An unkillable helper keeps new starts blocked.
+- The helper watches its owning server on an independent dispatch queue installed
+  before audio calls. Owner death exits even if the main thread is blocked during
+  device setup. This protects input-volume helpers as well as capture and previews.
+- After readiness, ten seconds without microphone PCM stops capture and finalizes
+  its recording as interrupted. Silent PCM is valid; application audio may be idle
+  without causing a timeout. A microphone preview uses the same deadline for missing
+  level measurements. These guards detect delivery failure, not a specific driver
+  fault, and do not restart Core Audio or change installed drivers.
 - Only a loopback client at `localhost`, `127.0.0.1`, or `[::1]`, with a matching Origin
   and the custom request header, can start capture. LAN/iPad requests are rejected.
   One capture session owns the helper at a time. The API key remains in Node.
@@ -121,7 +135,7 @@ restart, then refresh sources. The helper is a locally ad-hoc-signed `.app` unde
 ## Verification
 
 ```bash
-npm run mac-audio:build  # compiles/signs, checks PCM conversion
+npm run mac-audio:build  # compiles/signs, checks PCM and owner-death cleanup
 npm run lint
 npm run test
 npm run build
@@ -132,6 +146,10 @@ The API check uses macOS `say` and `afconvert`, removes its temporary generated 
 and prints only pass/fail results. Unit/UI tests cover isolation of the two channels,
 silence padding, origin/loopback checks, duplicate completion, concurrent ownership,
 bounded buffering, failure cleanup, source roles and cancellation of pending startup.
+The native build also runs `scripts/test-mac-audio-watchdog.mjs`: a synthetic
+supervisor is killed while the helper blocks its main thread in a test-only branch.
+The helper must exit independently. Neither this check nor the PCM self-test opens
+an audio device. Real audio quality and driver recovery still require a manual call.
 
 API references: [Apple ScreenCaptureKit](https://developer.apple.com/videos/play/wwdc2024/10088/),
 [OpenAI transcription](https://developers.openai.com/api/docs/guides/realtime-transcription),

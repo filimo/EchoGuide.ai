@@ -13,6 +13,11 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Wait for native Mac audio helpers to exit before allowing another start, escalate
+  stuck shutdowns after two seconds, and stop capture when microphone packets stall.
+- Keep the native parent watchdog independent of the main audio thread, including
+  input-volume requests, and verify owner-death cleanup without opening devices.
+
 - Remove BlackHole routing, its toolbar status and the extra native output process from Mac audio mode.
 
 - Avoid native microphone enumeration when opening Mac source settings; use the macOS default input and read system input volume only on request.
