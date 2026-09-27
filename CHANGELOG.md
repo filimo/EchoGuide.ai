@@ -24,6 +24,7 @@ Until the first versioned release, changes are grouped by date.
 
 ### Added
 
+- Add two bilingual bridge phrases for clarifying an unclear question.
 - Add a bilingual bridge phrase for asking for time to prepare an answer.
 - Clarify that checking details for an accurate answer means replying later.
 

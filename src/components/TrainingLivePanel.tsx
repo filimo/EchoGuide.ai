@@ -102,6 +102,14 @@ const localBridgePhrases = [
     russian: "Можете повторить?"
   },
   {
+    english: "Could you clarify what you mean?",
+    russian: "Можете уточнить, что вы имеете в виду?"
+  },
+  {
+    english: "Could you rephrase the question?",
+    russian: "Можете сформулировать вопрос по-другому?"
+  },
+  {
     english: "I will answer simply.",
     russian: "Я отвечу просто."
   },

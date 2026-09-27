@@ -842,6 +842,12 @@ describe("Training Live Panel", () => {
       screen.getByRole("button", { name: "Can you repeat that? Можете повторить?" })
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: "Could you clarify what you mean? Можете уточнить, что вы имеете в виду?" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Could you rephrase the question? Можете сформулировать вопрос по-другому?" })
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "Let me check the project details. Дайте мне свериться с деталями проекта." })
     ).toBeInTheDocument();
 
@@ -857,6 +863,14 @@ describe("Training Live Panel", () => {
     await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
 
     expect(copyText).toHaveBeenCalledWith("I'll need some time to prepare an answer to this question.");
+
+    await user.click(screen.getByRole("button", { name: "Could you clarify what you mean? Можете уточнить, что вы имеете в виду?" }));
+    await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
+    expect(copyText).toHaveBeenCalledWith("Could you clarify what you mean?");
+
+    await user.click(screen.getByRole("button", { name: "Could you rephrase the question? Можете сформулировать вопрос по-другому?" }));
+    await user.click(screen.getByRole("button", { name: "Copy bridge phrase" }));
+    expect(copyText).toHaveBeenCalledWith("Could you rephrase the question?");
     expect(screen.getByText("Bridge phrase copied.")).toBeInTheDocument();
   });
 
