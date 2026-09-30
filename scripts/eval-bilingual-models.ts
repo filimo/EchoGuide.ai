@@ -55,10 +55,9 @@ type JudgeResult = {
 };
 
 const defaultModels = [
-  "gpt-5.4-mini",
   "gpt-5.6-luna",
-  "gpt-5.6-terra",
-  "gpt-5.6-sol"
+  "gpt-6-luna",
+  "gpt-6.1-sol"
 ];
 const defaultJudgeModel = "gpt-5.5";
 const defaultJudgeReasoningEffort = "low";
@@ -326,7 +325,7 @@ async function runCandidate(apiKey: string, evalCase: EvalCase, model: string): 
       model,
       evalCase.knowledgeContext,
       evalCase.recentContext,
-      { answerHint: evalCase.answerHint }
+      { answerHint: evalCase.answerHint, reasoningEffort: model === "gpt-6.1-sol" ? "low" : "none" }
     );
     const { payload, latencyMs } = await requestJson(apiKey, request);
     const analysis = parseBilingualPhraseAnalysis(payload);

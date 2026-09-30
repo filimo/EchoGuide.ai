@@ -52,8 +52,8 @@ type BilingualModelOptions = {
 
 const fallbackBridgePhrase = "Sure, let me think for a second.";
 
-export const defaultBilingualModel = "gpt-5.6-luna";
-export const defaultBilingualReasoningEffort = "none";
+export const defaultBilingualModel = "gpt-6.1-sol";
+export const defaultBilingualReasoningEffort = "low";
 export const defaultBilingualPromptCacheKey = "echoguide:phrase-analysis:v2";
 export const maxKnowledgeContextCharacters = 6000;
 export const maxRecentContextTurns = 8;
@@ -129,12 +129,12 @@ export function normalizeRecentContext(value: string[] | undefined): string[] {
 
 function supportsReasoningEffort(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
-  return (match != null && Number(match[1]) >= 1) || /^gpt-6-(?:sol|luna)(?:-|$)/.test(model);
+  return (match != null && Number(match[1]) >= 1) || /^gpt-6-(?:sol|luna)(?:-|$)|^gpt-6\.1-sol(?:-|$)/.test(model);
 }
 
 function supportsExplicitPromptCaching(model: string): boolean {
   const match = /^gpt-5\.(\d+)/.exec(model);
-  return (match != null && Number(match[1]) >= 6) || /^gpt-6-(?:astra|sol|luna)(?:-|$)/.test(model);
+  return (match != null && Number(match[1]) >= 6) || /^gpt-6-(?:astra|sol|luna)(?:-|$)|^gpt-6\.1-sol(?:-|$)/.test(model);
 }
 
 function readTokenCount(value: unknown): number {

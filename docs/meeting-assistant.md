@@ -1,5 +1,7 @@
 # Meeting assistant
 
+The shared phrase-card and meeting model is GPT-6.1 Sol with low reasoning effort, selected on September 30, 2026. General answers and conversation summaries also read OPENAI_BILINGUAL_MODEL and OPENAI_BILINGUAL_REASONING_EFFORT. Quick start keeps its separate configuration. Earlier evaluation decisions below are historical.
+
 In Training Mode, enable «Режим встречи с материалами». Upload a named pack
 of 1–20 Markdown files (2 MB total, up to 160 sections). Wait for Ready and
 explicitly select the pack. Click a transcript turn to request help. Its text
@@ -165,7 +167,7 @@ the same conditions and uncertainty. Recommendations still require evidence:
 “I would” does not make an invented method grounded. No approved quality
 trade-off, grouping method or sample size may be inferred from a proposal.
 
-Run `npm run eval:meeting -- --spoken-quality` for ten synthetic scenarios:
+Run `npm run eval:meeting -- --spoken-quality` for eleven synthetic scenarios:
 one result, extra rework with distracting earlier dialogue, comparable work,
 complexity, few differing tasks, quality versus speed, and an unapproved policy.
 The runner generates real openings before retrieval and continuations, reuses
@@ -188,6 +190,19 @@ fragments. The sample favors a separate `medium` meeting canary, but is too
 small to change the live default. Results are saved under ignored
 `.echoguide/evals/meeting-*/results.json` directories; synthetic cloud
 resources were removed.
+
+On September 30, 2026, a paired eleven-case run used the same opening per case
+and rotated `gpt-5.6-luna:none`, `gpt-6-luna:none`, and `gpt-6.1-sol:low` via
+`--candidates=`. They passed 9/11, 10/11, and 11/11 mechanical checks, with
+mean search-plus-answer times of 4.13s, 3.87s, and 5.03s. GPT-5.6 Luna again
+returned `no_answer` for diplomatic wording despite four search hits. GPT-6
+Luna exceeded the spoken-length limit on quality versus speed; human review also
+found that its wording could imply accepting insufficient quality for a time
+gain. GPT-6.1 Sol passed that case and two targeted repeats. The paired run is
+saved in ignored `meeting-1790751137041/results.json`; targeted repeats are in
+`meeting-1790751390090/results.json`. Both synthetic cloud packs were removed.
+This supports a separate GPT-6.1 Sol meeting canary after live smoke, not a
+shared default change. At evaluation time, the shared model override would have sent unsupported `none` effort. The subsequent shared-default switch now passes the configured `low` effort to grounded answers, general answers, and conversation summaries.
 
 
 ### Synthetic check recorded on 2026-09-20

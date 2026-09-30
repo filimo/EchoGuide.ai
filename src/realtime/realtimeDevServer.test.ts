@@ -442,8 +442,8 @@ describe("Bilingual analysis dev middleware", () => {
       transcript: "What was your role?",
       knowledgeContext: "",
       recentContext: [],
-      model: "gpt-5.6-luna",
-      reasoningEffort: "none",
+      model: "gpt-6.1-sol",
+      reasoningEffort: "low",
       onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
@@ -486,8 +486,8 @@ describe("Bilingual analysis dev middleware", () => {
       transcript,
       knowledgeContext: "",
       recentContext: [],
-      model: "gpt-5.6-luna",
-      reasoningEffort: "none",
+      model: "gpt-6.1-sol",
+      reasoningEffort: "low",
       onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);
@@ -526,8 +526,8 @@ describe("Bilingual analysis dev middleware", () => {
       transcript: "What was your role?",
       knowledgeContext: "x".repeat(6000),
       recentContext: [],
-      model: "gpt-5.6-luna",
-      reasoningEffort: "none",
+      model: "gpt-6.1-sol",
+      reasoningEffort: "low",
       onUsage: expect.any(Function)
     });
     expect(res.statusCode).toBe(200);

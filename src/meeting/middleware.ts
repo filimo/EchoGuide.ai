@@ -9,7 +9,8 @@ import { isQuickStart } from "../realtime/quickStart";
 export function createMeetingMiddleware(service?: MeetingService, history = new MeetingHistoryStore()) {
   const local = () => existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "";
   const getService = () => service ??= new MeetingService({ apiKey: () => readOpenAiApiKey(process.env, local()) ?? "",
-    model: () => readEnvironmentValue(process.env, "OPENAI_BILINGUAL_MODEL", local()) ?? "" });
+    model: () => readEnvironmentValue(process.env, "OPENAI_BILINGUAL_MODEL", local()) ?? "",
+    reasoningEffort: () => readEnvironmentValue(process.env, "OPENAI_BILINGUAL_REASONING_EFFORT", local()) ?? "" });
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
     if (!path.startsWith("/api/meeting/")) return next();

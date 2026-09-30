@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { prepareSections, validateDocuments } from "./markdown";
 import { meetingFallbackFor, type MeetingPack, type MeetingPackState, type MeetingSection, type MeetingEvidence, type MeetingAnswer } from "./types";
-import { defaultBilingualModel } from "../realtime/bilingualAnalysis";
+import { defaultBilingualModel, defaultBilingualReasoningEffort } from "../realtime/bilingualAnalysis";
 import { spokenProductQuestion } from "./spokenProduct";
 import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
@@ -124,7 +124,7 @@ export class MeetingService {
       turns.some(turn => turn.length > 1800) || turns.join("\n").length > 16000) throw new Error("Invalid summary input");
     const result = await this.api("/responses", "POST", {
       model: this.options.model?.() || defaultBilingualModel,
-      reasoning: { effort: "none" }, store: false, max_output_tokens: 1200,
+      reasoning: { effort: this.options.reasoningEffort?.() || defaultBilingualReasoningEffort }, store: false, max_output_tokens: 1200,
       instructions: "Summarize an older segment of a live meeting for later conversational reference. Combine the previous summary with the new turns. Preserve who said what, open questions, negation, uncertainty, and whether an item is a proposal, decision, hypothesis, or measured result. Never turn a question's premise or AI-generated wording into a confirmed fact. Omit filler, transcription noise, and repeated wording. Do not invent missing details. Return a concise summary in Russian, at most 2400 characters. The summary is conversation context, not evidence for project facts.",
       input: JSON.stringify({ previousSummary, turns }),
       text: { format: { type: "json_schema", name: "meeting_conversation_summary", strict: true,
@@ -151,7 +151,7 @@ export class MeetingService {
   }
   async general(transcript: string, recentContext: string[], speakerLabel: string, answerHint = "") {
     const result = await this.api("/responses", "POST", buildMeetingGeneralRequest(
-      transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel, answerHint
+      transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel, answerHint, this.options.reasoningEffort?.() || defaultBilingualReasoningEffort
     ), 9000);
     if (result.status === "incomplete") throw new Error("General answer incomplete");
     const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? [])
@@ -195,7 +195,7 @@ export class MeetingService {
     const answerInput = { transcript: interpretedQuestion ?? ticket.transcript, recentContext: ticket.recentContext, conversationSummary: ticket.summary, opening, evidence: ticket.evidence,
       ...(interpretedQuestion ? { originalTranscript: ticket.transcript, interpretation: "Unconfirmed: codecs may mean Codex. Answer conditionally, never claim the user said Codex." } : {}) };
     const requestBody = {
-      model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: this.options.reasoningEffort?.() || "none" }, store: false, max_output_tokens: 700,
+      model: this.options.model?.() || defaultBilingualModel, reasoning: { effort: this.options.reasoningEffort?.() || defaultBilingualReasoningEffort }, store: false, max_output_tokens: 700,
       instructions: [
         spokenReplyStyle,
         "Compare total working time for the two approaches, counting review and rework once in each total. Time saved is the difference between those totals; do not compare time saved with total effort or subtract rework twice. Assess required quality separately. Higher quality can be necessary even when it takes longer: never claim it is worthwhile only if it reduces effort. Do not assume quality criteria have already been agreed unless the evidence or explicit hypothetical premise says so. For a request for diplomatic wording, give a short sentence the participant can say directly, not a description such as I would frame it as balancing or not overruling someone. Prefer worth the extra time to justifies when equivalent; keep necessary technical terms.",

@@ -47,6 +47,7 @@ describe("meeting pack lifecycle and grounding", () => {
     const call = vi.mocked(fetchImpl).mock.calls.find(c => String(c[0]).endsWith("/responses"))!;
     const body = JSON.parse(call[1]!.body as string);
     expect(body.store).toBe(false);
+    expect(body.model).toBe("gpt-6.1-sol"); expect(body.reasoning.effort).toBe("low");
     expect(body.text.format.name).toBe("meeting_general_answer");
     expect(JSON.parse(body.input)).toEqual({ transcript: "How would you compare the options?",
       recentContext: ["Me: We should include review time."], speakerLabel: "Interviewer" });
@@ -58,14 +59,14 @@ describe("meeting pack lifecycle and grounding", () => {
     expect(summary).toContain("решение не принято");
     const summaryCall = vi.mocked(fetchImpl).mock.calls.find(call =>
       JSON.parse(String(call[1]?.body ?? "{}")).text?.format?.name === "meeting_conversation_summary")!;
-    expect(JSON.parse(summaryCall[1]!.body as string).store).toBe(false);
+    expect(JSON.parse(summaryCall[1]!.body as string)).toMatchObject({ store: false, model: "gpt-6.1-sol", reasoning: { effort: "low" } });
     const id = await ready(); service.activate(id);
     const found = await service.search(id, "What did we decide?", ["Me: We need a pilot."], summary);
     await service.answer(id, found.ticket);
     const answerCall = vi.mocked(fetchImpl).mock.calls.filter(call => String(call[0]).endsWith("/responses")).at(-1)!;
     expect(JSON.parse(JSON.parse(answerCall[1]!.body as string).input).conversationSummary).toBe(summary);
   });
-  it("keeps the live reasoning effort at none and allows an eval override", async () => {
+  it("keeps the live reasoning effort at low and allows an eval override", async () => {
     let effort = "low";
     const { service, ready, fetchImpl } = setup(() => effort);
     const id = await ready(); service.activate(id);
@@ -84,7 +85,7 @@ describe("meeting pack lifecycle and grounding", () => {
     await defaultSession.service.answer(defaultId, found.ticket);
     const defaultRequest = vi.mocked(defaultSession.fetchImpl).mock.calls
       .find(call => String(call[0]).endsWith("/responses"))!;
-    expect(JSON.parse(defaultRequest[1]!.body as string).reasoning.effort).toBe("none");
+    expect(JSON.parse(defaultRequest[1]!.body as string).reasoning.effort).toBe("low");
   });
   it("does not activate uploads and preserves active pack when indexing fails", async () => {
     const { service, ready, state } = setup();

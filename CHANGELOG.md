@@ -13,6 +13,8 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Use GPT-6.1 Sol with low reasoning effort for both phrase cards and meeting answers, including general answers and conversation summaries.
+
 - Wait for native Mac audio helpers to exit before allowing another start, escalate
   stuck shutdowns after two seconds, and stop capture when microphone packets stall.
 - Keep the native parent watchdog independent of the main audio thread, including

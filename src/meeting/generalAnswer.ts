@@ -1,5 +1,5 @@
 import { prepareGenerationInput } from "../realtime/generationInput";
-import { normalizeRecentContext } from "../realtime/bilingualAnalysis";
+import { normalizeRecentContext, defaultBilingualReasoningEffort } from "../realtime/bilingualAnalysis";
 import { isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 
@@ -35,10 +35,10 @@ export function isMeetingGeneralAnswer(value: unknown): value is MeetingGeneralA
     continuation.russian.length <= 700;
 }
 
-export function buildMeetingGeneralRequest(transcript: string, recentContext: string[], speakerLabel: string, model: string, answerHint = "") {
+export function buildMeetingGeneralRequest(transcript: string, recentContext: string[], speakerLabel: string, model: string, answerHint = "", reasoningEffort = defaultBilingualReasoningEffort) {
   const prepared = prepareGenerationInput(transcript, recentContext);
   return {
-    model, reasoning: { effort: "none" }, store: false, max_output_tokens: 850,
+    model, reasoning: { effort: reasoningEffort }, store: false, max_output_tokens: 850,
     instructions: [
       "Help a Russian-speaking participant answer a live meeting question in simple spoken A2/B1 English. Return one coherent opening and continuation in English, each with a natural Russian translation.",
       spokenReplyStyle,

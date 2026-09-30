@@ -4,7 +4,7 @@
 
 EchoGuide evaluates text models against the real `transcript -> bilingual phrase card -> suggested replies` contract instead of selecting a model from generic benchmarks.
 
-The current default remains `gpt-5.6-luna` with `reasoning.effort: "none"`. A September 23, 2026 synthetic comparison favors `gpt-6-luna` as the next phrase-card candidate, but the shared meeting-assistant model setting and live latency still need validation. Realtime transcription remains a separate `gpt-4o-transcribe` path.
+The shared phrase-card and meeting default is `gpt-6.1-sol` with `reasoning.effort: "low"`, selected on September 30, 2026. Meeting general answers and conversation summaries use the same settings. Quick start keeps its separate configuration. The results below were recorded before this switch; live audio validation remains pending. A September 23, 2026 synthetic comparison favors `gpt-6-luna` as the next phrase-card candidate, but the shared meeting-assistant model setting and live latency still need validation. Realtime transcription remains a separate `gpt-4o-transcribe` path.
 
 The runtime values are configured in `.env.local` through `OPENAI_BILINGUAL_MODEL`
 and `OPENAI_BILINGUAL_REASONING_EFFORT`. Realtime transcription uses
@@ -58,6 +58,29 @@ The score combines two layers:
 Candidate identities are hidden behind rotating keys to reduce position bias.
 
 ## Recorded result
+
+### September 30, 2026 follow-up
+
+The current nine-case phrase-card eval compared `gpt-5.6-luna` and `gpt-6-luna`
+at `reasoning.effort: "none"` with `gpt-6.1-sol` at its minimum supported
+`"low"`. The old `gpt-6-sol` result remains below as historical evidence; the
+new Sol candidate is `gpt-6.1-sol`.
+
+| Model | Mean score | Wins | Mean latency | p95 |
+| --- | ---: | ---: | ---: | ---: |
+| `gpt-6.1-sol` | 92.6 | 4/9 | 5.71s | 6.81s |
+| `gpt-5.6-luna` | 92.3 | 2/9 | 5.05s | 7.64s |
+| `gpt-6-luna` | 92.3 | 3/9 | 2.96s | 4.20s |
+
+All 27 candidate requests succeeded. The Sol score lead is 0.3 points in one
+synthetic run, with longer mean latency than GPT-6 Luna. At this run's actual
+token mix and the published [Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+and [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) rates, nine
+phrase-card requests cost roughly $0.053 versus $0.0027, excluding judging,
+caching, and tools. Detailed ignored
+results: `.echoguide/evals/model-comparison-2026-09-30T06-50-25-366Z.json`.
+Do not infer a phrase-card default change from this narrow lead. The meeting
+comparison is recorded in [meeting-assistant.md](meeting-assistant.md).
 
 ### September 23, 2026 candidate check
 

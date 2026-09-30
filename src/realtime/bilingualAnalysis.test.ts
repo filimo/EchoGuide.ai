@@ -75,13 +75,13 @@ describe("bilingual phrase analysis", () => {
     );
   });
 
-  it("uses gpt-5.6-luna with no reasoning effort by default", () => {
+  it("uses gpt-6.1-sol with low reasoning effort by default", () => {
     const request = buildBilingualPhraseAnalysisRequest("What was your role?");
 
     expect(request).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6.1-sol",
       reasoning: {
-        effort: "none"
+        effort: "low"
       },
       prompt_cache_key: defaultBilingualPromptCacheKey,
       prompt_cache_options: {
@@ -147,7 +147,7 @@ describe("bilingual phrase analysis", () => {
   });
 
   it("preserves low-latency reasoning and explicit caching for GPT-6 Luna", () => {
-    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-6-luna");
+    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-6-luna", undefined, undefined, { reasoningEffort: "none" });
 
     expect(request).toMatchObject({
       model: "gpt-6-luna",
@@ -159,6 +159,13 @@ describe("bilingual phrase analysis", () => {
     ]);
   });
 
+  it("uses supported low reasoning and explicit caching for GPT-6.1 Sol", () => {
+    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-6.1-sol", undefined, undefined,
+      { reasoningEffort: "low" });
+    expect(request).toMatchObject({ model: "gpt-6.1-sol", reasoning: { effort: "low" },
+      prompt_cache_options: { mode: "explicit" } });
+  });
+
   it("omits reasoning effort for legacy non-reasoning card models", () => {
     const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-4.1-mini");
 
@@ -166,7 +173,7 @@ describe("bilingual phrase analysis", () => {
   });
 
   it("sets reasoning effort to none for gpt-5.1", () => {
-    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-5.1");
+    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-5.1", undefined, undefined, { reasoningEffort: "none" });
 
     expect(request).toMatchObject({
       model: "gpt-5.1",
@@ -177,7 +184,7 @@ describe("bilingual phrase analysis", () => {
   });
 
   it("sets reasoning effort to none for current gpt-5 mini models", () => {
-    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-5.4-mini");
+    const request = buildBilingualPhraseAnalysisRequest("What was your role?", "gpt-5.4-mini", undefined, undefined, { reasoningEffort: "none" });
 
     expect(request).toMatchObject({
       model: "gpt-5.4-mini",
