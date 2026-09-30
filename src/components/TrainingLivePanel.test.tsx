@@ -1055,7 +1055,7 @@ describe("Training Live Panel", () => {
       screen.getByRole("button", {
         name: /Change speaker for Can you walk me through your recent project.*Current role Interviewer/
       })
-    ).toHaveTextContent("INT");
+    ).toHaveTextContent("Они");
     const transcriptTurn = screen
       .getByRole("button", {
         name: "Interviewer Can you walk me through your recent project?"
@@ -1212,7 +1212,7 @@ describe("Training Live Panel", () => {
       screen.getByRole("button", {
         name: /Change speaker for Tell me about your recent project.*Current role Me/
       })
-    ).toHaveTextContent("ME");
+    ).toHaveTextContent("Я");
 
     await act(async () => {
       emitEvent({
@@ -1479,7 +1479,7 @@ describe("Training Live Panel", () => {
     expect(dialogueLog).toHaveTextContent("Hello, can you hear me?");
     expect(dialogueLog).toHaveTextContent("Yes, I can hear you.");
     expect(dialogueLog).toHaveTextContent("What about now?");
-    expect(within(dialogueLog).getAllByText("?")).toHaveLength(2);
+    expect(within(dialogueLog).getAllByText("Неизвестно")).toHaveLength(2);
     expect(screen.getByText("Live")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Copy transcript" }));
@@ -1505,7 +1505,7 @@ describe("Training Live Panel", () => {
 
     const editor = screen.getByRole("form", { name: "Add message" });
 
-    await user.click(within(editor).getByRole("button", { name: "Interviewer" }));
+    await user.click(within(editor).getByRole("button", { name: "Они" }));
     await user.type(
       within(editor).getByRole("textbox", { name: "Message text" }),
       "Could you explain the main trade-off?"
@@ -1670,7 +1670,7 @@ describe("Training Live Panel", () => {
 
     await user.clear(messageText);
     await user.type(messageText, "The system missed this phrase.");
-    await user.click(within(editor).getByRole("button", { name: "Me" }));
+    await user.click(within(editor).getByRole("button", { name: "Я" }));
     await user.click(within(editor).getByRole("button", { name: "Save" }));
 
     expect(
@@ -1737,7 +1737,7 @@ describe("Training Live Panel", () => {
     await user.click(screen.getByRole("button", { name: "Add message" }));
 
     const editor = screen.getByRole("form", { name: "Add message" });
-    await user.click(within(editor).getByRole("button", { name: "Interviewer" }));
+    await user.click(within(editor).getByRole("button", { name: "Они" }));
     await user.type(
       within(editor).getByRole("textbox", { name: "Message text" }),
       "Could you explain the outcome?"

@@ -988,7 +988,7 @@ textarea {
 
 .transcript-editor {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   margin: 10px 0;
   border: 1px solid #b7cdfa;
   border-radius: 8px;
@@ -1061,7 +1061,13 @@ textarea {
 }
 
 .transcript-editor-header {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+}
+
+.transcript-editor-header h3 {
+  font-size: 16px;
 }
 
 .transcript-editor-header h3,
@@ -1086,21 +1092,25 @@ textarea {
 
 .transcript-editor-speakers legend,
 .transcript-editor-label {
-  margin-bottom: 6px;
-  color: #526176;
-  font-size: 13px;
-  font-weight: 700;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .transcript-editor-speakers div {
   display: flex;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 6px;
 }
 
 .transcript-editor-speakers button {
-  min-height: 38px;
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
 }
 
 .transcript-editor-speaker-active {
@@ -1110,7 +1120,9 @@ textarea {
 }
 
 .transcript-editor textarea {
-  min-height: 88px;
+  min-height: 64px;
+  padding: 8px 10px;
+  font-size: 14px;
   resize: vertical;
 }
 
@@ -1726,7 +1738,7 @@ textarea {
 .mac-monitor-level .mac-level-reading { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .transcript-capture-time { font-size: 0.75rem; opacity: 0.65; }
 
-.transcript-turn-mac { grid-template-columns: 30px minmax(0, 1fr); }
+.transcript-turn-mac { grid-template-columns: max-content minmax(0, 1fr); }
 
 /* Desktop workspace: keep the conversation and answer within the available window. */
 .desktop-workspace { padding: 10px; }
@@ -1884,3 +1896,23 @@ textarea {
 .meeting-help-row > details > summary { padding-right: 38px; }
 .meeting-help-row > .meeting-block-tools { z-index: 2; top: 0; }
 .meeting-help-row:has(> .meeting-extra) > .meeting-block-tools { top: 2px; }
+
+.transcript-editor-header .transcript-editor-actions { gap: 6px; justify-content: flex-end; }
+.transcript-editor-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-height: 34px;
+  padding: 5px;
+}
+
+@media (max-width: 480px) {
+  .transcript-editor-header { grid-template-columns: 1fr auto auto; }
+  .transcript-editor-speakers { grid-column: 1 / -1; grid-row: 2; }
+  .transcript-editor-speakers div { justify-content: flex-start; }
+  .transcript-editor-close { grid-column: 3; grid-row: 1; }
+}
+
+.transcript-turn { grid-template-columns: max-content minmax(0, 1fr); }
+.transcript-speaker-control { text-transform: none; }

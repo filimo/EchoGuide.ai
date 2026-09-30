@@ -15,7 +15,7 @@ import { MeetingAssistant, type MeetingSelection } from "./MeetingAssistant";
 import { meetingRequest } from "../meeting/client";
 import { expiredMeetingTurns, meetingContextBefore } from "../meeting/conversationContext";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownToLine, Copy, Check, Eraser, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, Copy, Check, Eraser, Pencil, Plus, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import {
   createBrowserRecoveryAudioRecorder,
   type RecoveryAudioCaptureState,
@@ -514,10 +514,10 @@ function getNextSpeakerLabel(current: SessionSpeakerLabel): SessionSpeakerLabel 
 
 function getCompactSpeakerLabel(speakerLabel: SessionSpeakerLabel): string {
   if (speakerLabel === "Interviewer") {
-    return "INT";
+    return "Они";
   }
 
-  return speakerLabel === "Me" ? "ME" : "?";
+  return speakerLabel === "Me" ? "Я" : "Неизвестно";
 }
 
 function createManualTranscriptTurnId(turns: TranscriptTurn[]): string {
@@ -3376,6 +3376,68 @@ export function TrainingLivePanel({
             >
               <div className="transcript-editor-header">
                 <h3>{transcriptEditor.mode === "add" ? "Add message" : "Edit message"}</h3>
+                <fieldset className="transcript-editor-speakers">
+                  <legend>Кто говорит</legend>
+                  <div>
+                    {transcriptSpeakerLabels.map((speakerLabel) => (
+                      <button
+                        type="button"
+                        className={
+                          transcriptEditor.speakerLabel === speakerLabel
+                            ? "transcript-editor-speaker-active"
+                            : undefined
+                        }
+                        aria-pressed={transcriptEditor.speakerLabel === speakerLabel}
+                        key={speakerLabel}
+                        onClick={() =>
+                          setTranscriptEditor((current) =>
+                            current == null ? current : { ...current, speakerLabel }
+                          )
+                        }
+                      >
+                        {getCompactSpeakerLabel(speakerLabel)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="transcript-editor-actions">
+                  {transcriptEditor.mode === "edit" && transcriptEditor.originalText != null ? (
+                    <button
+                      type="button"
+                      aria-label="Restore recognized text"
+                      title="Вернуть распознанный текст"
+                      onClick={() =>
+                        setTranscriptEditor((current) =>
+                          current == null || current.originalText == null
+                            ? current
+                            : { ...current, text: current.originalText }
+                        )
+                      }
+                    >
+                      <RotateCcw aria-hidden="true" size={18} strokeWidth={1.8} />
+                    </button>
+                  ) : null}
+                  <span className="transcript-editor-primary-actions">
+                    <button
+                      type="submit"
+                      aria-label="Save"
+                      title="Сохранить"
+                      disabled={transcriptEditor.text.trim().length === 0}
+                    >
+                      <Check aria-hidden="true" size={18} strokeWidth={1.8} />
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      aria-label="Save and generate card"
+                      title="Сохранить и создать карточку"
+                      disabled={transcriptEditor.text.trim().length === 0}
+                      onClick={() => handleSaveTranscriptEditor(true)}
+                    >
+                      <Sparkles aria-hidden="true" size={18} strokeWidth={1.8} />
+                    </button>
+                  </span>
+                </div>
                 <button
                   type="button"
                   className="transcript-editor-close"
@@ -3386,35 +3448,13 @@ export function TrainingLivePanel({
                   <X aria-hidden="true" size={18} strokeWidth={1.8} />
                 </button>
               </div>
-              <fieldset className="transcript-editor-speakers">
-                <legend>Speaker</legend>
-                <div>
-                  {transcriptSpeakerLabels.map((speakerLabel) => (
-                    <button
-                      type="button"
-                      className={
-                        transcriptEditor.speakerLabel === speakerLabel
-                          ? "transcript-editor-speaker-active"
-                          : undefined
-                      }
-                      aria-pressed={transcriptEditor.speakerLabel === speakerLabel}
-                      key={speakerLabel}
-                      onClick={() =>
-                        setTranscriptEditor((current) =>
-                          current == null ? current : { ...current, speakerLabel }
-                        )
-                      }
-                    >
-                      {speakerLabel}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+
               <label className="transcript-editor-label" htmlFor="transcript-message-text">
                 Message text
               </label>
               <textarea
                 id="transcript-message-text"
+                rows={2}
                 autoFocus
                 value={transcriptEditor.text}
                 placeholder="Type the missing or corrected phrase."
@@ -3424,38 +3464,7 @@ export function TrainingLivePanel({
                   )
                 }
               />
-              <div className="transcript-editor-actions">
-                {transcriptEditor.mode === "edit" && transcriptEditor.originalText != null ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTranscriptEditor((current) =>
-                        current == null || current.originalText == null
-                          ? current
-                          : { ...current, text: current.originalText }
-                      )
-                    }
-                  >
-                    Restore recognized text
-                  </button>
-                ) : null}
-                <span className="transcript-editor-primary-actions">
-                  <button
-                    type="submit"
-                    disabled={transcriptEditor.text.trim().length === 0}
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-action"
-                    disabled={transcriptEditor.text.trim().length === 0}
-                    onClick={() => handleSaveTranscriptEditor(true)}
-                  >
-                    Save and generate card
-                  </button>
-                </span>
-              </div>
+
             </form>
           ) : null}
           <div
@@ -3494,12 +3503,10 @@ export function TrainingLivePanel({
                     type="button"
                     className="transcript-speaker transcript-speaker-control"
                     aria-label={`Change speaker for ${turn.text}. Current role ${turn.speakerLabel}`}
-                    title="Change speaker role"
+                    title={`Кто говорит: ${getCompactSpeakerLabel(turn.speakerLabel)}. Нажмите, чтобы изменить.`}
                     onClick={() => cycleTranscriptSpeakerLabel(turn)}
                   >
-                    {turn.audioSource && turn.speakerLabel === sourceSpeaker(turn.audioSource)
-                      ? (turn.audioSource === "microphone" ? "Я" : "Они")
-                      : getCompactSpeakerLabel(turn.speakerLabel)}
+                    {getCompactSpeakerLabel(turn.speakerLabel)}
                   </button>
                   <button
                     type="button"

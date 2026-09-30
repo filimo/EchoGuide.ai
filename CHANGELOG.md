@@ -13,6 +13,9 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Move transcript save, generate, and restore actions into compact header buttons.
+- Compact the transcript message editor and use the dialogue speaker labels Я and Они, with Неизвестно for an unassigned speaker.
+
 - Use GPT-6.1 Sol with low reasoning effort for both phrase cards and meeting answers, including general answers and conversation summaries.
 
 - Wait for native Mac audio helpers to exit before allowing another start, escalate
