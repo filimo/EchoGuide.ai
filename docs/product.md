@@ -42,6 +42,11 @@ The product is not intended to automate the conversation. It keeps the user in c
 
 ### Low cognitive load
 
+The card panel offers English + Russian and Russian-only display modes. The
+browser remembers the choice across sessions. Switching updates existing cards
+without requesting new answers. Transcript text and English reply copy actions
+keep their existing behavior.
+
 The live UI shows only two or three short answer options. A complete sentence appears after selection, so the user does not need to scan long generated text during a conversation.
 
 ### Concise English

@@ -17,6 +17,7 @@ type Props = {
   sessionId: string;
   selection: MeetingSelection | null;
   russianMeaning?: string;
+  showEnglish?: boolean;
   conversationContextWarning?: boolean;
   generalAnswer?: (text: string, context: string[], speaker: string, signal: AbortSignal) => Promise<MeetingGeneralAnswer | QuickStart | null>;
 };
@@ -27,7 +28,7 @@ const diagnosticReasons: Record<MeetingAnswerReason, string> = {
   conflict: "В найденных разделах есть противоречие", invalid_answer: "Ответ не прошёл проверку формата или источников",
   search_error: "Запрос поиска завершился ошибкой", answer_error: "Подготовка полного ответа завершилась ошибкой"
 };
-export function MeetingAssistant({ sessionId, selection, russianMeaning = "", conversationContextWarning = false, generalAnswer }: Props) {
+export function MeetingAssistant({ sessionId, selection, russianMeaning = "", showEnglish = true, conversationContextWarning = false, generalAnswer }: Props) {
   const [state, setState] = useState<MeetingPackState>({ packs: [], activePackId: null });
   const [name, setName] = useState("");
   const [documents, setDocuments] = useState<MeetingDocument[]>([]);
@@ -267,7 +268,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
         <strong>О чём речь</strong>
         <p lang="ru">{general?.presentation?.gist || russianMeaning.trim() || "Готовим русский смысл…"}</p>
         {general?.presentation?.intent && <p><strong>Что от тебя хотят: </strong>{general.opening.mode === "wait" ? "Пока нет законченного вопроса или просьбы ответить." : general.presentation.intent}</p>}
-        <details><summary>English original</summary><p lang="en">{question}</p></details>
+        {showEnglish && <details><summary>English original</summary><p lang="en">{question}</p></details>}
       </div></CardInfo>}
     </div>}
     <div className="meeting-answer-meta">
@@ -279,22 +280,22 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
         <CardInfo label="О быстром начале"><p>Короткая фраза из отдельного быстрого запроса, без поиска по материалам. Общий ответ ниже готовится независимо.</p></CardInfo>
         <button className="meeting-icon" aria-label="Скопировать" title="Скопировать" type="button" onClick={() => void copyReply()}><Copy size={15} aria-hidden="true" /></button>
       </div>
-      <BilingualSentences english={opening.english} russian={opening.russian} />
+      <BilingualSentences showEnglish={showEnglish} english={opening.english} russian={opening.russian} />
       <p className="meeting-reply-caption">{opening.mode === "clarify" ? "Уточнение" : "Быстрое начало · без поиска по материалам"}</p>
     </section>}
     {general?.continuation && <details className="meeting-general meeting-reply-block" open><summary>Общий ответ · без поиска</summary>
       <div className="meeting-block-tools"><CardInfo label="Об общем ответе"><p>Самостоятельный вариант по вопросу и контексту разговора, без поиска в документах. Он готовится отдельно от быстрого начала и может не содержать фактов из базы. «Моя мысль» задаёт направление этого ответа.</p></CardInfo><button className="meeting-icon" aria-label="Скопировать весь ответ" title="Скопировать весь ответ" type="button" onClick={() => void copyReply(true)}><Copy size={15} aria-hidden="true" /></button></div>
-      <BilingualSentences english={`${general.opening.english} ${general.continuation.english}`} russian={`${general.opening.russian} ${general.continuation.russian}`} />
+      <BilingualSentences showEnglish={showEnglish} english={`${general.opening.english} ${general.continuation.english}`} russian={`${general.opening.russian} ${general.continuation.russian}`} />
     </details>}
     {general?.presentation?.clarification && opening?.mode !== "clarify" && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="Об уточнении"><p>Короткий вопрос собеседнику, если для ответа не хватает важной детали. Можно произнести английскую фразу; русский текст передаёт её смысл.</p></CardInfo></div><details className="meeting-extra" open><summary>Уточнить у собеседника</summary>
-      <BilingualSentences {...general.presentation.clarification} />
+      <BilingualSentences showEnglish={showEnglish} {...general.presentation.clarification} />
     </details></div>}
     {answer && <details className="meeting-answer meeting-reply-block" open><summary>Ответ по материалам</summary>
       <div className="meeting-block-tools">
         <CardInfo label="Об ответе по материалам"><p>{answer.status === "grounded" ? "Ответ подтверждён материалами выбранного набора. Общий вариант выше подготовлен отдельно." : "В материалах не удалось подтвердить ответ. Причина доступна в диагностике."}</p></CardInfo>
         {answer.status === "grounded" && <button className="meeting-icon" aria-label="Скопировать ответ по материалам" title="Скопировать ответ по материалам" type="button" onClick={() => void copyReply(false, true)}><Copy size={15} aria-hidden="true" /></button>}
       </div>
-      {answer.status === "grounded" && <BilingualSentences english={answer.english} russian={answer.russian} />}
+      {answer.status === "grounded" && <BilingualSentences showEnglish={showEnglish} english={answer.english} russian={answer.russian} />}
       {answer.status !== "grounded" && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="О диагностике ответа"><p>Причина, по которой ответ по материалам не получен: отсутствие подходящих разделов, недостаточно оснований или ошибка запроса.</p></CardInfo></div><details><summary>Диагностика ответа</summary><p>{answer.diagnostics
         ? `${diagnosticReasons[answer.diagnostics.reason]} (${answer.diagnostics.reason}) · Найдено разделов: ${answer.diagnostics.found ?? "неизвестно"}`
         : "Причина не сохранена в этой старой карточке. Для новой проверки нажми «Новый вариант»."}</p></details></div>}
@@ -305,7 +306,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", co
       </div>)}</details></div>}
     </details>}
     {!!general?.presentation?.vocabulary.length && <div className="meeting-help-row"><div className="meeting-block-tools"><CardInfo label="Об опорных словах"><p>До трёх полезных английских слов или выражений из общего ответа с коротким русским смыслом. Подсказка для чтения и разговора.</p></CardInfo></div><details className="meeting-extra" open><summary>Опорные слова</summary>
-      <ul>{general.presentation.vocabulary.map((word, index) => <li key={index}><strong>{word.english}</strong> — {word.russian}</li>)}</ul>
+      <ul>{general.presentation.vocabulary.map((word, index) => <li key={index}>{showEnglish && <><strong>{word.english}</strong> — </>}{word.russian}</li>)}</ul>
     </details></div>}
     {copyStatus && <p role="status" className="hint">{copyStatus}</p>}
     <div className="meeting-answer-meta">

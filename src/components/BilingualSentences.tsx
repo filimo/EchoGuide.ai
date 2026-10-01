@@ -6,16 +6,16 @@ function sentences(text: string, language: string): string[] {
     item => item.segment.trim()).filter(Boolean);
 }
 
-export function BilingualSentences({ english, russian }: { english: string; russian: string }) {
+export function BilingualSentences({ english, russian, showEnglish = true }: { english: string; russian: string; showEnglish?: boolean }) {
   const en = sentences(english, "en");
   const ru = sentences(russian, "ru");
   // Older cards may have different sentence counts. Keep their translations together.
   const pairs = en.length === ru.length
     ? en.map((text, index) => ({ english: text, russian: ru[index] }))
     : [{ english: english.trim(), russian: russian.trim() }];
-  return <div className="bilingual-sentences">
+  return <div className={`bilingual-sentences${showEnglish ? "" : " russian-only"}`}>
     {pairs.map((pair, index) => <div className="bilingual-sentence-pair" key={index}>
-      {pair.english && <p className="bilingual-sentence-english" lang="en">{pair.english}</p>}
+      {showEnglish && pair.english && <p className="bilingual-sentence-english" lang="en">{pair.english}</p>}
       {pair.russian && <p className="bilingual-sentence-russian" lang="ru">{pair.russian}</p>}
     </div>)}
   </div>;

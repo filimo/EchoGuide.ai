@@ -13,6 +13,10 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Add a card language selector for English + Russian or Russian only in training
+  and meeting modes. Remember the choice in the browser without regenerating
+  answers; reply copy actions continue to copy English.
+
 - Move transcript save, generate, and restore actions into compact header buttons.
 - Compact the transcript message editor and use the dialogue speaker labels Я and Они, with Неизвестно for an unassigned speaker.
 

@@ -977,6 +977,12 @@ describe("Training Live Panel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("restores the card language when reopening the screen", async () => {
+    window.localStorage.setItem("echoguide.cardLanguage", "ru");
+    render(<TrainingLivePanel stream={createStream()} notes="" />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Язык карточек" })).toHaveValue("ru"));
+  });
+
   it("connects through Realtime VAD and renders bilingual phrase analysis", async () => {
     const user = userEvent.setup();
     let emitEvent: (event: RealtimeServerEvent) => void = () => {};
@@ -1080,6 +1086,20 @@ describe("Training Live Panel", () => {
     expect(
       screen.getByText("Sure, the project focused on improving a core user workflow.")
     ).toBeInTheDocument();
+    const panel = screen.getByRole("complementary", { name: "Current phrase suggestions" });
+    const language = within(panel).getByRole("combobox", { name: "Язык карточек" });
+    const callsBeforeSwitch = analyzePhrase.mock.calls.length;
+    await user.selectOptions(language, "ru");
+    expect(within(panel).queryByText("Project context")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Sure, the project focused on improving a core user workflow.")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Sure, let me start with the context.")).not.toBeInTheDocument();
+    expect(within(panel).getByText("Контекст проекта")).toBeInTheDocument();
+    expect(within(panel).getByText("Конечно, проект был сфокусирован на улучшении основного пользовательского сценария.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Interviewer Can you walk me through your recent project?" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("echoguide.cardLanguage")).toBe("ru");
+    await user.selectOptions(language, "en-ru");
+    expect(within(panel).getByText("Sure, the project focused on improving a core user workflow.")).toBeInTheDocument();
+    expect(analyzePhrase).toHaveBeenCalledTimes(callsBeforeSwitch);
   });
 
   it("shows translation progress and then Russian meaning inside the transcript turn", async () => {

@@ -23,6 +23,29 @@ function mockRoutes() {
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
 }
 describe("manual meeting assistance", () => {
+  it("switches existing meeting replies to Russian without generating again", async () => {
+    const pair = { opening: { mode: "start" as const, english: "I would define the goal.", russian: "Я бы определил цель." },
+      continuation: { english: "Then test it.", russian: "Затем проверить." },
+      presentation: { gist: "План", intent: "Описать план", clarification: { english: "Which goal?", russian: "Какую цель?" },
+        vocabulary: [{ english: "goal", russian: "цель" }] } };
+    vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } :
+      path === "general" ? pair : path === "opening" ? pair.opening :
+      { status: "grounded", english: "Use the pilot.", russian: "Используй пилот.", sources: [] });
+    const { rerender, container } = render(<MeetingAssistant sessionId="language-test" selection={selection} />);
+    await screen.findByText("Use the pilot.");
+    await screen.findByText("Then test it.");
+    const calls = vi.mocked(meetingRequest).mock.calls.length;
+    rerender(<MeetingAssistant sessionId="language-test" selection={selection} showEnglish={false} />);
+    expect(container.querySelector('[lang="en"]')).toBeNull();
+    expect(screen.queryByText("goal")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Я бы определил цель.").length).toBeGreaterThan(0);
+    expect(screen.getByText("Используй пилот.")).toBeInTheDocument();
+    expect(screen.getByText("Какую цель?")).toBeInTheDocument();
+    rerender(<MeetingAssistant sessionId="language-test" selection={selection} showEnglish />);
+    expect(screen.getByText("Use the pilot.")).toBeInTheDocument();
+    expect(meetingRequest).toHaveBeenCalledTimes(calls);
+  });
+
   it("requests the paired general option and retrieval in parallel", async () => {
     const search = deferred<{ ticket: string; found: number }>();
     const pair = { opening: { mode: "start", english: "I would define the goal.", russian: "Я бы определил цель." },

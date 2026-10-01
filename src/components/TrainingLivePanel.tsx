@@ -563,6 +563,15 @@ export function TrainingLivePanel({
   onNotesChange,
   submitDiagnostics = submitDefaultDiagnostics
 }: TrainingLivePanelProps) {
+  const [showCardEnglish, setShowCardEnglish] = useState(() => {
+    try { return window.localStorage.getItem("echoguide.cardLanguage") !== "ru"; }
+    catch { return true; }
+  });
+  function changeCardLanguage(showEnglish: boolean) {
+    setShowCardEnglish(showEnglish);
+    try { window.localStorage.setItem("echoguide.cardLanguage", showEnglish ? "en-ru" : "ru"); }
+    catch { /* The display choice still works when browser storage is unavailable. */ }
+  }
   const [audioMode, setAudioMode] = useState(() => loadAudioMode(initialAudioMode));
   const [macSelection, setMacSelection] = useState<MacAudioSelection | null>(null);
   const [macLevels, setMacLevels] = useState<Partial<Record<MacAudioSource, { level: number; peak: number; chunks: number; seenAt: number }>>>({});
@@ -3617,7 +3626,15 @@ export function TrainingLivePanel({
           className="suggestions-panel suggestions-panel-sticky"
           aria-label="Current phrase suggestions"
         >
-          {meetingMode ? <MeetingAssistant sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} conversationContextWarning={meetingSummaryError} /> : <>
+          <label className="card-language-control">
+            <span>Язык карточек</span>
+            <select aria-label="Язык карточек" value={showCardEnglish ? "en-ru" : "ru"}
+              onChange={event => changeCardLanguage(event.target.value === "en-ru")}>
+              <option value="en-ru">English + Русский</option>
+              <option value="ru">Только русский</option>
+            </select>
+          </label>
+          {meetingMode ? <MeetingAssistant showEnglish={showCardEnglish} sessionId={currentSessionIdRef.current} selection={meetingSelection} russianMeaning={meetingRussianMeaning} conversationContextWarning={meetingSummaryError} /> : <>
           <div className="suggestions-panel-header">
             <div>
               <h2>Russian meaning and replies</h2>
@@ -3645,7 +3662,7 @@ export function TrainingLivePanel({
             <h3>{visibleQuickStart?.mode === "continue" ? "Продолжи мысль" :
               visibleQuickStart?.mode === "clarify" ? "Уточни" : "Начни так"}</h3>
             {visibleQuickStart ? <>
-              <BilingualSentences english={visibleQuickStart.english} russian={visibleQuickStart.russian} />
+              <BilingualSentences showEnglish={showCardEnglish} english={visibleQuickStart.english} russian={visibleQuickStart.russian} />
               <button type="button" onClick={() => setFollowLiveMode(false)}>Оставить на экране</button>
               {selectedPhraseCardId && pendingAnalysisIds.has(selectedPhraseCardId)
                 ? <p className="hint">Продолжение готовится…</p> : null}
@@ -3709,13 +3726,13 @@ export function TrainingLivePanel({
           ) : null}
           {selectedPhraseIsPreloading && selectedTranscriptTurn != null ? (
             <div className="bilingual-card">
-              <p className="selected-phrase-text">{selectedTranscriptTurn.text}</p>
+              {showCardEnglish && <p className="selected-phrase-text">{selectedTranscriptTurn.text}</p>}
               <p className="hint">Loading phrase details...</p>
             </div>
           ) : null}
           {selectedPhraseNeedsAnalysis && selectedTranscriptTurn != null ? (
             <div className="bilingual-card">
-              <p className="selected-phrase-text">{selectedTranscriptTurn.text}</p>
+              {showCardEnglish && <p className="selected-phrase-text">{selectedTranscriptTurn.text}</p>}
               <p className="hint">No card yet. Use Generate card.</p>
             </div>
           ) : null}
@@ -3724,16 +3741,16 @@ export function TrainingLivePanel({
               {selectedPhraseCard.source === "selected-group" ? (
                 <span className="selected-group-pill">Selected group</span>
               ) : null}
-              <p className="selected-phrase-text">
+              {showCardEnglish && <p className="selected-phrase-text">
                 {visibleAnalysis.analysisTargetText?.trim() || selectedPhraseCard.transcript}
-              </p>
+              </p>}
               <div className="translation-block">
                 <span className={visibleAnalysis.isQuestion ? "question-pill" : "question-pill-muted"}>
                   {visibleAnalysis.isQuestion ? "Question" : "Statement"}
                 </span>
                 <p>{visibleAnalysis.russianMeaning}</p>
               </div>
-              {!visibleQuickStart ? <div className="bridge-block">
+              {showCardEnglish && !visibleQuickStart ? <div className="bridge-block">
                 <h3>Bridge phrase</h3>
                 <p>{visibleAnalysis.bridgePhrase}</p>
               </div> : null}
@@ -3750,13 +3767,13 @@ export function TrainingLivePanel({
                     }
                     onClick={() => handleSelectReply(index)}
                   >
-                    <span>{reply.shortLabel}</span>
+                    {showCardEnglish && <span>{reply.shortLabel}</span>}
                     <span className="reply-chip-translation">{reply.shortLabelTranslation}</span>
                   </button>
                 ))}
                 {selectedReplyIndex != null ? (
                   <div className="reply-full">
-                    <BilingualSentences
+                    <BilingualSentences showEnglish={showCardEnglish}
                       english={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentence ?? ""}
                       russian={visibleAnalysis.suggestedReplies[selectedReplyIndex]?.fullSentenceTranslation ?? ""}
                     />
