@@ -13,6 +13,10 @@ Until the first versioned release, changes are grouped by date.
 
 ## Unreleased
 
+- Keep the meeting card aligned with the highlighted transcript turn when
+  reopening a session or saving a manually added or edited message. Preserve
+  pinned replies while unrelated messages arrive.
+
 - Add a card language selector for English + Russian or Russian only in training
   and meeting modes. Remember the choice in the browser without regenerating
   answers; reply copy actions continue to copy English.

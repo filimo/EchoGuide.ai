@@ -232,6 +232,53 @@ describe("Training Live Panel", () => {
 
   });
 
+  it("keeps meeting help aligned after session restore, manual save, edit and remount", async () => {
+    window.localStorage.setItem("echoguide.meetingMode.v1", "true");
+    const savedSession: SessionHistoryEntry = {
+      version: 1, id: "meeting-restore", sourceLabel: "Synthetic meeting", knowledgeContext: "",
+      savedAt: "2026-10-02T08:00:00.000Z", createdAt: "2026-10-02T08:00:00.000Z", updatedAt: "2026-10-02T08:00:00.000Z",
+      transcriptTurns: [{ id: "restored-question", speakerLabel: "Interviewer", text: "Which tests should we run?" }],
+      phraseCards: [], selectedReplies: [], usedBridgePhrases: []
+    };
+    const history = createInMemorySessionHistoryClient([savedSession]);
+    vi.mocked(meetingRequest).mockImplementation(async (path, body) => {
+      const input = body as { transcript?: string };
+      if (path === "packs") return { activePackId: "a", packs: [{ id: "a", name: "Current", status: "ready", createdAt: "2026-10-02", filenames: ["x.md"], sectionCount: 1 }] };
+      if (path === "history/read") return { snapshots: [] };
+      if (path === "history/save") return { saved: true };
+      if (path === "search") return { ticket: "t", found: 0 };
+      if (path === "general") return {
+        opening: { mode: "start", english: "I'd start with the main flow.", russian: "Я бы начал с главного сценария." },
+        continuation: { english: `Reply to: ${input.transcript}`, russian: `Ответ на: ${input.transcript}` }
+      };
+      if (path === "opening") return { mode: "start", english: "I'd start with the main flow.", russian: "Я бы начал с главного сценария." };
+      return { status: "no_answer", english: "", russian: "", sources: [] };
+    });
+    const user = userEvent.setup();
+    const props = { stream: null, notes: "", sessionHistoryClient: history, autoOpenLatestSession: true };
+    const view = render(<TrainingLivePanel {...props} />);
+    await screen.findByText(/Reply to: Which tests should we run/);
+    expect(screen.getByRole("button", { name: "Interviewer Which tests should we run?" }).closest(".transcript-turn")).toHaveClass("transcript-turn-selected");
+    await user.click(screen.getByRole("button", { name: "Add message" }));
+    let editor = screen.getByRole("form", { name: "Add message" });
+    await user.type(within(editor).getByRole("textbox", { name: "Message text" }), "How would you test retries?");
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await screen.findByText(/Reply to: How would you test retries/);
+    expect(screen.getByRole("button", { name: "Heard How would you test retries?" }).closest(".transcript-turn")).toHaveClass("transcript-turn-selected");
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    editor = screen.getByRole("form", { name: "Edit message" });
+    await user.clear(within(editor).getByRole("textbox", { name: "Message text" }));
+    await user.type(within(editor).getByRole("textbox", { name: "Message text" }), "How would you test timeouts?");
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await screen.findByText(/Reply to: How would you test timeouts/);
+    await waitFor(() => expect(vi.mocked(history.saveCurrentSession).mock.calls.at(-1)?.[1].transcriptTurns.at(-1)?.text).toBe("How would you test timeouts?"));
+    view.unmount();
+    render(<TrainingLivePanel {...props} />);
+    await screen.findByText(/Reply to: How would you test timeouts/);
+    expect(screen.getByRole("button", { name: "Heard How would you test timeouts?" }).closest(".transcript-turn")).toHaveClass("transcript-turn-selected");
+    expect(screen.queryByText("Выбери реплику в разговоре, чтобы подготовить ответ.")).not.toBeInTheDocument();
+  });
+
   it("shows a contextual opening before the full card, keeps it stable and saves it with the card", async () => {
     let finish: (value: BilingualPhraseAnalysis) => void = () => {};
     const analyzePhrase = vi.fn(() => new Promise<BilingualPhraseAnalysis>((resolve) => { finish = resolve; }));

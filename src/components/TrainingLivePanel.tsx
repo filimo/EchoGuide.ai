@@ -2820,12 +2820,24 @@ export function TrainingLivePanel({
       void translateCompletedTranscript(latestTurn.text, latestTurn.id);
     }
     setSelectedPhraseCardId(latestTurn.id);
-    setMeetingSelection(current => current?.id === latestTurn.id && current.text === latestTurn.text ? current : {
-      id: latestTurn.id, text: latestTurn.text, speaker: latestTurn.speakerLabel,
-      context: meetingContextBefore(transcriptTurns, latestTurn.id, meetingSummaryRef.current.coveredIds),
-      summary: meetingSummary
-    });
   }, [meetingMode, followLive, transcriptTurns, meetingSummary]);
+
+  useEffect(() => {
+    const turn = meetingMode ? transcriptTurns.find(item => item.id === selectedPhraseCardId) : undefined;
+    if (!turn) {
+      setMeetingSelection(null);
+      return;
+    }
+    // Preserve a pinned reply's context when unrelated turns or summaries arrive.
+    const isLatest = turn.id === transcriptTurns.at(-1)?.id;
+    setMeetingSelection(current => current?.id === turn.id && current.text === turn.text && current.speaker === turn.speakerLabel
+      ? current
+      : {
+        id: turn.id, text: turn.text, speaker: turn.speakerLabel,
+        context: meetingContextBefore(transcriptTurns, turn.id, meetingSummaryRef.current.coveredIds, isLatest),
+        summary: isLatest ? meetingSummary : ""
+      });
+  }, [meetingMode, selectedPhraseCardId, transcriptTurns, meetingSummary]);
 
   function handlePauseFollowLive() {
     setFollowLiveMode(false);
@@ -3548,12 +3560,6 @@ export function TrainingLivePanel({
                         if (!russianMeaning && !pendingTranslationIds.has(turn.id)) {
                           void translateCompletedTranscript(turn.text, turn.id);
                         }
-                        setMeetingSelection(current => current?.id === turn.id ? current : {
-                          id: turn.id, text: turn.text, speaker: turn.speakerLabel,
-                          context: meetingContextBefore(transcriptTurns, turn.id,
-                            meetingSummaryRef.current.coveredIds, turn.id === transcriptTurns.at(-1)?.id),
-                          summary: turn.id === transcriptTurns.at(-1)?.id ? meetingSummary : ""
-                        });
                       }
                       setSelectedPhraseCardId(turn.id);
                       setSelectedReplyIndex(
