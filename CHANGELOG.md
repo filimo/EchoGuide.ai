@@ -17,6 +17,20 @@ Until the first versioned release, changes are grouped by date.
   reopening a session or saving a manually added or edited message. Preserve
   pinned replies while unrelated messages arrive.
 
+- Treat short language or scope qualifiers as complete follow-up questions when
+  the recent dialogue supplies the question being narrowed.
+- Track general meeting replies independently of document requests: show a
+  failure as soon as that request settles, and offer a retry only when a real
+  attempt needs repeating and regeneration is available. Stop recommending a
+  general answer that was not delivered.
+
+- Make technical meeting answers focus on the mechanism and a concrete failure
+  condition or decision criterion within the existing short-card limit.
+- Keep undocumented personal-experience openings in the participant's voice,
+  without asking for input as an assistant or inventing an incident or result.
+- Allow up to 15 seconds for the standalone general answer, with a matching
+  client deadline; keep the separate fast-opening deadline unchanged.
+
 - Add a card language selector for English + Russian or Russian only in training
   and meeting modes. Remember the choice in the browser without regenerating
   answers; reply copy actions continue to copy English.

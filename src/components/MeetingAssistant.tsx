@@ -7,7 +7,7 @@ import { meetingHistoryClient } from "../meeting/historyClient";
 import { latestMeetingCard, meetingCardKey, type MeetingCardSnapshot } from "../meeting/history";
 import { meetingRequest } from "../meeting/client";
 import { meetingFallbackFor, type MeetingAnswer, type MeetingAnswerReason, type MeetingPackState, type MeetingDocument } from "../meeting/types";
-import { isMeetingGeneralAnswer, type MeetingGeneralAnswer } from "../meeting/generalAnswer";
+import { isMeetingGeneralAnswer, meetingGeneralAnswerTimeoutMs, type MeetingGeneralAnswer } from "../meeting/generalAnswer";
 
 export type MeetingSelection = { id: string; text: string; speaker: string; context: string[]; summary?: string };
 function CardInfo({ label, children }: { label: string; children: React.ReactNode }) {
@@ -37,6 +37,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
   const [opening, setOpening] = useState<QuickStart | null>(null);
   const [answer, setAnswer] = useState<MeetingAnswer | null>(null);
   const [general, setGeneral] = useState<MeetingGeneralAnswer | null>(null);
+  const [generalStatus, setGeneralStatus] = useState<"idle" | "pending" | "received" | "failed">("idle");
   const [timings, setTimings] = useState<{ openingMs?: number; answerMs?: number }>({});
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState("");
@@ -115,6 +116,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
     request.current?.abort();
     const revision = ++generation.current;
     setOpening(null); setAnswer(null); setGeneral(null); setTimings({}); setQuestion(""); setProgress("");
+    setGeneralStatus("idle");
     setCopyStatus("");
     setGenerating(false); setHistoryLoading(false);
     if (!active || !selection) return;
@@ -141,6 +143,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
       const cached = latestMeetingCard(matching);
       if (cached && !force) {
         setOpening(cached.opening); setAnswer(cached.answer); setGeneral(cached.general ?? null); setTimings(cached.timings);
+        setGeneralStatus(cached.general ? "received" : ["complete", "error"].includes(cached.phase) ? "failed" : "idle");
         setQuestion(cached.generationInput?.transcript ?? identity.text);
         setAnswerHint(cached.answerHint ?? ""); submittedHint.current = cached.answerHint ?? "";
         setProgress(cached.phase === "complete" || cached.phase === "error" ? `Сохранённый ответ · ${new Date(cached.savedAt).toLocaleString("ru-RU")}${cached.generationInput ? "" : " · До фильтрации входа; для обновления нажми «Новый вариант»."}` : "Сохранено начало или незавершённая попытка. Для нового ответа нажми «Новый вариант».");
@@ -153,6 +156,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
       }
       setQuestion(generationInput.transcript);
       setGenerating(true);
+      setGeneralStatus("pending");
       const started = performance.now();
       let snapshot: MeetingCardSnapshot = { version: 1, identity, attemptId: crypto.randomUUID(), sequence: 0,
         generationInput, savedAt: new Date().toISOString(), packName: active.name, packCreatedAt: active.createdAt,
@@ -182,9 +186,12 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
         return first;
       });
       const generalTask = (injected ?? meetingRequest<MeetingGeneralAnswer>("general", body,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(10000)])).catch(() => null)).then(value => {
+        AbortSignal.any([controller.signal, AbortSignal.timeout(meetingGeneralAnswerTimeoutMs + 1000)])).catch(() => null)).then(value => {
         const pair = isMeetingGeneralAnswer(value) ? value : null;
-        if (current() && pair) publish({ general: pair });
+        if (current()) {
+          setGeneralStatus(pair ? "received" : "failed");
+          if (pair) publish({ general: pair });
+        }
         return pair;
       });
       const materialTask = (async () => {
@@ -193,7 +200,7 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
         if (!current()) return;
         if (first?.mode === "wait") return;
         if (found.error) {
-          publish({ answer: meetingFallbackFor("search_error"), phase: "error", progress: "Поиск временно недоступен. Общий ответ готовится отдельно." }); return;
+          publish({ answer: meetingFallbackFor("search_error"), phase: "error", progress: "Поиск временно недоступен." }); return;
         }
         try {
           const result = await meetingRequest<MeetingAnswer>("answer", { packId: active.id, ticket: found.value.ticket,
@@ -201,9 +208,9 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
           if (!current()) return;
           publish({ answer: result,
             timings: { ...snapshot.timings, answerMs: performance.now() - started },
-            progress: result.status === "grounded" ? "Готово" : result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований. Используй общий вариант ответа." });
+            progress: result.status === "grounded" ? "Готово" : result.status === "conflict" ? "В материалах есть расхождение — нужна проверка." : "В этом наборе недостаточно оснований." });
         } catch {
-          publish({ answer: meetingFallbackFor("answer_error", found.value.found), phase: "error", progress: "Не удалось подготовить ответ по материалам. Общий ответ готовится отдельно." });
+          publish({ answer: meetingFallbackFor("answer_error", found.value.found), phase: "error", progress: "Не удалось подготовить ответ по материалам." });
         }
       })();
       const [first, pair] = await Promise.all([fast, generalTask, materialTask]);
@@ -216,6 +223,19 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
     })();
     return () => controller.abort();
   }, [active?.id, sessionId, selected, requestVersion]);
+
+  // Older saved attempts can recommend a general reply that was never delivered.
+  const visibleProgress = progress.replace(" Используй общий вариант ответа.", "")
+    .replace(" Общий ответ готовится отдельно.", "");
+  const canRegenerate = !historyLoading && !generating && !historyError;
+  const retryGeneral = canRegenerate ? " Нажми «Новый вариант», чтобы повторить." : "";
+  const generalProgress = generalStatus === "pending"
+    ? "Общий ответ готовится…"
+    : generalStatus === "failed"
+      ? `Общий ответ не получен.${retryGeneral}`
+      : generalStatus === "received" && general?.opening.mode === "wait" && opening && ["start", "continue"].includes(opening.mode)
+      ? `Общий ответ не сформирован для этой реплики.${retryGeneral}`
+      : "";
 
   return <div className="meeting-assistant">
     {conversationContextWarning && <p role="alert">Не удалось обновить резюме разговора. В длинной встрече часть раннего контекста может быть недоступна.</p>}
@@ -262,8 +282,8 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
     {active && selection && <div className="meeting-point">
       <input aria-label="Моя мысль" value={answerHint} maxLength={1200}
         placeholder="Моя мысль — можно по-русски" onChange={e => setAnswerHint(e.target.value)} />
-      <button className="meeting-icon" aria-label="Подготовить ответ" title="Подготовить ответ" type="button" disabled={historyLoading || generating || !!historyError || !answerHint.trim()} onClick={regenerateCard}><Send size={16} aria-hidden="true" /></button>
-      <button className="meeting-icon" aria-label="Новый вариант" title="Новый вариант" type="button" disabled={historyLoading || generating || !!historyError} onClick={regenerateCard}><RotateCw size={16} aria-hidden="true" /></button>
+      <button className="meeting-icon" aria-label="Подготовить ответ" title="Подготовить ответ" type="button" disabled={!canRegenerate || !answerHint.trim()} onClick={regenerateCard}><Send size={16} aria-hidden="true" /></button>
+      <button className="meeting-icon" aria-label="Новый вариант" title="Новый вариант" type="button" disabled={!canRegenerate} onClick={regenerateCard}><RotateCw size={16} aria-hidden="true" /></button>
       {question && <CardInfo label="О чём речь"><div className="meeting-question">
         <strong>О чём речь</strong>
         <p lang="ru">{general?.presentation?.gist || russianMeaning.trim() || "Готовим русский смысл…"}</p>
@@ -272,7 +292,8 @@ export function MeetingAssistant({ sessionId, selection, russianMeaning = "", sh
       </div></CardInfo>}
     </div>}
     <div className="meeting-answer-meta">
-    {progress && progress !== "Готово" && <p role="status">{progress}</p>}
+    {visibleProgress && visibleProgress !== "Готово" && <p role="status">{visibleProgress}</p>}
+    {generalProgress && <p role="status">{generalProgress}</p>}
     </div>
     {opening && <section className="meeting-opening meeting-reply-block" aria-label="Начни так">
       <h3>{opening.mode === "clarify" ? "Уточни" : "Начни так"}</h3>

@@ -10,7 +10,7 @@ import { spokenReplyStyle } from "../realtime/replyStyle.ts";
 import { hasRepeatedOpening, removeRepeatedOpening } from "./continuation";
 import { buildQuickStartRequest, isQuickStart, type QuickStart } from "../realtime/quickStart";
 import { maxMeetingSummaryCharacters } from "./conversationContext";
-import { buildMeetingGeneralRequest, isMeetingGeneralAnswer } from "./generalAnswer";
+import { buildMeetingGeneralRequest, isMeetingGeneralAnswer, meetingGeneralAnswerTimeoutMs } from "./generalAnswer";
 
 type StoredPack = MeetingPack & { storeId?: string; batchId?: string; fileIds: string[]; sections: MeetingSection[]; fileMap: Record<string, string> };
 type StoredState = { packs: StoredPack[]; activePackId: string | null };
@@ -152,7 +152,7 @@ export class MeetingService {
   async general(transcript: string, recentContext: string[], speakerLabel: string, answerHint = "") {
     const result = await this.api("/responses", "POST", buildMeetingGeneralRequest(
       transcript, recentContext, speakerLabel, this.options.model?.() || defaultBilingualModel, answerHint, this.options.reasoningEffort?.() || defaultBilingualReasoningEffort
-    ), 9000);
+    ), meetingGeneralAnswerTimeoutMs);
     if (result.status === "incomplete") throw new Error("General answer incomplete");
     const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? [])
       .find((part: any) => part.type === "output_text")?.text;

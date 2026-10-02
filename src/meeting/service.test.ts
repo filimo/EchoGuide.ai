@@ -40,6 +40,34 @@ function setup(reasoningEffort?: () => string) {
   return { service, state, ready, fetchImpl, directory };
 }
 describe("meeting pack lifecycle and grounding", () => {
+  it("delivers a general answer that takes longer than the former nine-second deadline", async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), milliseconds);
+      return controller.signal;
+    });
+    try {
+      const { service, fetchImpl } = setup();
+      const respond = vi.mocked(fetchImpl).getMockImplementation()!;
+      vi.mocked(fetchImpl).mockImplementationOnce(async (url, init) => {
+        await new Promise<void>((resolve, reject) => {
+          const aborted = () => { clearTimeout(timer); reject(new Error("Timed out")); };
+          const timer = setTimeout(() => { init?.signal?.removeEventListener("abort", aborted); resolve(); }, 11000);
+          init?.signal?.addEventListener("abort", aborted, { once: true });
+        });
+        return respond(url, init);
+      });
+      const pending = service.general("How would you update an index safely?", [], "Interviewer")
+        .then(value => ({ value }), error => ({ error }));
+      await vi.advanceTimersByTimeAsync(11000);
+      expect(await pending).toMatchObject({ value: { continuation: { english: "Then I would check the total effort." } } });
+    } finally {
+      timeout.mockRestore();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
   it("generates a paired general opening and continuation without document evidence", async () => {
     const { service, fetchImpl } = setup();
     const result = await service.general("How would you compare the options?", ["Me: We should include review time."], "Interviewer");

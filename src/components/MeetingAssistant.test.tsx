@@ -23,6 +23,55 @@ function mockRoutes() {
   vi.mocked(meetingRequest).mockImplementation(async path => path === "packs" ? packs : path === "search" ? { ticket: "t", found: 1 } : meetingFallback);
 }
 describe("manual meeting assistance", () => {
+  it.each(["search", "answer"])("shows a failed general request while %s is still pending", async stage => {
+    const pending = deferred<any>();
+    vi.mocked(meetingRequest).mockImplementation(async path => {
+      if (path === "packs") return packs;
+      if (path === "opening") return { mode: "start", english: "A first point.", russian: "Первая мысль." };
+      if (path === "general") throw new Error("Synthetic general failure");
+      if (path === stage) return pending.promise;
+      if (path === "search") return { ticket: "t", found: 1 };
+      return meetingFallback;
+    });
+    const view = render(<MeetingAssistant sessionId="general-failure" selection={selection} />);
+    await screen.findByText("Общий ответ не получен.");
+    expect(screen.queryByText("Общий ответ готовится…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Новый вариант" })).toBeDisabled();
+    expect(screen.queryByText(/Нажми «Новый вариант», чтобы повторить/)).not.toBeInTheDocument();
+    await act(async () => pending.resolve(stage === "search" ? { ticket: "t", found: 1 } : meetingFallback));
+    await screen.findByText("Общий ответ не получен. Нажми «Новый вариант», чтобы повторить.");
+    expect(screen.getByRole("button", { name: "Новый вариант" })).toBeEnabled();
+    view.rerender(<MeetingAssistant sessionId="general-failure" selection={null} />);
+    expect(screen.queryByText(/Общий ответ не получен/)).not.toBeInTheDocument();
+  });
+  it.each(["wait", "error"])("does not recommend a missing general answer after %s, including restored cards", async result => {
+    const pair = { opening: { mode: "wait", english: "", russian: "" }, continuation: null };
+    vi.mocked(meetingRequest).mockImplementation(async path => {
+      if (path === "packs") return packs;
+      if (path === "search") return { ticket: "t", found: 8 };
+      if (path === "opening") return { mode: "start", english: "For TypeScript, I'd consider Playwright.", russian: "Для TypeScript я бы рассмотрел Playwright." };
+      if (path === "general") {
+        if (result === "error") throw new Error("Synthetic failure");
+        return pair;
+      }
+      return meetingFallbackFor("model_no_answer", 8);
+    });
+    const followUp = { ...selection, text: "For TS", context: ["Interviewer: Which libraries can we use for integration and end-to-end tests?"] };
+    const view = render(<MeetingAssistant sessionId="follow-up" selection={followUp} />);
+    await waitFor(() => expect(snapshots.at(-1)?.phase).toBe("complete"));
+    const message = result === "wait"
+      ? "Общий ответ не сформирован для этой реплики. Нажми «Новый вариант», чтобы повторить."
+      : "Общий ответ не получен. Нажми «Новый вариант», чтобы повторить.";
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText(/Используй общий вариант ответа/)).not.toBeInTheDocument();
+    expect(screen.getByText("For TypeScript, I'd consider Playwright.")).toBeInTheDocument();
+    expect(screen.queryByText("Общий ответ · без поиска")).not.toBeInTheDocument();
+    view.unmount();
+    const calls = vi.mocked(meetingRequest).mock.calls.length;
+    render(<MeetingAssistant sessionId="follow-up" selection={followUp} />);
+    await screen.findByText(message);
+    expect(vi.mocked(meetingRequest).mock.calls.slice(calls).every(c => c[0] === "packs")).toBe(true);
+  });
   it("switches existing meeting replies to Russian without generating again", async () => {
     const pair = { opening: { mode: "start" as const, english: "I would define the goal.", russian: "Я бы определил цель." },
       continuation: { english: "Then test it.", russian: "Затем проверить." },
@@ -239,6 +288,8 @@ it("does not generate when history cannot be read", async () => {
   render(<MeetingAssistant sessionId="session-one" selection={selection} generalAnswer={quick} />);
   await screen.findByText(/Не удалось прочитать историю/);
   expect(quick).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Новый вариант" })).toBeDisabled();
+  expect(screen.queryByText(/Общий ответ не получен|Нажми «Новый вариант», чтобы повторить/)).not.toBeInTheDocument();
 });
 
 it("sends the same focused question to opening and retrieval, retaining raw input in the archive", async () => {
@@ -258,6 +309,7 @@ it("does not send a prompt-only selected turn to either generator", async () => 
   render(<MeetingAssistant sessionId="session-one" selection={{ ...selection, text: englishRealtimeTranscriptionPrompt }} generalAnswer={quick} />);
   await screen.findByText(/Это служебный текст распознавания/);
   expect(quick).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Общий ответ не получен|Нажми «Новый вариант», чтобы повторить/)).not.toBeInTheDocument();
   expect(vi.mocked(meetingRequest).mock.calls.some(c => c[0] === "search")).toBe(false);
   expect(snapshots).toEqual([]);
 });
@@ -335,6 +387,8 @@ it("delivers the fast opening and material answer while the independent general 
   expect(screen.queryByText("Общий ответ · без поиска")).not.toBeInTheDocument();
   await act(async () => search.resolve({ ticket: "t", found: 1 }));
   await screen.findByText("Ответ по материалам");
+  expect(screen.getByText("Общий ответ готовится…")).toBeInTheDocument();
+  expect(screen.queryByText(/Используй общий вариант ответа/)).not.toBeInTheDocument();
   await act(async () => general.resolve({ opening: { mode: "start", english: "A separate general point.", russian: "Отдельная общая мысль." }, continuation: { english: "Then compare the results.", russian: "Затем сравнить результаты." } }));
   await screen.findByText("A separate general point.");
   expect(screen.getByText("Fast first point.")).toBeInTheDocument();
