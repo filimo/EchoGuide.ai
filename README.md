@@ -1,6 +1,6 @@
 # EchoGuide
 
-> A live bilingual interview copilot that turns spoken questions into clear meaning, natural bridge phrases, and short answers you can actually say.
+> A bilingual companion for interview practice and live meetings: understand the question, start speaking, and check answers against your materials.
 
 ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=17202f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
@@ -8,112 +8,109 @@
 ![Status](https://img.shields.io/badge/status-runnable_prototype-F2C94C)
 ![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)
 
-![EchoGuide product walkthrough showing the live transcript, bilingual reply cards, saved sessions, and editable personal context](docs/assets/echoguide-demo.gif)
+![Meeting Mode with a selected question, bilingual opening, independent general answer, and answer supported by Markdown materials](docs/assets/echoguide-meeting-current.png)
 
-*A quick tour of turn-detection modes, transcript selection, grounded reply options, local session history, and editable notes.*
+*Current Meeting Mode. Screenshots captured on October 2, 2026 use synthetic dialogue and mocked API responses. They illustrate the interface, not live transcription, model quality, or response latency.*
 
-**Project updates:** [See what changed](CHANGELOG.md).
+**Project updates:** [Changelog](CHANGELOG.md).
 
-EchoGuide is an experimental iPad companion for interview practice and live English conversations. It does not try to replace the speaker or generate a long, polished monologue. Its job is smaller and more practical: remove the pause between “I understand the question” and “I can answer it in simple English.”
+EchoGuide helps a Russian-speaking participant follow an English conversation and respond in short, natural sentences. It runs locally on a computer, with a browser microphone for room audio or a MacBook capture mode for calls in headphones. An iPad can connect to the local HTTPS server as a companion screen.
 
-## The problem
+## Two ways to use it
 
-A translator solves only half of the problem during an interview. The user still needs to:
+### Training Mode
 
-- understand what the interviewer is really asking;
-- avoid an awkward silence while thinking;
-- connect the answer to real personal experience;
-- say it in clear English without reading a scripted speech.
+Practice interviews with a live bilingual transcript, Russian meaning, ready-to-use bridge phrases, and short reply options. A separate fast request offers a contextual opening before the full phrase card arrives. Select a continuation, add your own point, or pin an opening while thinking.
 
-EchoGuide turns each meaningful utterance into a compact bilingual card: Russian meaning, a bridge phrase, and two or three reply options. A short option expands into a complete sentence only when the user selects it.
+![Training Mode with Russian meaning, a contextual opening, and selectable bilingual reply continuations](docs/assets/echoguide-training-current.png)
+
+*The same synthetic question in Training Mode. No microphone or external model session was started for these screenshots.*
+
+### Meeting Mode with materials
+
+Enable **Режим встречи с материалами**, upload a named Markdown pack, wait for it to become ready, and explicitly select it. Selecting a transcript turn starts three independent paths:
+
+- **Fast opening:** a short phrase based on recent dialogue, without document search.
+- **General answer:** a standalone answer based on the question and conversation, without document evidence. It must not invent personal experience or project facts.
+- **Answer from materials:** searches the active pack and shows a supported answer with expandable source sections, or reports missing/conflicting evidence.
+
+A missing document answer does not prevent the general answer from appearing. Request failures and unfinished questions have separate statuses; the app does not recommend an answer that was never received. Use **Моя мысль** to supply your facts or direction and **Новый вариант** to request another attempt.
+
+Meeting context includes preceding speech from the last twenty minutes within size limits, plus a rolling summary of older turns. Saved cards retain their original wording and attempts; reopening a session restores them without automatic regeneration. See the [meeting assistant guide](docs/meeting-assistant.md) for indexing, context, history, and cleanup details.
 
 ## What works today
 
-- live transcription through OpenAI Realtime and WebRTC;
-- `English`, `Russian`, and bilingual speech modes;
-- `server_vad`, `semantic_vad`, and manual turn control;
-- Russian meaning beneath completed transcript turns and in the active phrase
-  card, with an explicit `Question` / `Statement` marker;
-- an opt-in continuous Russian subtitle block powered by a separate
-  `gpt-realtime-translate` WebRTC sidecar;
-- instant bridge phrases for filling a pause naturally;
-- контекстное начало EN + RU (`Начни так`, `Продолжи мысль`, `Уточни`)
-  до полного ответа, с возможностью оставить его на экране;
-- two or three concise suggested replies with translations and full sentences;
-- `Pasted notes` as personal context for grounded answers;
-- a card-local `My point` hint for regenerating the current answer from the
-  user's intended facts or direction;
-- manual card generation from a selected group of transcript turns;
-- manual transcript messages and in-place corrections with speaker selection;
-- selectable in-memory recovery of recent phrases, separate from session recording;
-- local session history with audio recording, playback, MP3 download and deletion;
-- privacy-safe microphone, WebRTC, and VAD diagnostics without transcripts or API keys;
-- a reproducible model-evaluation harness for phrase-card quality, latency, and cost.
+- OpenAI Realtime transcription over WebRTC, with English, Russian, or bilingual speech settings;
+- server VAD, semantic VAD, and manual turn control;
+- Russian meaning, contextual openings, bridge phrases, and concise reply continuations;
+- English + Russian or Russian-only card display, remembered without regenerating replies;
+- personal notes and a card-local answer hint;
+- Markdown material packs with OpenAI Vector Store retrieval and visible sources;
+- manual transcript entry, corrections, speaker selection, and grouped phrase cards;
+- transcript following or a pinned selection, copy actions, and meeting-answer JSON export;
+- local session history, audio recording, playback, MP3 download, and deletion;
+- audio-only recording without transcription;
+- optional continuous Russian subtitles through a separate Realtime translation session;
+- privacy-safe audio diagnostics and synthetic model-evaluation runners.
 
-## How the main flow works
+## Audio and recording
+
+Choose **Microphone** for audible room audio, including iPad interview practice. This cannot hear a call played only through headphones.
+
+Choose **MacBook: microphone + call application** for a local Mac call. A Swift helper captures the microphone and a selected application's audio as separate transcription sources. Requires macOS 15+, native permissions, and localhost access; it does not require BlackHole. Build the helper with `npm run mac-audio:build` and follow the [Mac audio runbook](docs/mac-audio.md).
+
+**Начать встречу** offers live assistance with recording or audio-only recording. Stop the meeting to finish the recording, then open it in **Sessions → Аудиозаписи**. Recordings stay on the server computer. MP3 export requires FFmpeg with `libmp3lame`; Mac audio-only capture needs no OpenAI transcription session. See [session recording](docs/session-recording.md) for formats, limits, and recovery.
+
+## How it works
 
 ```mermaid
 flowchart LR
-    A["Room audio<br/>iPad microphone"] --> B["OpenAI Realtime<br/>WebRTC + transcription"]
-    B --> C["Live transcript<br/>and fresh thought"]
-    B --> X["Optional translation sidecar<br/>continuous Russian subtitles"]
-    D["Pasted notes<br/>personal context"] --> E["Bilingual phrase analysis"]
-    P["My point<br/>card-local answer hint"] --> E
-    C --> Q["Быстрое начало EN + RU<br/>последние реплики"]
-    Q --> E
-    E --> F["Russian meaning<br/>bridge phrase<br/>2–3 replies"]
-    C --> G["Local session history"]
-    F --> G
+    A["Browser microphone<br/>or Mac microphone + application"] --> B["OpenAI Realtime<br/>transcription"]
+    B --> C["Selected transcript turn<br/>conversation context"]
+    C --> Q["Fast bilingual opening"]
+    C --> T["Training phrase card<br/>notes + reply options"]
+    C --> G["General meeting answer<br/>no document search"]
+    C --> R["Active Markdown pack<br/>Vector Store search"]
+    R --> M["Material answer<br/>source sections or fallback"]
+    C --> H["Local session history"]
+    G --> H
+    M --> H
 ```
 
-The frontend receives an ephemeral client secret from the local development API, streams microphone audio over WebRTC, and displays completed phrases as a dialogue log. For each meaningful phrase, a separate structured-output request combines recent conversation context with the user's notes. Session history and technical diagnostics stay local.
+The local development API keeps the OpenAI API key on the server and gives the browser ephemeral Realtime credentials. Text generation uses the Responses API with structured outputs and runtime validation. General answers are separate from document-supported answers; generated openings and conversation summaries are not documentary evidence.
 
-Перед основным анализом отдельный короткий запрос предлагает начало по последним
-репликам, без `Pasted notes`. Основной запрос получает показанное начало и продолжает
-его. При ошибке или таймауте быстрого этапа основной анализ всё равно запускается.
-Загрузка файлов и поиск по базе знаний пока не подключены. Синтетическая проверка
-реального API: `npm run eval:quick-start` (использует ключ и оплачиваемые запросы).
-
-## First-run experience
-
-![EchoGuide iPad companion setup](docs/assets/echoguide-setup.png)
-
-The user places an iPad near the audio source, enables the microphone, and adds a small amount of context: role, project, verified facts, constraints, and preferred answer style. The microphone always starts through an explicit user action; browser permissions are never bypassed.
-
-## What this repository demonstrates
-
-This is more than a UI mockup. The project explores several engineering problems that are often hidden behind an AI demo:
-
-- **Realtime integration:** WebRTC lifecycle, ephemeral credentials, VAD, and bilingual transcription.
-- **Product constraints:** low cognitive load, concise answers, and explicit human-in-the-loop selection.
-- **Grounding:** personal context with strong instructions not to invent roles, projects, or metrics.
-- **Reliability:** structured outputs, runtime validation, automated tests, and a dedicated model-evaluation harness.
-- **Observability:** privacy-safe audio-path diagnostics that distinguish browser, WebRTC, and VAD failures.
-- **Privacy by design:** raw audio, transcripts, personal notes, certificates, and API keys are excluded from Git.
+Audio, transcripts, notes, and answer history are stored locally, but **local storage does not mean offline processing**: live audio and generation context go to OpenAI, and uploaded meeting packs are indexed in OpenAI Vector Stores. Packs remain there until deleted through the app. Private runtime files, certificates, and API keys are excluded from Git.
 
 ## Run locally
 
-You need Node.js 20+ and an OpenAI API key.
+You need Node.js 20+ and an OpenAI API key for transcription and generated assistance.
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-Add `OPENAI_API_KEY` to `.env.local`, create a local HTTPS certificate, and start the app:
+Set `OPENAI_API_KEY` in `.env.local`, then:
 
 ```bash
 npm run dev:cert
 npm run dev
 ```
 
-Open `https://localhost:5173/`. For an iPad, configure a local hostname with
-`ECHOGUIDE_DEV_HOST` and follow the [local development guide](docs/local-development.md).
+Open `https://localhost:5173/`. Choose your audio source, add verified notes, and enter the live screen. Starting capture always requires an explicit action. For an iPad, configure `ECHOGUIDE_DEV_HOST` and follow the [local development guide](docs/local-development.md).
+
+For Mac application capture:
+
+```bash
+npm run mac-audio:build
+```
+
+Then open `https://localhost:5173/mac-audio` and configure the sources before starting a meeting.
 
 > [!IMPORTANT]
-> The current Vite server combines the frontend with local, development-only API endpoints. This is a runnable prototype for a controlled local environment, not a production-ready public deployment.
+> The Vite server includes development-only API endpoints. Production authentication, hosted persistence, and a standalone production backend are not implemented. Do not expose this server directly to the public internet.
 
-## Validate the project
+## Validation and model configuration
 
 ```bash
 npm run lint
@@ -122,98 +119,49 @@ npm run build
 npm run smoke
 ```
 
-The phrase-card model comparison uses real API calls and runs separately:
+Paid API evaluations run separately on synthetic data:
 
 ```bash
 npm run eval:models
+npm run eval:quick-start
+npm run eval:meeting
 ```
 
-The evaluation-only model settings live in `.env.local`:
+`eval:meeting` creates and removes synthetic cloud resources. The [evaluation guide](docs/model-evaluation.md) explains fixtures, scoring, and limitations; successful synthetic runs do not guarantee every live answer or latency.
 
-| Variable | Purpose |
+| Setting | Purpose |
 | --- | --- |
-| `ECHOGUIDE_EVAL_MODELS` | Comma-separated candidate models. The runner sends every evaluation case to each model and compares their phrase cards. |
-| `ECHOGUIDE_EVAL_JUDGE_MODEL` | Independent judge model that scores the candidate cards for grounding, interview usefulness, concise A2/B1 English, and Russian-layer quality. |
-| `ECHOGUIDE_EVAL_JUDGE_REASONING_EFFORT` | Reasoning effort passed to the judge model. Higher effort can make judging slower and more expensive. |
+| `OPENAI_BILINGUAL_MODEL`, `OPENAI_BILINGUAL_REASONING_EFFORT` | Shared phrase-card and meeting generation settings; current defaults are GPT-6.1 Sol and low reasoning effort. |
+| `OPENAI_TRANSLATION_MODEL`, `OPENAI_TRANSLATION_REASONING_EFFORT` | Independent fast transcript translation; defaults are `gpt-5-nano` and `minimal`. |
+| `OPENAI_REALTIME_TRANSLATION_MODEL`, `OPENAI_REALTIME_TRANSLATION_LANGUAGE` | Opt-in streaming translation sidecar; defaults are `gpt-realtime-translate` and `ru`. This adds a separate active Realtime session. |
+| `ECHOGUIDE_EVAL_MODELS`, `ECHOGUIDE_EVAL_JUDGE_MODEL`, `ECHOGUIDE_EVAL_JUDGE_REASONING_EFFORT` | Evaluation-only candidate and judge settings; do not change the live model. |
 
-These variables affect only `npm run eval:models`; the live phrase-card model is
-configured separately through `OPENAI_BILINGUAL_MODEL`.
+See [.env.example](.env.example) for the full configuration. Quick openings use separate model settings and a shorter deadline.
 
-Fast Russian captions use a separate `OPENAI_TRANSLATION_MODEL` setting, which
-defaults to `gpt-5-nano` with `OPENAI_TRANSLATION_REASONING_EFFORT=minimal`. The
-translation request starts as soon as Realtime completes a transcript turn and
-does not wait for the fuller phrase-card analysis.
+## Prototype boundaries
 
-An independent experimental subtitle block can be started after choosing live assistance from the meeting start menu.
-It reuses the microphone stream through a second WebRTC peer connection to the
-dedicated Realtime translation endpoint. Its defaults are
-`OPENAI_REALTIME_TRANSLATION_MODEL=gpt-realtime-translate` and
-`OPENAI_REALTIME_TRANSLATION_LANGUAGE=ru`. The sidecar stays opt-in because it is
-an additional active Realtime session; translated audio is not played.
+- A browser microphone needs audible audio; application capture is currently macOS-only.
+- UI copy is a mix of English and Russian, aimed at Russian-speaking participants.
+- Audio capture quality and device permissions still require real-device checks.
+- An answer from materials is limited by the indexed evidence; a general answer may still be wrong and is not proof of personal or project facts.
+- API cost depends on model settings, context length, indexing, and session duration.
+- In-memory recent-audio recovery ends when live mode stops; saved recordings have a separate lifecycle.
 
-The methodology, rubric, and current results are documented in [docs/model-evaluation.md](docs/model-evaluation.md).
-
-## Technology
-
-| Area | Technology |
-| --- | --- |
-| UI | React 19, TypeScript, Vite, CSS |
-| Speech | OpenAI Realtime API, WebRTC, `gpt-4o-transcribe`, optional `gpt-realtime-translate` |
-| Phrase cards | OpenAI Responses API, JSON Schema structured outputs |
-| State | Browser setup preferences, server-side local notes and JSON session history |
-| Quality | Vitest, Testing Library, TypeScript checks, model-evaluation fixtures |
-| Diagnostics | Privacy-safe JSONL events, WebRTC stats, audio counters |
-
-## Prototype status and limitations
-
-EchoGuide is an early runnable prototype:
-
-- the primary flow uses an iPad microphone and audible room audio;
-- the iPad microphone mode cannot capture a conversation played only through headphones;
-  the optional MacBook audio prototype captures application output directly;
-- production authentication, cloud persistence, and a standalone backend are not implemented yet;
-- the local development server must not be exposed directly to the public internet;
-- live-session cost depends on the selected OpenAI models and conversation length.
-- audio recovery is available only while the live session is running; stopping
-  live mode clears the in-memory audio buffer.
-
-## Roadmap
-
-- simplify the control surface for non-technical users;
-- separate the production backend from the Vite development plugin;
-- move local knowledge persistence behind an authenticated production backend;
-- evaluate latency and usefulness across a series of practice interviews;
-- define production-grade authentication, storage, and deployment boundaries.
+Next work focuses on simpler controls, broader practice evaluations, and a separate authenticated production backend with clear storage and deployment boundaries.
 
 ## Project map
 
-- [Product scope](docs/product.md) — the problem, user journey, and MVP boundary;
-- [Architecture](docs/architecture.md) — Realtime, analysis, storage, and diagnostics;
-- [Model evaluation](docs/model-evaluation.md) — reproducible text-model comparison;
-- [Local development](docs/local-development.md) — HTTPS, iPad, and validation setup;
-- [Knowledge-pack example](docs/personal-knowledge-pack.example.md) — safe grounding template.
+- [Product scope](docs/product.md)
+- [Architecture](docs/architecture.md)
+- [Meeting assistant](docs/meeting-assistant.md)
+- [Mac audio](docs/mac-audio.md)
+- [Session recording](docs/session-recording.md)
+- [Model evaluation](docs/model-evaluation.md)
+- [Local development](docs/local-development.md)
+- [Personal knowledge template](docs/personal-knowledge-pack.example.md)
 
-Feedback is welcome on live-assistance UX, Realtime/WebRTC architecture, and evaluation of AI-generated replies.
+Feedback is welcome on conversational UX, Realtime integration, retrieval grounding, and evaluation of short spoken replies.
 
 ## License
 
 EchoGuide is available under the [MIT License](LICENSE).
-
-## Meeting materials
-
-The local development server now supports Markdown packs and meeting assistance.
-See [Meeting assistant](docs/meeting-assistant.md) for setup, limits, and verification.
-
-## MacBook audio prototype
-
-The `/mac-audio` route captures a microphone and a selected macOS application as
-separate sources, using a local Swift helper and two transcription sessions.
-Build it with `npm run mac-audio:build`, then follow the
-[Mac audio runbook](docs/mac-audio.md). Requires macOS 15+ and localhost access.
-
-## Session recording
-
-**Начать встречу** offers live assistance with local recording or audio-only
-recording without transcription. Stop the active run to finish the file, then
-play it from **Sessions → Аудиозаписи**. Both voices in Mac mode play in both headphones.
-See [session recording](docs/session-recording.md) for formats, limits and recovery.
